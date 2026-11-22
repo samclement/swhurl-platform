@@ -326,7 +326,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 | connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `calls`, `events`, their rules in `kernel`; provisioning turns them into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `observe/platform*.go`, the verification collectors in `orchestration`, service health checks |
-| notifications | Incident lifecycle, routing, delivery, retry and deduplication | `incident`, `heartbeat`, `notify` and their workflows |
+| notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
 | console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | console code in `cmd/swhurl-v2`, `orchestration/console*.go`, parts of `pages` |
 
 Two ownership decisions matter more than the directory names:
@@ -1353,10 +1353,10 @@ is v2's design.
 
 | Layer | Owns |
 | --- | --- |
-| `notify` (pure) | Decoding and validating a message or an alert, the sender rule, the rate limit over supplied times, the outbox's state and its transitions (accept, expire, delivered, failed), the ntfy message. Time and the random key are arguments |
+| `notifications/rules/notify` (pure) | Decoding and validating a message or an alert, the sender rule, the rate limit over supplied times, the outbox's state and its transitions (accept, expire, delivered, failed), the ntfy message. Time and the random key are arguments |
 | `adapters/kube` | Two new ports beside `Reader` and `Writer`. `Reviewer` asks whose token a caller presented. `Data` lists ConfigMaps and Secrets by field or label selector in one namespace and sets one ConfigMap key under a field manager. `Reader` still never reads a Secret, so an observing use case cannot reach one |
 | `adapters/ntfy` | Publishes one message to one HTTPS topic address: a JSON post, a 10-second limit, no redirect, and an error that never names the address or the answer, since the address is the credential |
-| `orchestration` | The service's use cases over those ports: accept a message, accept an alert, run one delivery pass. It holds the loaded outbox and its lock, not package state |
+| `notifications` | The service's use cases over those ports: accept a message, accept an alert, run one delivery pass. It holds the loaded outbox and its lock, not package state |
 | `cmd/swhurl-v2` | `notify-serve [--listen ADDR]`: the HTTP server, JSON log lines, the delivery loop, and a new API connection from the pod's mounted ServiceAccount for each request and pass, so the kubelet's token rotation is followed |
 
 What the service reads is narrower than the Python one: Secrets by label (`platform.swhurl.com/notify-transport=ntfy`)
@@ -1364,13 +1364,13 @@ or by name (`notify-alerts`), so Helm's release record is never fetched. A `SIGT
 graceful drain (v2 code may not name `syscall`); a cut-off request was not answered 202 and is retried by its caller,
 and a send cut off before its save is sent again, which at least once allows.
 
-**Step 1 was implemented and delivered before the cutover:** the pure [`notify`](../v2/notify) package, Kubernetes
-`Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, use cases and
-[`notify-serve`](../v2/cmd/swhurl-v2/notify.go) command exist. The HelmRelease selects Go and the Python
+**Step 1 was implemented and delivered before the cutover:** the pure [`notify`](../v2/notifications/rules/notify) package, Kubernetes
+`Reviewer`/`Data` ports, [`ntfy`](../v2/adapters/ntfy) publisher with real/fake contract suites, its use cases in
+[`notifications`](../v2/notifications) and the `notify-serve` [command](../v2/cmd/swhurl-v2) exist. The HelmRelease selects Go and the Python
 implementation, internal command and service-only tests are deleted. [Live acceptance passed](current-state.md#the-notify-service-switches-to-go-5-november-2026);
 [retirement evidence](current-state.md#the-python-notify-service-is-retired-5-november-2026) records the deletion.
 [Handler tests](../v2/cmd/swhurl-v2/notify_test.go) exercise the Python service's acceptance and delivery cases;
-[use-case tests](../v2/orchestration/notify_test.go) verify persistence before sending, retry and restart.
+[use-case tests](../v2/notifications/notify_test.go) verify persistence before sending, retry and restart.
 The API baseline intentionally includes these ports, pure types and use cases, not budget exceptions.
 `kube.NewAPI` lets the command supply one owned client for all three ports without casting a `Reader` to a
 secret-reading port. The service gives that client a ten-second round-trip timeout and disables idle connection
@@ -1409,7 +1409,7 @@ notices (deployed, failed, rolled back, uninstalled) and health incidents (unhea
 reminders), and delivers them to the platform topic, with a copy for the notify service when the notice is about an
 app. **Its state document and its wire contracts stay as they are**; everything else is v2's design.
 
-**Kept exactly** (each retained case of the retired Python tests has [Go coverage](../v2/incident/testdata/README.md#all-41-legacy-cases), time an argument):
+**Kept exactly** (each retained case of the retired Python tests has [Go coverage](../v2/notifications/rules/incident/testdata/README.md#all-41-legacy-cases), time an argument):
 
 - **The state:** `console/notification-state` key `state.json`, version 1, the same shape (`started`,
   `last_success`, `instances`, `seen`, `pending`, `monitor`, `notify_service`) and the same notice keys, so Go
@@ -1442,11 +1442,11 @@ app. **Its state document and its wire contracts stay as they are**; everything 
 
 | Layer | Owns |
 | --- | --- |
-| `incident` (pure, new) | Targets from the units, the health rule, which events qualify, the incident transitions, the outbox, and decoding and encoding the state document. A pass is `Evaluate(previous, snapshot, now, base, copies)`; delivery transitions are functions over the state. It owns the persisted notice fields without a same-layer dependency on `notify` |
+| `notifications/rules/incident` (pure) | Targets from the units, the health rule, which events qualify, the incident transitions, the outbox, and decoding and encoding the state document. A pass is `Evaluate(previous, snapshot, now, base, copies)`; delivery transitions are functions over the state. It owns the persisted notice fields without a same-layer dependency on `notifications/rules/notify` |
 | `adapters/kube` | Reads the kinds the snapshot needs across namespaces without a label selector, and core `Event` across namespaces by **field selector** `involvedObject.kind` (`HelmRelease`, then `Kustomization`). Writes the state through the existing `Data.SetConfigMapKey`; reads it with a named ConfigMap GET, not a list, preserving the checker's existing get/patch-only permission on that object |
 | `adapters/ntfy` | Unchanged: publishes to the platform topic |
 | `adapters/notifysvc` (new, external effect, approved with this slice) | Posts one copy to the notify service with the token it is given; reports accepted (202), refused (any other status) or unreachable, never the token or the body |
-| `orchestration` | One pass: read the state, read the snapshot, evaluate, deliver, report counts and what a dry run would send. Projects the persisted notice fields to the existing `notify.Publication` for ntfy; no exception to the same-layer import rule |
+| `notifications` | One pass: read the state, read the snapshot, evaluate, deliver, report counts and what a dry run would send. Projects the persisted notice fields to the existing `notify.Publication` for ntfy; no exception to the same-layer import rule |
 | `cmd/swhurl-v2` | `notifications-check [--dry-run] (--kubeconfig PATH | --in-cluster)`: environment (`CONSOLE_URL`, `NTFY_PLATFORM_URL`, `SWHURL_NOTIFY_URL`, the token path), JSON log lines, exit status |
 
 **Deliberate differences, approved:**
@@ -1598,7 +1598,7 @@ has Go coverage or a stated reason):
 3. **The unit's `PATH` gains `/usr/local/go/bin`**, where the host's Go is; the operator reinstalls once with
    `make host-heartbeat`.
 
-**Smaller differences found in implementation** (each in the [case map](../v2/heartbeat/testdata/README.md)): a
+**Smaller differences found in implementation** (each in the [case map](../v2/notifications/rules/heartbeat/testdata/README.md)): a
 time Python wrote as an integer is written back as a float and `others` keys are sorted (Python reads both);
 `lastSuccessfulTime` must be RFC 3339, as Kubernetes writes it; a CronJob field of the wrong type is `<label> status
 is invalid` (exit 1, nothing sent); a state file over 1 MiB or containing `NaN` is refused as unreadable; a refused
@@ -1610,11 +1610,11 @@ directory's missing parents are made 0700 too.
 
 | Layer | Owns |
 | --- | --- |
-| `heartbeat` (pure, new) | Freshness, the transition, the notice, and decoding and encoding the state document |
+| `notifications/rules/heartbeat` (pure) | Freshness, the transition, the notice, and decoding and encoding the state document |
 | `adapters/kube` | Unchanged: `Read` of one CronJob, `GetSecret` |
 | `adapters/ntfy` | Unchanged |
 | `adapters/hoststate` (new, external effect, approved with this slice) | Reads one local file (absent distinct from unreadable) and replaces it atomically with private modes; a contract suite and a fake |
-| `orchestration` | One pass over the watched jobs: read, decide, read the destination when due, send, save; a report per job |
+| `notifications` | One pass over the watched jobs: read, decide, read the destination when due, send, save; a report per job |
 | `cmd/swhurl-v2` | `notifications-heartbeat [--dry-run] [--max-age D] [--state PATH] --kubeconfig PATH`: JSON log lines, exit status |
 
 **Delivery, two commits.** The heartbeat runs from the checkout and has no image, so a rollback is one revert.
@@ -2903,7 +2903,7 @@ from the host to the app's public route. v2 has no HTTP probe today, and Python 
   weekly duplicate limit of five for a run or two a week.
 - Retiring `tests/fixtures/apps` also changes the following:
   - its `.sops.yaml` rule goes;
-  - `v2/incident` stops accepting `tests/fixtures/apps/apps` as a root (its test and `testdata/legacy.json` change
+  - `v2/notifications/rules/incident` stops accepting `tests/fixtures/apps/apps` as a root (its test and `testdata/legacy.json` change
     with it);
   - `tests/test_ci_changes.py` and `tests/test_v2_policy_gate.py` lose their references;
   - `docs/contributing.md` (frozen fixtures) and `docs/apps.md` (whose `check-apps.sh <path>` example is already
@@ -3018,7 +3018,7 @@ and effects unchanged and its existing tests moved with the code they test.
 | --- | --- | --- | --- |
 | 1 | recovery | `swhurl-v2 restore` (`make restore-sqlite`) | code moved and one archive verdict (D1 decided), offline |
 | 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | code moved; health reports the verdict, offline |
-| 3 | notifications | incident, heartbeat and notify workflows | proposed |
+| 3 | notifications | incident, heartbeat and notify workflows | code moved, offline |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | proposed |
 | 5 | connectivity, provisioning, apps, console | split from `kernel` and `orchestration` as their slices need | proposed |
 
@@ -3095,3 +3095,38 @@ v2/cmd/swhurl-v2/       promote's, deploy's and flux-wait's flags, reading the o
   for apps or provisioning. (3A) Move currentness, its change evidence and promotion readiness to `delivery/rules`
   now, with readiness taking its own `Readiness` input instead of observe's report, and keep the observation
   document's `Version` 5 and JSON unchanged. No behaviour changed.
+
+**Slice 3: notifications.**
+
+```text
+v2/notifications/       the notify service's, checker's and host heartbeat's workflows (layer 2), from
+                        orchestration/{notify,notifications_check,notifications_heartbeat}.go with their tests
+v2/notifications/rules/ their pure decisions (layer 0), moved unchanged with their testdata: incident (the health
+                        rule, which events qualify, the incident transitions, the outbox and the state document),
+                        heartbeat (freshness, the transition and its state) and notify (a message's validation, the
+                        sender rule, the outbox, routes and the ntfy message)
+v2/adapters/            kube, ntfy, notifysvc and hoststate unchanged in place; they are the three workflows' ports
+v2/cmd/swhurl-v2/       notify-serve's, notifications-check's and notifications-heartbeat's flags, environment,
+                        wiring, JSON logs and exit status only
+```
+
+- **Stays put.** `observe` keeps the snapshot and collection vocabulary the checker reads, and `kernel` and
+  `dashboards` gain nothing. `orchestration/platform_scope.go` keeps the routes and channel reads `verify-platform`
+  uses, and copies `channelAddresses` and `errNoRoutesKey` from `notifications/notify.go`, each naming its origin;
+  the **copies stay until slice 5** moves the rest of platform scope. The checker's health rule stays in
+  `notifications/rules/incident`, where slice 4 will read it rather than re-implement it.
+- **Checks.** `archtest` recognises the new paths: `notifications` is layer 2 and listed in `Orchestration`, and
+  `notifications/rules/{incident,heartbeat,notify}` are layer 0 and in `Pure`. `PureDependencies` gains no edge:
+  the three rules packages import no other pure package. Fixtures show `notifications/rules/incident` and
+  `notifications/rules/heartbeat` reading the clock refused and `notifications` importing `orchestration` refused,
+  the use-case import rule the other capability slices hold.
+- **Acceptance.** `swhurl-v2 notify-serve`, `notifications-check` and `notifications-heartbeat` keep their flags,
+  environment, documents, stderr and effects: their command tests pass with only package and type names changed;
+  the moved rules' tests pass in `notifications/rules`; `make check-v2` passes; `orchestration` no longer defines
+  the notify service's accept and delivery use cases, the checker's pass or the heartbeat's pass. The navigation
+  test: a refused team copy, the checker's counted pass or a heartbeat `stale` outcome points to `notifications` for
+  the workflow and to `notifications/rules/{incident,heartbeat}` for the contract, its implementation and its tests.
+- **Decision, 22 November 2026.** (1A) The three pure packages move into one capability's `rules/` with their names
+  unchanged (`incident`, `heartbeat`, `notify`), so their tests and fixtures move untouched, and `notifications` is
+  the one layer-2 use-case package. A helper two use-case packages need is copied with its origin named, as slice 2
+  decided. No behaviour changed.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"io/fs"
 	"maps"
 	"os"
@@ -52,7 +53,7 @@ type rendering struct {
 	resolution resolutionDocument
 	allocation kernel.EgressDocument
 	platform   []kernel.File
-	instances  []orchestration.Inputs
+	instances  []provisioningrules.Inputs
 	compiled   []kernel.File
 }
 
@@ -143,7 +144,7 @@ func (r *rendering) compileInstances(profile []byte, folders []recordsEdit) erro
 		return err
 	}
 	for _, one := range folders {
-		inputs := orchestration.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profile,
+		inputs := provisioningrules.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profile,
 			Calls: calls, Egress: egress, EventsSecret: one.secret, Offers: one.offers}
 		written, err := instanceRender(inputs)
 		if err != nil {
@@ -315,7 +316,7 @@ func (c cli) withNotify(r request, rendered rendering) (rendering, int) {
 }
 
 // teamsOf refuses an instance whose app names, or whose grants admit, a team the registry does not hold, naming it.
-func teamsOf(registry kernel.TeamRegistry, inputs orchestration.Inputs) error {
+func teamsOf(registry kernel.TeamRegistry, inputs provisioningrules.Inputs) error {
 	app, err := kernel.DecodeApp(inputs.App)
 	if err != nil {
 		return err
@@ -360,8 +361,8 @@ func channelSecretsAgree(out string, registry kernel.TeamRegistry) error {
 
 // instanceRender is the files one instance's folder holds once compiled: the compilation with its seed and the
 // documents it publishes, as CompileInto writes them.
-func instanceRender(inputs orchestration.Inputs) ([]kernel.File, error) {
-	compiled, err := orchestration.Compile(inputs)
+func instanceRender(inputs provisioningrules.Inputs) ([]kernel.File, error) {
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return nil, err
 	}

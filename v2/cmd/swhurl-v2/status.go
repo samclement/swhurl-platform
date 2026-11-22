@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -62,13 +63,13 @@ func (c cli) status(r request) int {
 
 // statusInputs reads one instance's records from the tree — its record pair and the app record — and the platform
 // documents its compilation takes. An application and environment with no record is refused, not an I/O failure.
-func (c cli) statusInputs(r request) (orchestration.Inputs, int) {
+func (c cli) statusInputs(r request) (provisioningrules.Inputs, int) {
 	folder := filepath.Join(r.records, r.app, r.env)
 	if _, err := os.Stat(filepath.Join(folder, instanceFile)); errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(c.diagnostic, "invalid: records: no instance record for %s/%s under %s\n", r.app, r.env, r.records)
-		return orchestration.Inputs{}, 2
+		return provisioningrules.Inputs{}, 2
 	}
-	inputs := orchestration.Inputs{}
+	inputs := provisioningrules.Inputs{}
 	for _, read := range []struct {
 		path, what string
 		target     *[]byte
@@ -85,7 +86,7 @@ func (c cli) statusInputs(r request) (orchestration.Inputs, int) {
 		}
 		data, status := c.read(read.path, read.what)
 		if status != 0 {
-			return orchestration.Inputs{}, status
+			return provisioningrules.Inputs{}, status
 		}
 		*read.target = data
 	}
@@ -108,7 +109,7 @@ func (c cli) sameInstance(r request, instance []byte) int {
 
 // observeLive runs the status use case against the API server the credential names — and, when asked, the object
 // store's archive listing — and returns the observation.
-func (c cli) observeLive(r request, inputs orchestration.Inputs, maxAge time.Duration) (observe.Report, int) {
+func (c cli) observeLive(r request, inputs provisioningrules.Inputs, maxAge time.Duration) (observe.Report, int) {
 	request, status := c.liveStatusInputs(r, inputs.Profile, maxAge)
 	if status != 0 {
 		return observe.Report{}, status

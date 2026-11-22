@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"io"
 	"maps"
 	"path"
@@ -257,16 +258,16 @@ func (b *ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][
 // ConsoleRecords is the record tree a console request reads: one instance's three records per folder, and the
 // documents every compilation takes.
 type ConsoleRecords struct {
-	Shared    Inputs
-	Instances []Inputs
+	Shared    provisioningrules.Inputs
+	Instances []provisioningrules.Inputs
 }
 
 // Records splits a filtered tree into the instances it holds, in app and environment order. A folder without an
 // instance record is not an instance; a record that cannot be read is refused rather than shown.
 func Records(files map[string][]byte) (ConsoleRecords, error) {
-	found := ConsoleRecords{Shared: Inputs{Profile: files[consoleProfile], Calls: files[consoleCalls],
+	found := ConsoleRecords{Shared: provisioningrules.Inputs{Profile: files[consoleProfile], Calls: files[consoleCalls],
 		Egress: files[consoleEgress]}}
-	instances := map[string]Inputs{}
+	instances := map[string]provisioningrules.Inputs{}
 	for file := range files {
 		rest, ok := strings.CutPrefix(file, consoleRecords+"/")
 		if !ok || !strings.HasSuffix(rest, "/instance.json") {

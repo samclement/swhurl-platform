@@ -241,6 +241,7 @@ func f(count int) int {
 		"health/rules/a.go":                  "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"recovery/rules/a.go":                "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"delivery/rules/a.go":                "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"provisioning/rules/a.go":            "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"notifications/rules/incident/a.go":  "package incident\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"notifications/rules/heartbeat/a.go": "package heartbeat\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 	})
@@ -255,7 +256,8 @@ func f(count int) int {
 		"pure kernel/a.go:16: calls time.Now",
 		"pure kernel/b.go:3: assigns package variable count",
 		"pure recovery/rules/a.go:5: calls time.Now",
-		"pure delivery/rules/a.go:5: calls time.Now")
+		"pure delivery/rules/a.go:5: calls time.Now",
+		"pure provisioning/rules/a.go:5: calls time.Now")
 }
 
 func TestCheckNoSubprocess(t *testing.T) {

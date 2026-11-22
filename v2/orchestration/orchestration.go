@@ -14,23 +14,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
-
-// Inputs is one instance's compilation inputs, as the documents read them: its records, the platform
-// profile, and the two optional documents — the resolution that names its pairs and the allocation that
-// names its port. A nil document means the caller was given none; whether the instance needed one is the
-// kernel's to refuse, not this package's.
-type Inputs struct {
-	Instance, Release, App, Profile []byte
-	Calls, Egress                   []byte
-	// EventsSecret is an instance's own events.sops.yaml, byte for byte, for a use case that writes its files.
-	// v2 neither reads nor decrypts it: it is delivered beside the manifests, which list it.
-	EventsSecret []byte
-	// Offers are the documents an instance publishes for others to read — the app's OpenAPI and AsyncAPI
-	// documents and its flags file — each named by its name in the instance's offers folder. They are a declared
-	// input, never output: v2 copies them and parses none of them. The release's offers commit is their provenance.
-	Offers []kernel.File
-}
 
 // Result is what a use case produced: the compilation, and the files it wrote, when it wrote any. Written is
 // nil for a use case that performs no effect, and it holds the files completed before a failure when one
@@ -40,39 +25,11 @@ type Result struct {
 	Written     []files.Outcome
 }
 
-// Compile assembles the instance's inputs and compiles them. It performs no effect: nothing is written and
-// nothing is read but the documents it was given.
-func Compile(inputs Inputs) (kernel.Compilation, error) {
-	spec, err := kernel.DecodeInstance(inputs.Instance)
-	if err != nil {
-		return kernel.Compilation{}, err
-	}
-	release, err := kernel.DecodeRelease(inputs.Release)
-	if err != nil {
-		return kernel.Compilation{}, err
-	}
-	profile, err := kernel.DecodeProfile(inputs.Profile)
-	if err != nil {
-		return kernel.Compilation{}, err
-	}
-	app := kernel.AppSpec{}
-	if inputs.App != nil {
-		if app, err = kernel.DecodeApp(inputs.App); err != nil {
-			return kernel.Compilation{}, err
-		}
-	}
-	connections, egress, err := documents(inputs, spec.Application, spec.Environment)
-	if err != nil {
-		return kernel.Compilation{}, err
-	}
-	return kernel.CompileWith(spec, release, app, profile, connections, egress)
-}
-
 // CompileInto compiles the instance and writes its files under destination, reporting each file as written or
 // unchanged. It is the one use case that performs an effect; the destination's policy — which directories an
 // operator may write into — belongs to the caller that chose it.
-func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error) {
-	compiled, err := Compile(inputs)
+func CompileInto(inputs provisioningrules.Inputs, destination string, writer files.Writer) (Result, error) {
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -87,8 +44,8 @@ func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result
 // compileComplete compiles one instance and adds the two declared inputs its folder holds: its seed and the documents
 // it publishes. Every use case that writes an instance's folder calls it, so a folder is either complete or refused —
 // the compiler lists the seed and never writes it, and the documents are copied, never produced.
-func compileComplete(inputs Inputs) (kernel.Compilation, []kernel.File, error) {
-	compiled, err := Compile(inputs)
+func compileComplete(inputs provisioningrules.Inputs) (kernel.Compilation, []kernel.File, error) {
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return kernel.Compilation{}, nil, err
 	}
@@ -97,7 +54,7 @@ func compileComplete(inputs Inputs) (kernel.Compilation, []kernel.File, error) {
 }
 
 // instanceFiles is the compilation's files plus the declared inputs the caller supplied.
-func instanceFiles(compiled kernel.Compilation, inputs Inputs) ([]kernel.File, error) {
+func instanceFiles(compiled kernel.Compilation, inputs provisioningrules.Inputs) ([]kernel.File, error) {
 	documents, err := WithEventsSecret(compiled, inputs.EventsSecret)
 	if err != nil {
 		return nil, err
@@ -156,25 +113,6 @@ func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File
 		return files, nil
 	}
 	return append(slices.Clone(files), kernel.File{Path: folder + "/events.sops.yaml", Document: secret}), nil
-}
-
-// documents reduces the optional documents to the instance's own facts. A document that was given is read
-// even when the instance turns out to need nothing from it, so a malformed one is refused rather than
-// ignored.
-func documents(inputs Inputs, application, environment string) (kernel.Connections, *kernel.Egress, error) {
-	connections := kernel.Connections{}
-	if inputs.Calls != nil {
-		read, err := kernel.ConnectionsOf(inputs.Calls, application, environment)
-		if err != nil {
-			return kernel.Connections{}, nil, err
-		}
-		connections = read
-	}
-	egress, err := kernel.InstanceEgress(inputs.Egress, application, environment)
-	if err != nil {
-		return kernel.Connections{}, nil, err
-	}
-	return connections, egress, nil
 }
 
 // refuseSecret is a use case's refusal about the instance's seed: a fact the caller supplies or does not, never a

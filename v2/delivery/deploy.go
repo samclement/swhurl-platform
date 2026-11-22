@@ -7,6 +7,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // DeployInputs is one staging instance's delivery inputs: its records, the app's record (its team), the
@@ -57,7 +58,7 @@ func newDeployRequest(inputs DeployInputs) (deployRequest, error) {
 	if request.profile, err = kernel.DecodeProfile(inputs.Profile); err != nil {
 		return deployRequest{}, err
 	}
-	request.connections, request.egress, err = provisioning.Documents(inputs.Calls, inputs.Egress, request.instance.Application,
+	request.connections, request.egress, err = provisioningrules.Documents(inputs.Calls, inputs.Egress, request.instance.Application,
 		request.instance.Environment)
 	return request, err
 }

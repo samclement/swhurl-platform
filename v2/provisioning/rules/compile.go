@@ -37,7 +37,7 @@ func Compile(inputs Inputs) (kernel.Compilation, error) {
 	if err != nil {
 		return kernel.Compilation{}, err
 	}
-	connections, egress, err := documents(inputs, spec.Application, spec.Environment)
+	connections, egress, err := Documents(inputs.Calls, inputs.Egress, spec.Application, spec.Environment)
 	if err != nil {
 		return kernel.Compilation{}, err
 	}
@@ -91,19 +91,19 @@ func decode(inputs Inputs) (kernel.InstanceSpec, kernel.ReleaseBundle, kernel.Ap
 	return spec, release, app, profile, nil
 }
 
-// documents reduces the optional documents to the instance's own facts. A document that was given is read
+// Documents reduces the optional documents to the instance's own facts. A document that was given is read
 // even when the instance turns out to need nothing from it, so a malformed one is refused rather than
 // ignored.
-func documents(inputs Inputs, application, environment string) (kernel.Connections, *kernel.Egress, error) {
+func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error) {
 	connections := kernel.Connections{}
-	if inputs.Calls != nil {
-		read, err := connectivityrules.ConnectionsOf(inputs.Calls, application, environment)
+	if calls != nil {
+		read, err := connectivityrules.ConnectionsOf(calls, application, environment)
 		if err != nil {
 			return kernel.Connections{}, nil, err
 		}
 		connections = read
 	}
-	egress, err := connectivityrules.InstanceEgress(inputs.Egress, application, environment)
+	egress, err := connectivityrules.InstanceEgress(egressDocument, application, environment)
 	if err != nil {
 		return kernel.Connections{}, nil, err
 	}

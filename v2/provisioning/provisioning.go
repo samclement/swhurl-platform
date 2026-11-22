@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
-	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
@@ -86,26 +85,6 @@ func prune(writer files.Writer, destination string, compiled kernel.Compilation)
 		rendered = append(rendered, name)
 	}
 	return writer.Prune(destination, folder, rendered)
-}
-
-// Documents reduces the optional documents to the instance's own facts, for a use case that compiles records it
-// decoded itself. A document that was given is read even when the instance turns out to need nothing from it, so a
-// malformed one is refused rather than ignored.
-func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress,
-	error) {
-	connections := kernel.Connections{}
-	if calls != nil {
-		read, err := connectivityrules.ConnectionsOf(calls, application, environment)
-		if err != nil {
-			return kernel.Connections{}, nil, err
-		}
-		connections = read
-	}
-	egress, err := connectivityrules.InstanceEgress(egressDocument, application, environment)
-	if err != nil {
-		return kernel.Connections{}, nil, err
-	}
-	return connections, egress, nil
 }
 
 // withEventsSecret adds an instance's seed to the files a use case writes beside its manifests. The compiler

@@ -1802,13 +1802,13 @@ producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
 provisioning/rules: func Compile(inputs Inputs) (kernel.Compilation, error)
 provisioning/rules: func Declare(inputs Inputs) (Declaration, error)
+provisioning/rules: func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error)
 provisioning/rules: type Declaration struct {Application, Environment string Declared kernel.Declared}
 provisioning/rules: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 provisioning: const RecordsRoot = "v2-records"
 provisioning: func (*Refusal) Error() string
 provisioning: func CompileInto(inputs rules.Inputs, destination string, writer files.Writer) (Result, error)
 provisioning: func Complete(inputs rules.Inputs) (kernel.Compilation, []kernel.File, error)
-provisioning: func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error)
 provisioning: func InstanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle, compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error)
 provisioning: func RecordFiles(root, application, environment string, app, release, instance, eventsSecret []byte, offers []kernel.File) []kernel.File
 provisioning: func WriteCompiled(destination string, compiled kernel.Compilation, written []kernel.File, writer files.Writer) ([]files.Outcome, error)

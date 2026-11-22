@@ -1,11 +1,15 @@
 id: 48
 title: Connectivity owns the connection and egress documents; kernel keeps only its model types
-state: ready
+state: active
 scope:
   - v2/kernel/documents.go
   - v2/kernel/documents_test.go
   - v2/kernel/edit.go
   - v2/kernel/edit_test.go
+  - v2/kernel/declaration.go
+  - v2/kernel/declaration_test.go
+  - v2/kernel/alloc.go
+  - v2/kernel/alloc_test.go
   - v2/connectivity/rules/*.go
   - v2/provisioning/rules/compile.go
   - v2/provisioning/rules/compile_test.go
@@ -37,3 +41,6 @@ notes:
   - at: 2026-11-22T18:19:39.700Z
     commit: 8aba040c99aa
     text: "Operator: proxy manifest assembly (kernel/proxy.go) and allocation (kernel/alloc.go) stay in kernel this slice; do not export kernel internals or add kernel->connectivity/rules. Move only connection/egress document reading rules."
+  - at: 2026-11-22T18:38:23.081Z
+    commit: 11a0213ff12f
+    text: "Task can't meet checks in scope; shape? -> Option 1 (settled by title and operator note: only readers move): kernel keeps the document types as model types (connection types in kernel/declaration.go, EgressDocument/EgressAllocation in kernel/alloc.go); readers DecodeEgressDocument/EncodeEgressDocument/EgressOf/ConnectionsOf/SubscribersOf/InstanceEgress move to connectivity/rules; kernel.Declare takes decoded documents, decoded in compile.go; zero values keep 'no document' semantics. Conductor added v2/kernel/declaration.go, declaration_test.go, alloc.go, alloc_test.go to scope."

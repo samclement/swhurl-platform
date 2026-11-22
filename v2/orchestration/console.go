@@ -20,6 +20,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
+	"github.com/samclement/swhurl-platform/v2/health"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/pages"
@@ -385,7 +386,7 @@ func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, erro
 // ConsoleChecks runs the platform checks a console page shows: the cluster scope, read through the reader the console
 // was given, with the time the caller supplies.
 func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error) {
-	report, err := Platform(ctx, PlatformInputs{Reader: reader, Source: source, Now: now})
+	report, err := health.Platform(ctx, health.PlatformInputs{Reader: reader, Source: source, Now: now})
 	if err != nil {
 		return pages.Checks{}, fmt.Errorf("platform checks unavailable: %w", err)
 	}

@@ -12,8 +12,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/health"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // verifyTimeout bounds the platform scope's reads: more than one observation's, because it also lists the registry
@@ -36,7 +36,7 @@ func (c cli) verify(r request) int {
 	if r.source != "" {
 		source = r.source
 	}
-	inputs := orchestration.PlatformInputs{Reader: reader, Source: source, Now: time.Now}
+	inputs := health.PlatformInputs{Reader: reader, Source: source, Now: time.Now}
 	var report healthrules.PlatformReport
 	if r.scope == "platform" {
 		report, status = c.verifyPlatform(r, connection, inputs)
@@ -58,10 +58,10 @@ func (c cli) verify(r request) int {
 	return 1
 }
 
-func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (healthrules.PlatformReport, int) {
+func (c cli) verifyCluster(inputs health.PlatformInputs) (healthrules.PlatformReport, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	report, err := orchestration.Platform(ctx, inputs)
+	report, err := health.Platform(ctx, inputs)
 	if err != nil {
 		return report, fail(c.diagnostic, err)
 	}
@@ -71,8 +71,8 @@ func (c cli) verifyCluster(inputs orchestration.PlatformInputs) (healthrules.Pla
 // verifyPlatform runs every check: the connection's other ports, the anonymous registry, the object store with the
 // operator's credentials when they are set, GitHub with explicit operator/console credentials, the checkout
 // at --root, and the tag and host heartbeat facts the caller supplied.
-func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orchestration.PlatformInputs) (healthrules.PlatformReport, int) {
-	inputs := orchestration.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag,
+func (c cli) verifyPlatform(r request, connection kube.Connection, cluster health.PlatformInputs) (healthrules.PlatformReport, int) {
+	inputs := health.PlatformAllInputs{PlatformInputs: cluster, Registries: c.registries, ConsoleTag: r.consoleTag,
 		Heartbeat: c.heartbeatFacts(r.heartbeat)}
 	inputs.GitHub, inputs.GitHubToken = c.github, strings.TrimSpace(os.Getenv("GH_TOKEN"))
 	if inputs.GitHub == nil {
@@ -100,7 +100,7 @@ func (c cli) verifyPlatform(r request, connection kube.Connection, cluster orche
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), verifyTimeout)
 	defer cancel()
-	report, err := orchestration.PlatformAll(ctx, inputs)
+	report, err := health.PlatformAll(ctx, inputs)
 	if err != nil {
 		return report, fail(c.diagnostic, err)
 	}

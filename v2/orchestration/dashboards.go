@@ -14,6 +14,9 @@ import (
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
+const clickstackNamespace = "observability"
+const mongoURISecret = "clickstack-mongodb-hyperdx-hyperdx"
+
 // DashboardPorts is the dashboard pass's only effects: the cluster's app releases and namespaces (discovery), the
 // Secrets it reads by name and the console's record, and ClickStack.
 type DashboardPorts struct {
@@ -465,6 +468,14 @@ func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app c
 			Command: []string{"node", "--input-type=module", "-"}, Stdin: program})
 	}
 	return mongo, app
+}
+
+func clickstackRef(kind, name string) observe.Ref {
+	version := "v1"
+	if kind == "Deployment" {
+		version = "apps/v1"
+	}
+	return observe.Ref{APIVersion: version, Kind: kind, Namespace: clickstackNamespace, Name: name}
 }
 
 func clickstackAppPod(ctx context.Context, reader kube.Reader) (string, error) {

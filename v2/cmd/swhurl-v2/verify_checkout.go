@@ -7,21 +7,21 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/samclement/swhurl-platform/v2/health"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // readCheckout reads the files the platform scope compares the cluster with from the checkout at root: the profile,
 // the team registry, the egress allocation, the Flux install settings, every app and release record, and each
 // compiled instance's objects. A
 // file the checkout does not have is absent, which the checks report; one it cannot read stops the run.
-func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
+func (c cli) readCheckout(root string) (health.Checkout, int) {
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
 		fmt.Fprintf(c.diagnostic, "invalid: root: %s is not a directory\n", root)
-		return orchestration.Checkout{}, 2
+		return health.Checkout{}, 2
 	}
-	checkout := orchestration.Checkout{Apps: map[string][]byte{}, Releases: map[string][]byte{}}
+	checkout := health.Checkout{Apps: map[string][]byte{}, Releases: map[string][]byte{}}
 	for _, file := range []struct {
 		path   string
 		target *[]byte
@@ -33,12 +33,12 @@ func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
 	} {
 		data, status := c.checkoutFile(filepath.Join(root, file.path))
 		if status != 0 {
-			return orchestration.Checkout{}, status
+			return health.Checkout{}, status
 		}
 		*file.target = data
 	}
 	if status := c.readRecords(filepath.Join(root, healthrules.CheckoutRecords), checkout); status != 0 {
-		return orchestration.Checkout{}, status
+		return health.Checkout{}, status
 	}
 	compiled, status := c.readCompiled(filepath.Join(root, healthrules.CheckoutCompiled))
 	checkout.Compiled = compiled
@@ -58,7 +58,7 @@ func (c cli) checkoutFile(path string) ([]byte, int) {
 }
 
 // readRecords reads each app's record and each of its environments' release records into the checkout.
-func (c cli) readRecords(records string, checkout orchestration.Checkout) int {
+func (c cli) readRecords(records string, checkout health.Checkout) int {
 	apps, status := c.folders(records)
 	if status != 0 {
 		return status

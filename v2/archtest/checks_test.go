@@ -122,6 +122,28 @@ func TestWorkflowDependencies(t *testing.T) {
 	}
 }
 
+// Exercise the approved production registry, not just a hypothetical local exception. The console's
+// composition may call health; neither the reverse edge nor other peers gain permission.
+func TestHealthWorkflowDependency(t *testing.T) {
+	m := fixture(t, map[string]string{
+		"orchestration/console.go": "package orchestration\n\nimport \"example.com/v2/health\"\n",
+		"orchestration/other.go":   "package orchestration\n\nimport \"example.com/v2/recovery\"\n",
+		"health/reverse.go":        "package health\n\nimport \"example.com/v2/orchestration\"\n",
+		"health/peer.go":           "package health\n\nimport \"example.com/v2/recovery\"\n",
+		"health/down.go":           "package health\n\nimport (\n\"example.com/v2/health/rules\"\n\"example.com/v2/adapters/kube\"\n)\n",
+		"health/rules/up.go":       "package rules\n\nimport \"example.com/v2/health\"\n",
+		"cmd/swhurl-v2/verify.go":  "package main\n\nimport \"example.com/v2/health\"\n",
+	})
+	expect(t, checkLayers(m, WorkflowDependencies),
+		"layers health/peer.go:3: health (layer 2) imports recovery (layer 2)",
+		"layers health/reverse.go:3: health (layer 2) imports orchestration (layer 2)",
+		"layers health/rules/up.go:3: health/rules (layer 0) imports health (layer 2)",
+		"layers orchestration/other.go:3: orchestration (layer 2) imports recovery (layer 2)")
+	if !slices.Contains(lines(checkLayers(m, nil)), "layers orchestration/console.go:3: orchestration (layer 2) imports health (layer 2)") {
+		t.Fatal("the console edge must require explicit permission")
+	}
+}
+
 func TestWorkflowDependencyRegistry(t *testing.T) {
 	for _, endpoint := range []string{"kernel", "adapters/s3", "cmd/swhurl-v2", "unknown"} {
 		t.Run(endpoint, func(t *testing.T) {
@@ -141,6 +163,7 @@ func TestWorkflowDependencyRegistry(t *testing.T) {
 		{"directional", map[string][]string{"orchestration": {"recovery"}}, ""},
 		{"diamond", map[string][]string{"orchestration": {"delivery", "notifications"}, "delivery": {"recovery"}, "notifications": {"recovery"}}, ""},
 		{"self", map[string][]string{"recovery": {"recovery"}}, "WorkflowDependencies self edge: recovery -> recovery"},
+		{"health-cycle", map[string][]string{"orchestration": {"health"}, "health": {"orchestration"}}, "WorkflowDependencies cycle: health -> orchestration -> health"},
 		{"two-cycle", map[string][]string{"orchestration": {"recovery"}, "recovery": {"orchestration"}}, "WorkflowDependencies cycle: orchestration -> recovery -> orchestration"},
 		{"three-cycle", map[string][]string{"delivery": {"orchestration"}, "orchestration": {"recovery"}, "recovery": {"delivery"}}, "WorkflowDependencies cycle: delivery -> orchestration -> recovery -> delivery"},
 	} {

@@ -122,6 +122,44 @@ func TestVerifyFailsOnAFailedReadAfterPrintingTheReport(t *testing.T) {
 	}
 }
 
+func TestVerifyJSONFailedReadKeepsSourceAndLaterChecks(t *testing.T) {
+	server, paths := platformAPI(t, "/apis/apps/v1/namespaces/kube-system/deployments/traefik")
+	status, stdout, diagnostic := runStatus(t, "verify", "--kubeconfig", kubeconfig(t, server), "--source", "laptop", "--json")
+	var report struct {
+		Kind    string
+		Version int
+		Source  string
+		Passed  bool
+		Checks  []healthrules.PlatformCheck
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("exit %d, output %s: %v", status, stdout, err)
+	}
+	if status != 1 || diagnostic != "" || report.Kind != "v2-platform-checks" || report.Version != 1 ||
+		report.Source != "laptop" || report.Passed || len(report.Checks) != 6 || len(*paths) != 8 {
+		t.Fatalf("exit %d, diagnostic %q, output %s, reads %v", status, diagnostic, stdout, *paths)
+	}
+	if report.Checks[1].Entries[0].Level != healthrules.CheckBad ||
+		!strings.Contains(report.Checks[1].Entries[0].Message, "forbidden") ||
+		report.Checks[5].Entries[0].Level != healthrules.CheckOK {
+		t.Fatalf("%s", stdout)
+	}
+}
+
+func TestVerifyUnusableCredentialEmitsNoReport(t *testing.T) {
+	for _, format := range [][]string{nil, {"--json"}} {
+		path := filepath.Join(t.TempDir(), "malformed")
+		if err := os.WriteFile(path, []byte(`{"clusters":[]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		args := append([]string{"verify", "--kubeconfig", path}, format...)
+		status, stdout, diagnostic := runStatus(t, args...)
+		if status != 2 || stdout != "" || diagnostic == "" {
+			t.Fatalf("%v: exit %d, stdout %q, diagnostic %q", args, status, stdout, diagnostic)
+		}
+	}
+}
+
 func TestVerifyNeedsExactlyOneCredential(t *testing.T) {
 	for _, args := range [][]string{{"verify"}, {"verify", "--kubeconfig", "k.json", "--in-cluster"}, {"verify", "--in-cluster", "extra"}} {
 		if status, _, _ := runStatus(t, args...); status != 2 {

@@ -1,6 +1,6 @@
 id: 35
 title: "Health rules: move the pure platform model and checks out of observe"
-state: ready
+state: done
 scope:
   - v2/observe/platform*.go
   - v2/health/rules/**
@@ -17,6 +17,7 @@ scope:
   - v2/orchestration/console.go
   - v2/orchestration/dashboards.go
   - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
   - v2/archtest/api.txt
   - docs/v2-status.md
 checks:
@@ -54,3 +55,24 @@ notes:
   - at: 2026-11-22T15:39:59.687Z
     commit: aaaba733d8e0
     text: Three remaining mechanical consumers missing from scope? -> Operator approved adding v2/adapters/github/githubtest/fake.go, v2/adapters/github/githubtest/fake_test.go and v2/cmd/swhurl-v2/verify_test.go. Migrate moved Hook/GitHubRepository/PlatformCatalogue references only; preserve fake Reader contract and catalogue assertions. Prior console/dashboard decisions stand.
+  - at: 2026-11-22T15:47:32.759Z
+    commit: bd06a136246e
+    text: Implemented approved move and consumers; targeted health/observe/delivery/github/orchestration/CLI tests pass. Full make check-v2 reaches archtest TestCheckPure and fails because v2/archtest/checks_test.go:180-235 explicitly fixtures every Pure package; registering health/rules correctly reports its missing fixture. Need exact scope addition v2/archtest/checks_test.go to add a health/rules clock-use fixture and expected violation, preserving purity enforcement. No workaround or out-of-scope edits. Workflow allowlist remains empty. Waiting on scope approval; all implementation remains uncommitted.
+  - at: 2026-11-22T15:48:15.405Z
+    commit: bd06a136246e
+    text: Add v2/archtest/checks_test.go solely to extend TestCheckPure fixture/expected clock-use violation for new health/rules pure package? -> Operator approved. Scope updated; preserve purity enforcement, rerun all registered task checks.
+  - at: 2026-11-22T15:51:16.335Z
+    commit: bd06a136246e
+    text: "Scope approval applied: TestCheckPure now includes health/rules time.Now fixture and expected violation; no rule weakened. make check-v2 passes (vet, all Go tests incl archtest, rendered platform 172/fixture 27 files unchanged); targeted tests pass; all 16 moved files token-equivalent after approved ownership/import/path normalization; bash -n host/*.sh tests/fixtures/*.sh, git diff --check and tk validate pass. Broader make check was also run: scoped status shape/header fixed, but out-of-scope docs need integration: docs/contributing.md:66 and docs/operations.md:15 have five links to deleted observe/platform*.go paths; docs/iteration-2-plan.md:329,1235 still describe old owner. make check-docs now only fails docs/workload-identity-status.md Uncommitted:none (that workstream owns the whole tree). Canonical workstreams/current-state integration remains outside task scope. No live reads/actions, commits or pushes. Next: finish health collection workflows in a separate approved slice, and documentation integration before merge."
+  - at: 2026-11-22T15:51:16.589Z
+    commit: bd06a136246e
+    text: "done: Moved 16 platform rule/test files to health/rules without behavior changes; shared app vocabulary to kernel, approved consumers rewired, delivery locator kept local. Purity/API checks and status updated. Targeted tests and make check-v2 pass; no live verification. Broader make check exposes out-of-scope documentation links/status needing integration."
+  - at: 2026-11-22T15:51:16.589Z
+    commit: bd06a136246e
+    text: "followup: Update docs/operations.md:15 and docs/contributing.md:66: five links still target deleted observe/platform*.go; use health/rules paths. Update iteration-2-plan.md:329,1235 ownership descriptions."
+  - at: 2026-11-22T15:51:16.589Z
+    commit: bd06a136246e
+    text: "followup: Documentation integration: add dated health-rules evidence to docs/current-state.md and synchronize docs/workstreams.md. make check-docs currently fails workload-identity-status.md Uncommitted:none because its registry scope includes these task changes; reconcile that workstream scope/status separately."
+  - at: 2026-11-22T15:53:15.696Z
+    commit: bd06a136246e
+    text: branch dsa/01M81YMF9YRBNSVCYWX774Q33W/task-35

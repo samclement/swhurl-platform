@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -90,5 +91,92 @@ func TestReportEncodesGoPromotionDecision(t *testing.T) {
 		if document.Version != 5 || document.Promotion != observe.PromotionReadiness(report, reviewed) {
 			t.Fatalf("%+v", document)
 		}
+	}
+}
+
+func comparisons(paths ...string) *deliveryrules.Changes {
+	return &deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{
+		{From: other, To: commit, Status: "complete", Paths: append([]string{}, paths...)},
+	}}
+}
+
+func unaffectedReport(t *testing.T, evidence observe.Evidence) observe.Report {
+	t.Helper()
+	base := target()
+	base.Scope = &deliveryrules.ChangeScope{Folders: []string{"v2-records/hello/staging"}}
+	evidence = withRead(evidence, present(base.Unit, fluxDocument(t, flux{generation: 3, applied: "main@sha1:" + other})))
+	evidence.Changes = comparisons("v2-records/another/staging/instance.json")
+	report, err := observe.Explain(base, evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func TestUnaffectedNeverWaivesUnhealthyEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		evidence observe.Evidence
+		want     string
+	}{
+		{"healthy", healthy(t), observe.StateHealthy},
+		{"failed", withRead(healthy(t), present(target().Release, []byte(`{"metadata":{"generation":2},"status":{"conditions":[{"type":"Ready","status":"False","reason":"InstallFailed","observedGeneration":2}]}}`))), observe.StateFailing},
+		{"suspended", withRead(healthy(t), present(target().Release, fluxDocument(t, flux{generation: 2, suspended: true}))), observe.StateSuspended},
+		{"different image", withPods(healthy(t), podList(t, target(), podDocument(t, pod{started: true, image: "docker.io/test/app@sha256:" + strings.Repeat("a", 64)}))), observe.StateUpdating},
+		{"unreadable workload", withRead(healthy(t), observe.Read{Ref: target().Workload, Status: observe.Unavailable, Reason: observe.ReasonForbidden}), observe.StateUnknown},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			report := unaffectedReport(t, test.evidence)
+			if report.State.Name != test.want || report.Currentness.State != "unaffected" || report.Findings[1].Outcome != observe.Unaffected {
+				t.Fatalf("%+v %+v", report.State, report.Currentness)
+			}
+			if report.Currentness.AppliedRevision != "main@sha1:"+other {
+				t.Fatalf("lost literal: %+v", report.Currentness)
+			}
+		})
+	}
+}
+
+func TestPromotionReadinessUsesReviewedSelectedAndRunningDigest(t *testing.T) {
+	report := unaffectedReport(t, healthy(t))
+	if got := observe.PromotionReadiness(report, digest); !got.Ready {
+		t.Fatalf("%+v", got)
+	}
+	if got := observe.PromotionReadiness(report, "sha256:"+strings.Repeat("a", 64)); got.Ready || got.Reason != "reviewed_digest_changed" {
+		t.Fatalf("%+v", got)
+	}
+	for _, state := range []string{observe.StateUnknown, observe.StateFailing, observe.StateSuspended, observe.StateUpdating, observe.StateStopped} {
+		unready := report
+		unready.State.Name = state
+		if got := observe.PromotionReadiness(unready, digest); got.Ready {
+			t.Fatalf("accepted %s", state)
+		}
+	}
+	report.Currentness.State = "unknown"
+	if got := observe.PromotionReadiness(report, digest); got.Ready {
+		t.Fatal("unknown currency accepted")
+	}
+	report.Currentness.State = "applied"
+	report.Live.Running.Digests = []string{}
+	if got := observe.PromotionReadiness(report, digest); got.Ready {
+		t.Fatal("missing running proof accepted")
+	}
+}
+
+func TestExplainRefusesInvalidProofInsteadOfTreatingItAsUnavailable(t *testing.T) {
+	malformed := comparisons()
+	malformed.Comparisons[0].Status = "not-a-status"
+	evidence := healthy(t)
+	evidence.Changes = malformed
+	if _, err := observe.Explain(target(), evidence); err == nil {
+		t.Fatal("malformed proof was not refused")
+	}
+}
+
+func TestPromotionReadinessNeedsTheReviewedDigestRunning(t *testing.T) {
+	report := unaffectedReport(t, healthy(t))
+	report.Live.Running.Digests = []string{"sha256:" + strings.Repeat("a", 64)}
+	if decision := observe.PromotionReadiness(report, digest); decision.Ready || decision.Reason != "reviewed_digest_not_running" {
+		t.Fatalf("%+v", decision)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -90,7 +91,7 @@ func TestBulkCollectionEmptyEnvelopeAndIndividualReportVersion(t *testing.T) {
 			Report                   struct {
 				Kind        string
 				Version     int
-				Currentness observe.Currentness
+				Currentness deliveryrules.Currentness
 			}
 			Inventory json.RawMessage
 		}

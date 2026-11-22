@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
@@ -62,24 +63,24 @@ func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error) 
 // reportDocument is the report's shape on stdout: field order is the document order, and a change to it
 // raises Version.
 type reportDocument struct {
-	Kind         string                `json:"kind"`
-	Version      int                   `json:"version"`
-	Source       string                `json:"source"`
-	ObservedAt   string                `json:"observedAt"`
-	Currentness  Currentness           `json:"currentness"`
-	Live         LiveFacts             `json:"live"`
-	State        stateDocument         `json:"state"`
-	Promotion    PromotionDecision     `json:"promotion"`
-	Verdict      Verdict               `json:"verdict"`
-	Backup       backupDocument        `json:"backup"`
-	Findings     []findingDocument     `json:"findings"`
-	Problems     []problemDocument     `json:"problems"`
-	Routes       []routeDocument       `json:"routes"`
-	Certificates []certificateDocument `json:"certificates"`
-	Assessed     []string              `json:"assessed"`
-	Unassessed   []string              `json:"unassessed"`
-	NotCovered   []string              `json:"notCovered"`
-	Target       targetDocument        `json:"target"`
+	Kind         string                    `json:"kind"`
+	Version      int                       `json:"version"`
+	Source       string                    `json:"source"`
+	ObservedAt   string                    `json:"observedAt"`
+	Currentness  deliveryrules.Currentness `json:"currentness"`
+	Live         LiveFacts                 `json:"live"`
+	State        stateDocument             `json:"state"`
+	Promotion    PromotionDecision         `json:"promotion"`
+	Verdict      Verdict                   `json:"verdict"`
+	Backup       backupDocument            `json:"backup"`
+	Findings     []findingDocument         `json:"findings"`
+	Problems     []problemDocument         `json:"problems"`
+	Routes       []routeDocument           `json:"routes"`
+	Certificates []certificateDocument     `json:"certificates"`
+	Assessed     []string                  `json:"assessed"`
+	Unassessed   []string                  `json:"unassessed"`
+	NotCovered   []string                  `json:"notCovered"`
+	Target       targetDocument            `json:"target"`
 }
 
 // stateDocument is the instance's state and the fact that decided it; a healthy state names none.

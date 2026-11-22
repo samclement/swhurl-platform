@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
@@ -21,7 +22,7 @@ type StatusInputs struct {
 	// RecordsRoot and SharedPaths are repository-relative, not temporary extraction paths.
 	RecordsRoot string
 	SharedPaths []string
-	Changes     *observe.Changes
+	Changes     *deliveryrules.Changes
 	Reader      kube.Reader
 	// Source names the evidence's source, and Now is the clock its time is read from: both are the caller's.
 	Source string

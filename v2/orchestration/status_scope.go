@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
@@ -24,7 +25,7 @@ func statusScopedTarget(inputs StatusInputs) (observe.Target, error) {
 	if err != nil {
 		return observe.Target{}, err
 	}
-	target.Scope = &observe.ChangeScope{
+	target.Scope = &deliveryrules.ChangeScope{
 		Files: append([]string{kernel.AppRecordPath(inputs.RecordsRoot, spec.Application)}, compiled.Registrations...),
 		Folders: []string{kernel.RecordFolder(inputs.RecordsRoot, spec.Application, spec.Environment),
 			kernel.InstanceFolder(spec.Application, spec.Environment, profile)},

@@ -132,22 +132,14 @@ func heartbeatSend(ctx context.Context, ports HeartbeatPorts, notice heartbeat.N
 	return nil
 }
 
-// Where the heartbeat reads the platform topic, each by name, as the dashboards pass reads it. (Copied from
-// orchestration/dashboards.go; the copies merge at slice 5.)
-const (
-	ntfyNamespace   = "console"
-	ntfySecret      = "notification-ntfy"
-	ntfyPlatformKey = "NTFY_PLATFORM_URL"
-)
-
 // heartbeatDestination is the platform topic's address. A Secret that is absent, unreadable or without the key is
 // unavailable; one whose value is empty says so.
 func heartbeatDestination(ctx context.Context, data kube.Data) (string, error) {
-	secret, err := data.GetSecret(ctx, ntfyNamespace, ntfySecret)
+	secret, err := data.GetSecret(ctx, notify.PlatformSecretNamespace, notify.PlatformSecretName)
 	if err != nil || secret == nil {
 		return "", errors.New("notification destination is unavailable")
 	}
-	address, has := secret.Data[ntfyPlatformKey]
+	address, has := secret.Data[notify.PlatformURLKey]
 	if !has {
 		return "", errors.New("notification destination is unavailable")
 	}

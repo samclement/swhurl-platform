@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // EncodeReport is one observation as a versioned JSON document: the target it is about, the evidence's
@@ -139,7 +141,7 @@ type archiveDocument struct {
 	MaxAgeSeconds int64  `json:"maxAgeSeconds,omitempty"`
 }
 
-func archiveDocumentOf(report ArchiveReport) archiveDocument {
+func archiveDocumentOf(report rules.ArchiveReport) archiveDocument {
 	return archiveDocument{State: report.State, Reason: report.Reason, Bucket: report.Bucket, Prefix: report.Prefix,
 		Newest: report.Newest, LastModified: report.LastModified,
 		AgeSeconds: int64(report.Age / time.Second), MaxAgeSeconds: int64(report.MaxAge / time.Second)}

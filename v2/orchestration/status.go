@@ -9,6 +9,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // StatusInputs is one status request: the instance's records and the documents its compilation takes, the commit
@@ -29,7 +30,7 @@ type StatusInputs struct {
 	MaxAge time.Duration
 	// Archive lists the instance's own prefix in the object store, given its namespace; nil when the caller does
 	// not read the archive, which the report then says.
-	Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)
+	Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)
 }
 
 // Status compares the cluster with what the records say should run: it compiles the instance, derives the target

@@ -1,4 +1,6 @@
-package orchestration
+// Package recovery is the recovery capability's use cases: planning a restore from the instance's archives and
+// performing it on the cluster. Its decisions are recovery/rules'; this package reads, sequences and reports.
+package recovery
 
 import (
 	"context"
@@ -10,6 +12,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // A restore's own outcome words. "restored" says the data was replaced; it never says the app runs — that is
@@ -63,7 +66,7 @@ type Cluster struct {
 // different archive from the one the plan verified.
 type RestoreInputs struct {
 	Instance, Release, Profile, Egress []byte
-	Plan                               observe.RestorePlan
+	Plan                               rules.RestorePlan
 	Target                             observe.Target
 	AgeIdentity, ReadURL               string
 	Cluster                            Cluster
@@ -131,7 +134,7 @@ func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error) 
 	if err != nil {
 		return RestoreOutcome{}, err
 	}
-	egress, err := egressOf(inputs.Egress, spec.Application, spec.Environment)
+	egress, err := kernel.InstanceEgress(inputs.Egress, spec.Application, spec.Environment)
 	if err != nil {
 		return RestoreOutcome{}, err
 	}

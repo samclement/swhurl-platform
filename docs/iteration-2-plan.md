@@ -292,6 +292,7 @@ Current working-tree changes must be inspected again before implementation; this
 3. **Make domain and data ownership explicit.** Name the authority for each fact, who may change it, and whether a returned value is owned or shared. Pass the smallest coherent domain inputs an operation needs, not one universal record merely because it already exists. An integration can report missing build evidence; it must not invent release provenance. A bridge can translate legacy settings; it must not become their second source of truth. Resource generation need not depend on source history merely because both currently appear in `ReleaseBundle`.
 4. **Transition iteratively, with honest intermediate semantics.** Early slices may have incomplete release semantics or missing domain models. Deliver useful, explicitly scoped results while those models develop; do not fabricate identities, supply made-up defaults, require a manual parallel catalogue or weaken a complete-release API to make an intermediate step fit. Distinguish not-yet-modelled semantics, unsupported operations, invalid data, absence and failed reads. A preview of known workload facts is not a reconstructed release, migration plan or authorisation to deploy.
 5. **Keep the structure and checks serving those principles.** Prefer the smallest reshape that makes the boundary clearer, with tests for retained behaviour and deliberate changes. Current `kernel` placement and numeric layer rules must not force unrelated domains/orchestration into one package. If a sound boundary needs a rule/API change, propose and explain it, then update code, checks, fixtures and docs together in the approved implementation; do not silently weaken a baseline to get a pass. No rule change is made by this documentation update.
+6. **Navigate by capability; depend by kind** (approved 22 November 2026). The platform's capabilities (the [capability map](#capability-map) below) are the top-level navigation: a behaviour is found by the operator outcome it serves, not by knowing filenames across `kernel`, `observe` and `orchestration`. Pure decisions, orchestration and adapters remain the dependency boundaries, now expressed inside each capability. The test for any move: **given a failed operator outcome, can someone name the owning capability before opening the import graph?** The migration is [§36](#36-capabilities-as-the-main-navigation-approved-22-november-2026).
 
 **Ownership guide** (responsibilities, not a requirement to create one package per row):
 
@@ -313,7 +314,38 @@ entry point → orchestration → pure core functions
                integrations → Git, files, registry, Kubernetes, ...
 ```
 
-This is a responsibility model, and since 26 October 2026 it is also the checked layout: **layer 0** the pure model (`kernel`, `calls`, `observe`), **layer 1** one adapter per dependency (`adapters/files`, `adapters/kube`), **layer 2** the use cases (`orchestration`), **layer 3** the command (`cmd/swhurl-v2`). `orchestration` assembles the inputs a use case needs, calls the kernel's decisions in order, performs the use case's one effect through an adapter, and reports either the result or where it stopped; it parses no arguments, prints nothing, chooses no exit status and holds no mutable state (the `orchestration-wires` rule). A command is then flags, I/O, exit codes and output. Boundaries are still revised only where a use case needs it, not for the numbers' own sake.
+### Capability map
+
+An ownership map, not a directory list: a capability's directory earns a package split only where it holds a real dependency boundary (its pure rules apart from its workflow). Code not yet moved stays where it is and is still owned by the row below.
+
+| Capability | Owns | Code today (until its slice moves it) |
+| --- | --- | --- |
+| apps | App and environment records, instance lifecycle, and the intent to run a selected release | creation, editing, removal and instance records in `kernel` and `orchestration` |
+| delivery | Release identity and selection, staging-to-production promotion, deployment, and the evidence that the requested revision landed | `kernel/promote.go`, `orchestration/{promote,deploy,flux_wait}.go`, the rollout parts of `observe` |
+| provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | compilation and rendering in `kernel`, egress allocation, `policy` |
+| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `calls`, `events`, their rules in `kernel`; provisioning turns them into enforcement |
+| recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
+| health | Operational checks and their verdicts, and the report that assembles them for the operator | `observe/platform*.go`, the verification collectors in `orchestration`, service health checks |
+| notifications | Incident lifecycle, routing, delivery, retry and deduplication | `incident`, `heartbeat`, `notify` and their workflows |
+| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | console code in `cmd/swhurl-v2`, `orchestration/console*.go`, parts of `pages` |
+
+Two ownership decisions matter more than the directory names:
+
+- **Delivery owns "did this release land?"** Health may report that verdict and notifications may act on it; neither re-derives it. A healthy rollback leaves the route available while the requested deployment remains failed, and that distinction has one implementation.
+- **Recovery owns "can we restore this database?"** It decides what makes an archive eligible and what evidence constitutes a successful restore. Health may surface the archive's age and the last restore result by reporting recovery's verdict, never by judging archives itself.
+
+What stays shared: the command (`cmd/swhurl-v2`) remains the one entry point, and the external-system adapters stay together under `adapters/` (`kube`, `git`, `s3`, ...): each has one reason to change and several capabilities use it. Do not recreate `kernel` as a shared model package: a pure type shared between capabilities lives with the capability that owns its meaning, and other pure packages import it through a named exception (`PureDependencies` in `archtest`). Two use-case packages never import each other; a small helper both need (a refusal type, a read's reason) is written in each rather than shared through a third package.
+
+A capability's layout, once its slice has moved it:
+
+```text
+v2/<capability>/          the workflows (layer 2) and the operator-facing results
+v2/<capability>/rules/    its pure decisions (layer 0)
+v2/adapters/<system>/     shared external-system adapters (layer 1)
+v2/cmd/swhurl-v2/         the entry point: flags, wiring and output (layer 3)
+```
+
+The responsibility model above has been the checked layout since 26 October 2026: **layer 0** the pure model (`kernel`, `calls`, `observe`, and each capability's `rules/`), **layer 1** one adapter per dependency (`adapters/files`, `adapters/kube`), **layer 2** the use cases (the packages `Orchestration` lists: `orchestration`, and each moved capability's root, such as `recovery`), **layer 3** the command (`cmd/swhurl-v2`). A package imports only lower layers, except a pure-to-pure edge listed in `PureDependencies`; two use-case packages never import each other. A use-case package assembles the inputs a use case needs, calls the pure decisions in order, performs the use case's one effect through an adapter, and reports either the result or where it stopped; it parses no arguments, prints nothing, chooses no exit status and holds no mutable state (the `orchestration-wires` rule). A command is then flags, I/O, exit codes and output. Boundaries are still revised only where a use case needs it, not for the numbers' own sake.
 
 ### The pure model
 
@@ -596,14 +628,14 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 | Rule | What it enforces |
 | --- | --- |
 | `approved-modules` | v2 imports only the standard library, its own packages and the [approved third-party modules](#third-party-modules), each only from the adapters (and, where listed, the tests) it was approved for; `go.mod` requires exactly those modules at their approved versions, with no `replace`, `exclude` or `tool` directive. Pure packages import standard packages alone (rule `pure`). |
-| `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes ([why](#4-development-layers-and-adapters)). A new package is given its layer in `Layers`. |
+| `layers` | Every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, except that a fake may import the adapter it fakes and a pure package may import another pure package that `PureDependencies` lists for it, the owner of a type or verdict it reports ([why](#capability-map)). Two use-case packages never import each other. A new package is given its layer in `Layers`. |
 | `pure` | Pure packages import only the allowlisted standard packages, print nothing and assign no package variable ([why](#the-pure-model)). Time, identifiers and snapshots are arguments: `time` is allowed for parsing and comparing a *supplied* timestamp, and its clock functions (`time.Now`, `time.Since`, `time.Until`, timers and ticks) are refused by call. |
 | `no-subprocess` | v2 code (not its tests) starts processes only in the SOPS adapter `adapters/sops` (encryption, and local decryption with a key file the operator's command names, [§27](#27-check-secrets-in-go-approved-13-november-2026)), the approved chart-rendering adapter `adapters/helm`, the read-only checkout adapter `adapters/git` and the template-rendering adapter `adapters/copier`, names no `kubectl` or `flux` command anywhere, and imports `syscall` only in `cmd/swhurl-v2`, where it names the SIGTERM a pod is replaced with ([why](#kubernetes-the-api-server-not-kubectl)). SOPS avoids a second implementation of age and its envelope; Helm avoids a second chart engine; Git avoids a second reader of its index and object store; Copier avoids a second template renderer. The Git exception, approved 5 November 2026, is [four fixed reads of one checkout](#the-workstream-check-in-go-approved-5-november-2026), with no write, fetch or general command runner. The Helm exception, approved 4 November 2026, is `helm template` for app-policy checks and, approved 5 November 2026, explicit profile-pinned `helm pull` for the check cache ([contract](#chart-acquisition-approved-5-november-2026)): no cluster reads, install, upgrade, implicit dependency fetching or arbitrary command runner. The Copier exception, approved 9 November 2026, is [one pinned render of a public stack template](#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026), with no credential in its environment or arguments. The checked allowlist admits exactly the four adapter directories, not their fakes or subpackages; boundary tests exercise the fixed Helm and Copier invocations. The signal exception starts nothing: a pod's replacement sends SIGTERM, and the console takes no new job and waits up to 840 seconds for the ones it runs, inside the pod's 900. |
 | `public-api` | The exported API of every library package matches `archtest/api.txt`, so an interface change is a deliberate, reviewed diff. |
 | `budgets` | No function exceeds complexity 10 or 60 lines unless `archtest/budgets.json` lists it with a reason; a listed function may shrink but not grow, and its entry goes once it fits. |
-| `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is `orchestration`, layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |
+| `places` | A package's place matches its layer: layer 0 is listed in `Pure`, layer 1 is under `adapters/`, layer 2 is listed in `Orchestration` (`orchestration` and each capability's use-case package), layer 3 is a `main` package under `cmd/` ([why](#extension-recipes)). |
 | `adapter-complete` | Each adapter `adapters/<name>` follows the [new-adapter recipe](#extension-recipes): it exports an interface, has raw fixtures in `testdata/`, and its fake in `adapters/<name>/<name>test` satisfies each interface and shares one `Contract` suite with the real adapter; only tests import a fake ([why](#fixtures-and-fakes)). |
-| `orchestration-wires` | The use-case layer (`orchestration`) parses no arguments, prints nothing, chooses no exit status and keeps no mutable package state: it assembles, sequences and reports, and the command above it does the rest ([why](#4-development-layers-and-adapters)). |
+| `orchestration-wires` | The use-case layer (the packages `Orchestration` lists) parses no arguments, prints nothing, chooses no exit status and keeps no mutable package state: it assembles, sequences and reports, and the command above it does the rest ([why](#4-development-layers-and-adapters)). |
 | `rules-documented` | This table lists exactly the rules in code, each rule's principle link resolves, and `AGENTS.md` names `make check-v2`. |
 
 **Run** `make check-v2` from the repository root: `gofmt`, `go vet` and `go test` (with the rules) on the pinned toolchain with network access off, in about two seconds. CI runs it in Validate's tooling job, with Go set up from the version in `v2/go.mod`; it is not part of `make check`. A failure prints one line per violation (rule, file and line, what is wrong), then each broken rule's fix and the section explaining why.
@@ -614,7 +646,7 @@ Several structural v2 design rules are checked as code in [`v2/archtest`](../v2/
 
 - Exported API: `go test ./archtest -run TestPublicAPI -update` rewrites `api.txt`. Say why the interface changed.
 - Budgets: `go test ./archtest -run TestBudgets -update` only lowers or removes entries. Adding one is a hand edit with a reason. None is listed: the two phase-1 entries (the CLI's `run` and `ReleaseBundle.validate`) went when those functions were split on 25 October 2026.
-- Layers and pure imports: `Layers`, `Pure` and `PureImports` in `archtest/rules_test.go`.
+- Layers and pure imports: `Layers`, `Pure`, `PureImports`, `PureDependencies` and `Orchestration` in `archtest/rules_test.go`.
 - There is no comment that silences a rule; every exception is an entry in these files.
 
 **Verification (24 October 2026, working tree before commit):** each rule has a test on a small module written to a temporary directory, showing what it catches and what it leaves alone (a parameter that shadows a package variable, a test that starts a process); breaking a check on purpose makes those tests fail. On v2 the code rules pass; two phase-1 functions are over budget and listed. End to end, three runs of pi (Haiku 5.5, a throwaway copy of the repository, the extension loaded with `-e`): an agent asked to add a counter to the kernel got the `pure` failure on its edit, reverted it, re-ran the check and offered compliant alternatives without touching a baseline; a change made through the shell, which the edit hook does not see, was caught when the agent tried to finish, handed back once, and fixed; an agent told never to fix it got two attempts and then a message for the operator, after which the run ended. Not exercised: interactive mode after `/trust`.
@@ -673,7 +705,8 @@ What each kind of change touches, so a change can be checked against it rather t
 | --- | --- | --- |
 | New pure-model package | Declared at layer 0 in `Layers` and listed in `Pure` | `places`, `pure` |
 | New adapter | `adapters/<name>/` at layer 1, as below | `places`, `adapter-complete`; the wiring line by review |
-| New command | `cmd/<name>/` as `package main` at layer 2, declared in `Layers`; wiring only | `places`, `layers` |
+| New command | `cmd/<name>/` as `package main` at layer 3, declared in `Layers`; wiring only | `places`, `layers` |
+| Capability moved out of `kernel`/`observe`/`orchestration` ([§36](#36-capabilities-as-the-main-navigation-approved-22-november-2026)) | `<capability>/` at layer 2, declared in `Layers` and listed in `Orchestration`; `<capability>/rules/` at layer 0, declared and listed in `Pure`; a pure package that reports its verdict gets a `PureDependencies` entry | `places`, `layers`, `pure`, `orchestration-wires` |
 | New exported function or type | `archtest/api.txt`, with the reason in the change | `public-api` |
 | New dependency | The operator's approval first, then an entry in `Modules` | `approved-modules` |
 
@@ -2966,3 +2999,56 @@ code graph aid, the host's connectivity probe and Copier in the console image.
 rendered file beside a record, the routes, a fixture's records, an empty list) and pull requests #113 and #109; a
 deliberately leaked chart secret fails `ClickStackRenderTests`. The image changes, so Validate rebuilds and deploys
 the console; `make verify-platform` then confirms it runs.
+
+## 36. Capabilities as the main navigation (approved 22 November 2026)
+
+**Problem.** v2's top-level packages say what *kind* of code a file is (`kernel` pure, `observe` pure, `orchestration`
+use cases), not *which capability owns it*. A change to promotion starts in `cmd/swhurl-v2`, goes through
+`orchestration` and reaches `kernel`; restore takes the same path and also reaches `observe`. Finding who owns a
+behaviour means knowing filenames across several packages.
+
+**Direction.** [Principle 6](#design-principles) and the [capability map](#capability-map): capabilities become the
+navigation; pure decisions, orchestration and adapters stay the dependency boundaries, inside each capability. One
+capability moves per slice, as a vertical slice through one operator operation, with that operation's flags, output
+and effects unchanged and its existing tests moved with the code they test.
+
+**Slices, in order.** Each is approved and verified alone; the order is by how bounded the operator journey is.
+
+| Slice | Capability | Operation followed through the move | State |
+| --- | --- | --- | --- |
+| 1 | recovery | `swhurl-v2 restore` (`make restore-sqlite`) | code moved, offline; D1 open |
+| 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | proposed |
+| 3 | notifications | incident, heartbeat and notify workflows | proposed |
+| 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | proposed |
+| 5 | connectivity, provisioning, apps, console | split from `kernel` and `orchestration` as their slices need | proposed |
+
+**Slice 1: recovery.**
+
+```text
+v2/recovery/            the restore plan and restore workflows (layer 2), from orchestration/restore.go and the
+                        plan assembly cmd/swhurl-v2/restore.go did itself
+v2/recovery/rules/      archive selection and eligibility, archive metadata, the restore plan's decision and the
+                        backup state vocabulary (layer 0), from observe/{archive,restore}.go with their tests
+v2/adapters/kube, s3    unchanged in place; s3 speaks recovery/rules' archive types
+v2/cmd/swhurl-v2/       restore's flags, reading the operator's files, wiring and output only
+```
+
+- **Stays put.** `kernel/restore.go` (rendering the restore Job and Secret is resource generation: it uses the
+  compiler's own job and pod builders), `datadestroy` (destructive deletion has no recovery reason to move yet), and
+  the backup job's run verdict in `observe/backup.go`, which reads observe's generic evidence types; it reports
+  recovery's state vocabulary and moves when recovery owns a cluster read of its own.
+- **Checks.** `archtest` recognises the new paths: `recovery` is layer 2 and listed in `Orchestration` (the
+  use-case packages, now the source of truth for where layer 2 lives), `recovery/rules` is layer 0 and in `Pure`, and `PureDependencies` names the one pure-to-pure edge this slice needs:
+  `observe` → `recovery/rules`, health reporting recovery's verdict. The pure rule (no clock, no effects) and
+  `orchestration-wires` apply to the new packages unchanged; `recovery` imports no other use-case package.
+- **Acceptance.** `swhurl-v2 restore`'s flags, document, stderr line and cluster effects are unchanged (its command
+  tests pass unmodified); the moved rules' tests pass in `recovery/rules`; `make check-v2` passes; `observe`,
+  `adapters/s3` and `cmd/swhurl-v2` no longer define or decide archive eligibility. The navigation test: a failed
+  `sqlite-backups` check or a `restore: incomplete/...` line points to `recovery/rules` for the contract, its
+  implementation and its tests.
+- **Open decision (D1): one archive verdict.** Today two rules answer "is there a fresh SQLite archive?". Restore
+  and app status (`recovery/rules`) take the newest `*.db.age` by S3's `LastModified`, metadata or not, and refuse
+  it later if its metadata is missing; `verify-platform`'s `sqlite-backups` check (`observe/platform_store.go`)
+  counts an archive only once its `sqlite-<UTC>.json` is beside it, aged by the stamp in its name. Platform
+  verification reuses recovery's verdict only once one rule is chosen; until then both stay, the second named as a
+  duplicate in its own comment.

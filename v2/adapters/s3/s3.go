@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // The refusal: a request this adapter cannot make, which is not evidence about the bucket.
@@ -32,11 +33,11 @@ func refuse(subject, reason string) error { return &Error{RefusedRequest, subjec
 // including a refusal — is evidence; a request it cannot make is an error. Get reports absence as the
 // "not_found" code, so a caller can tell an incomplete upload from a bucket it could not reach.
 type Reader interface {
-	List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
-	Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
+	List(ctx context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error)
+	Get(ctx context.Context, query rules.ArchiveQuery, key string) ([]byte, error)
 	// PresignURL is a time-limited read of one object, for a caller that must hand the read to someone
 	// else — a restore pod — without giving it the bucket credential.
-	PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
+	PresignURL(ctx context.Context, query rules.ArchiveQuery, key string, ttl time.Duration) (string, error)
 }
 
 const (
@@ -50,16 +51,16 @@ const (
 )
 
 // ParseURL reads the s3:// URI the platform profile states: a bucket and the prefix under it.
-func ParseURL(uri string) (observe.ArchiveQuery, error) {
+func ParseURL(uri string) (rules.ArchiveQuery, error) {
 	rest, found := strings.CutPrefix(uri, "s3://")
 	if !found {
-		return observe.ArchiveQuery{}, refuse("uri", "expected_an_s3_uri")
+		return rules.ArchiveQuery{}, refuse("uri", "expected_an_s3_uri")
 	}
 	bucket, prefix, _ := strings.Cut(rest, "/")
 	if bucket == "" {
-		return observe.ArchiveQuery{}, refuse("uri", "expected_a_bucket")
+		return rules.ArchiveQuery{}, refuse("uri", "expected_a_bucket")
 	}
-	return observe.ArchiveQuery{Bucket: bucket, Prefix: prefix}, nil
+	return rules.ArchiveQuery{Bucket: bucket, Prefix: prefix}, nil
 }
 
 // Client lists one bucket prefix in one region, over the TLS client it is given.
@@ -102,9 +103,9 @@ func DiscoverRegion(ctx context.Context, bucket string, client *http.Client) (st
 
 // List follows the prefix's listing, page by page, and returns every object under it. A page the server
 // refuses, or an answer this adapter cannot read, is evidence with a fixed reason.
-func (c Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) {
+func (c Client) List(ctx context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error) {
 	if query.Bucket == "" {
-		return observe.ArchiveList{}, refuse("bucket", "required")
+		return rules.ArchiveList{}, refuse("bucket", "required")
 	}
 	if c.region == "" {
 		region, err := DiscoverRegion(ctx, query.Bucket, c.http)
@@ -114,12 +115,12 @@ func (c Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.A
 		}
 		c.region = region
 	}
-	listed := observe.ArchiveList{Query: query, Status: observe.Present, Objects: []observe.Archive{}}
+	listed := rules.ArchiveList{Query: query, Status: observe.Present, Objects: []rules.Archive{}}
 	token := ""
 	for page := 0; page < maxPages; page++ {
 		objects, next, failed, err := c.page(ctx, query, token)
 		if err != nil {
-			return observe.ArchiveList{}, err
+			return rules.ArchiveList{}, err
 		}
 		if failed != nil {
 			return *failed, nil
@@ -134,8 +135,8 @@ func (c Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.A
 }
 
 // page reads one listing page.
-func (c Client) page(ctx context.Context, query observe.ArchiveQuery, token string) ([]observe.Archive, string,
-	*observe.ArchiveList, error) {
+func (c Client) page(ctx context.Context, query rules.ArchiveQuery, token string) ([]rules.Archive, string,
+	*rules.ArchiveList, error) {
 	request, err := c.request(ctx, query, token)
 	if err != nil {
 		return nil, "", nil, err
@@ -158,10 +159,10 @@ func (c Client) page(ctx context.Context, query observe.ArchiveQuery, token stri
 
 // statusFailure maps a server's status to the reason the report carries. Only a listing that succeeded says
 // anything about the objects, so every other status is a failed read.
-func statusFailure(query observe.ArchiveQuery, status int) (observe.ArchiveList, bool) {
+func statusFailure(query rules.ArchiveQuery, status int) (rules.ArchiveList, bool) {
 	switch status {
 	case http.StatusOK:
-		return observe.ArchiveList{}, false
+		return rules.ArchiveList{}, false
 	case http.StatusForbidden, http.StatusUnauthorized:
 		return unavailable(query, observe.ReasonForbidden), true
 	case http.StatusNotFound:
@@ -171,7 +172,7 @@ func statusFailure(query observe.ArchiveQuery, status int) (observe.ArchiveList,
 }
 
 // readBody bounds one page: a listing bigger than the bound is a response this adapter will not read.
-func readBody(query observe.ArchiveQuery, reader io.Reader) ([]byte, *observe.ArchiveList) {
+func readBody(query rules.ArchiveQuery, reader io.Reader) ([]byte, *rules.ArchiveList) {
 	body, err := io.ReadAll(io.LimitReader(reader, maxBody+1))
 	if err != nil || len(body) > maxBody {
 		failed := unavailable(query, observe.ReasonTooLarge)
@@ -181,7 +182,7 @@ func readBody(query observe.ArchiveQuery, reader io.Reader) ([]byte, *observe.Ar
 }
 
 // parseListing reads one page's S3 answer: its objects, and the token for the next page when it was cut.
-func parseListing(query observe.ArchiveQuery, body []byte) ([]observe.Archive, string, *observe.ArchiveList, error) {
+func parseListing(query rules.ArchiveQuery, body []byte) ([]rules.Archive, string, *rules.ArchiveList, error) {
 	var listing struct {
 		IsTruncated           bool   `xml:"IsTruncated"`
 		NextContinuationToken string `xml:"NextContinuationToken"`
@@ -194,14 +195,14 @@ func parseListing(query observe.ArchiveQuery, body []byte) ([]observe.Archive, s
 		failed := unavailable(query, observe.ReasonMalformed)
 		return nil, "", &failed, nil
 	}
-	objects := make([]observe.Archive, 0, len(listing.Contents))
+	objects := make([]rules.Archive, 0, len(listing.Contents))
 	for _, item := range listing.Contents {
 		modified, err := time.Parse(time.RFC3339, item.LastModified)
 		if err != nil {
 			failed := unavailable(query, observe.ReasonMalformed)
 			return nil, "", &failed, nil
 		}
-		objects = append(objects, observe.Archive{Key: item.Key, LastModified: modified})
+		objects = append(objects, rules.Archive{Key: item.Key, LastModified: modified})
 	}
 	if listing.IsTruncated {
 		return objects, listing.NextContinuationToken, nil, nil
@@ -210,7 +211,7 @@ func parseListing(query observe.ArchiveQuery, body []byte) ([]observe.Archive, s
 }
 
 // request is one signed ListObjectsV2 request for the prefix, or the next page of it.
-func (c Client) request(ctx context.Context, query observe.ArchiveQuery, token string) (*http.Request, error) {
+func (c Client) request(ctx context.Context, query rules.ArchiveQuery, token string) (*http.Request, error) {
 	values := url.Values{"list-type": {"2"}, "prefix": {query.Prefix}}
 	if token != "" {
 		values.Set("continuation-token", token)
@@ -226,7 +227,7 @@ func (c Client) request(ctx context.Context, query observe.ArchiveQuery, token s
 
 // Get reads one object under the prefix, bounded like a listing page. A 404 is the "not_found" code; every
 // other failure is the reason the report would carry.
-func (c Client) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) {
+func (c Client) Get(ctx context.Context, query rules.ArchiveQuery, key string) ([]byte, error) {
 	if query.Bucket == "" || key == "" {
 		return nil, refuse("key", "required")
 	}
@@ -273,7 +274,7 @@ func (c Client) objectRequest(ctx context.Context, bucket, key string) (*http.Re
 // PresignURL signs one GET in the query string, so the holder can read that one object until the URL
 // expires. It is the same credentials and the same canonicalisation as a read, confined to the instance's own
 // prefix like Get, and the expiry is bounded by SigV4's own maximum.
-func (c Client) PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error) {
+func (c Client) PresignURL(ctx context.Context, query rules.ArchiveQuery, key string, ttl time.Duration) (string, error) {
 	if query.Bucket == "" || key == "" {
 		return "", refuse("key", "required")
 	}
@@ -329,8 +330,8 @@ func awsEscapePath(key string) string {
 	return strings.Join(segments, "/")
 }
 
-func unavailable(query observe.ArchiveQuery, reason string) observe.ArchiveList {
-	return observe.ArchiveList{Query: query, Status: observe.Unavailable, Reason: reason}
+func unavailable(query rules.ArchiveQuery, reason string) rules.ArchiveList {
+	return rules.ArchiveList{Query: query, Status: observe.Unavailable, Reason: reason}
 }
 
 // failureReason is the reason an adapter error states, for the evidence a failed read leaves.

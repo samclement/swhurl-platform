@@ -16,6 +16,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // Every object and collection the scope reads is one the adapter states, at the version it states.
@@ -84,7 +85,7 @@ func scopeCluster(t *testing.T) (*kubetest.Fake, PlatformAllInputs) {
 // Data, the issuer, and the registry for each Ready policy.
 func TestPlatformAllReadsEveryCheck(t *testing.T) {
 	fake, inputs := scopeCluster(t)
-	var listed []observe.ArchiveQuery
+	var listed []rules.ArchiveQuery
 	inputs.Objects = func(bucket string) (s3.Reader, error) {
 		store := s3test.New(s3test.Scenario{})
 		return recordingStore{store, &listed}, nil
@@ -124,10 +125,10 @@ func TestPlatformAllReadsEveryCheck(t *testing.T) {
 // recordingStore records each listing an object store is asked for.
 type recordingStore struct {
 	s3.Reader
-	listed *[]observe.ArchiveQuery
+	listed *[]rules.ArchiveQuery
 }
 
-func (r recordingStore) List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) {
+func (r recordingStore) List(ctx context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error) {
 	*r.listed = append(*r.listed, query)
 	return r.Reader.List(ctx, query)
 }

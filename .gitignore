@@ -28,3 +28,6 @@ todo.md
 
 # A local `go build ./cmd/swhurl-v2` in v2/ (make targets build into a throwaway folder)
 /v2/swhurl-v2
+
+# Worktrees of durable subagents (agent CLI conductor)
+.dsa/

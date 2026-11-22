@@ -23,6 +23,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // The revision the observation expects Flux to have applied, and the digest the compiled prod release
@@ -428,7 +429,7 @@ func TestStatusReportsTheRunningInstance(t *testing.T) {
 		t.Fatalf("routes %v, certificates %v, problems %v", report["routes"], report["certificates"], report["problems"])
 	}
 	// A stateless instance renders no backup, and the report says so rather than leaving a gap.
-	if backup := report["backup"].(map[string]any); backup["state"] != observe.BackupNotApplicable {
+	if backup := report["backup"].(map[string]any); backup["state"] != rules.BackupNotApplicable {
 		t.Fatalf("backup %v", backup)
 	}
 	// The four reads went to the four stated paths, with the token, and the list asked for this
@@ -564,7 +565,7 @@ func TestStatusReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	}
 	report := document(t, stdout)
 	backup := report["backup"].(map[string]any)
-	if backup["state"] != observe.BackupCurrent || backup["reason"] != nil {
+	if backup["state"] != rules.BackupCurrent || backup["reason"] != nil {
 		t.Fatalf("backup %v", backup)
 	}
 	target := report["target"].(map[string]any)["backup"].(map[string]any)
@@ -583,7 +584,7 @@ func TestStatusReportsTheBackupOfADatabaseInstance(t *testing.T) {
 		t.Fatalf("state %v", report["state"])
 	}
 	// Without --archive the object store is not read, and the report says so rather than implying it was.
-	if archive := backup["archive"].(map[string]any); archive["state"] != observe.BackupNotAssessed ||
+	if archive := backup["archive"].(map[string]any); archive["state"] != rules.BackupNotAssessed ||
 		archive["reason"] != observe.NotRead {
 		t.Fatalf("archive %v", archive)
 	}
@@ -594,7 +595,7 @@ func TestStatusReportsTheBackupOfADatabaseInstance(t *testing.T) {
 	}
 	report = document(t, stdout)
 	backup = report["backup"].(map[string]any)
-	if backup["state"] != observe.BackupStale || backup["reason"] != observe.ReasonTooOld {
+	if backup["state"] != rules.BackupStale || backup["reason"] != rules.ReasonTooOld {
 		t.Fatalf("one hour: %v", backup)
 	}
 	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
@@ -621,10 +622,10 @@ func TestStatusReadsTheArchiveWhenAsked(t *testing.T) {
 	server := api.serve(t)
 	prefix := "app-sqlite/demo-orders-staging/"
 	snapshot := s3test.Scenario{
-		Query: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
-		Objects: []observe.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
+		Query: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
+		Objects: []rules.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
 			LastModified: time.Now().UTC().Add(-2 * time.Hour)}},
-		Forbidden: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/refused/"},
+		Forbidden: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/refused/"},
 	}
 	fake := s3test.New(snapshot)
 	args := statusArgsOf(t, kubeconfig(t, server), "sqlite.json", "r43.json",
@@ -635,7 +636,7 @@ func TestStatusReadsTheArchiveWhenAsked(t *testing.T) {
 	}
 	report := document(t, stdout)
 	archive := report["backup"].(map[string]any)["archive"].(map[string]any)
-	if archive["state"] != observe.BackupCurrent || archive["reason"] != nil {
+	if archive["state"] != rules.BackupCurrent || archive["reason"] != nil {
 		t.Fatalf("archive %v", archive)
 	}
 	if archive["newest"] != prefix+"sqlite-20261026T071500Z.db.age" || archive["prefix"] != prefix {
@@ -665,7 +666,7 @@ func TestStatusWithoutArchiveOrCredentials(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	archive := document(t, stdout)["backup"].(map[string]any)["archive"].(map[string]any)
-	if archive["state"] != observe.BackupNotAssessed || archive["reason"] != observe.NotRead {
+	if archive["state"] != rules.BackupNotAssessed || archive["reason"] != observe.NotRead {
 		t.Fatalf("archive %v", archive)
 	}
 	// The operator's own credentials come from the environment; without them the read is refused, and the

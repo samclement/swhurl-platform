@@ -14,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // restoreScenario is the bucket a restore plan reads: one archive two hours old, its metadata, and the keys
@@ -22,8 +23,8 @@ func restoreScenario(t *testing.T, metadataKey, metadata string) s3test.Scenario
 	t.Helper()
 	prefix := "app-sqlite/demo-orders-staging/"
 	return s3test.Scenario{
-		Query: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
-		Objects: []observe.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
+		Query: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: prefix},
+		Objects: []rules.Archive{{Key: prefix + "sqlite-20261026T071500Z.db.age",
 			LastModified: time.Now().UTC().Add(-2 * time.Hour)},
 			{Key: prefix + "sqlite-20261025T035800Z.db.age", LastModified: time.Now().UTC().Add(-30 * time.Hour)}},
 		Key:     prefix + metadataKey,
@@ -75,7 +76,7 @@ func TestRestorePlanForAVerifiableArchive(t *testing.T) {
 		t.Fatalf("the action block of a plan is %v", action)
 	}
 	plan := report["plan"].(map[string]any)
-	if plan["state"] != observe.RestoreReady || plan["reason"] != nil {
+	if plan["state"] != rules.RestoreReady || plan["reason"] != nil {
 		t.Fatalf("plan %v", plan)
 	}
 	archive := plan["archive"].(map[string]any)
@@ -95,7 +96,7 @@ func TestRestorePlanForAVerifiableArchive(t *testing.T) {
 		t.Fatalf("instance %v", instance)
 	}
 	if observed := report["observation"].(map[string]any); observed["verdict"] != "running" ||
-		observed["archive"] != observe.BackupCurrent {
+		observed["archive"] != rules.BackupCurrent {
 		t.Fatalf("observation %v", observed)
 	}
 	steps := report["steps"].([]any)
@@ -139,10 +140,10 @@ func TestRestoreRefusesWhatItCannotVerify(t *testing.T) {
 		reason   string
 	}{
 		{"no metadata", restoreScenario(t, "elsewhere.json", readyMetadata), nil,
-			observe.RestoreIncomplete, observe.ReasonMetadataAbsent},
+			rules.RestoreIncomplete, rules.ReasonMetadataAbsent},
 		{"chosen too old", restoreScenario(t, "sqlite-20261026T071500Z.json", readyMetadata),
 			[]string{"--from", "app-sqlite/demo-orders-staging/sqlite-20261025T035800Z.db.age"},
-			observe.RestoreStale, observe.ReasonNotRestorableStale},
+			rules.RestoreStale, rules.ReasonNotRestorableStale},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			args := restoreArgs(t, kubeconfig(t, server), tt.args...)

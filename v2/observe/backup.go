@@ -2,32 +2,8 @@ package observe
 
 import (
 	"time"
-)
 
-// An instance's protection has its own answer, beside the running verdict and never inside it: an instance
-// can run while its backups are stale, and its job can be current for an instance that is not running.
-const (
-	BackupCurrent       = "current"
-	BackupStale         = "stale"
-	BackupFailing       = "failing"
-	BackupSuspended     = "suspended"
-	BackupAbsent        = "absent"
-	BackupUnavailable   = "unavailable"
-	BackupNotAssessed   = "not_assessed"
-	BackupNotApplicable = "not_applicable"
-)
-
-// The backup reasons. A positive state carries none.
-const (
-	ReasonNoRuns       = "no_runs"
-	ReasonNoSuccess    = "no_successful_run"
-	ReasonTooOld       = "last_success_too_old"
-	ReasonRunFailed    = "last_run_failed"
-	ReasonRunsDown     = "runs_unavailable"
-	ReasonNoOwner      = "no_owner_job"
-	ReasonMaxAge       = "max_age_required"
-	ReasonUnexpected   = "unexpected_backup"
-	ReasonObservedTime = "observed_at"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // A run's own verdict, as the Job's conditions state it.
@@ -55,7 +31,7 @@ type BackupEvidence struct {
 	Pods    List
 	Run     *Read
 	// Archive is the object store's listing for the instance's prefix, or the read the caller did not make.
-	Archive *ArchiveList
+	Archive *rules.ArchiveList
 	MaxAge  time.Duration
 }
 
@@ -70,7 +46,7 @@ type BackupReport struct {
 	MaxAge          time.Duration
 	NewestRun       *RunReport
 	// Archive is the object store's own answer, beside the job's and never folded into it.
-	Archive ArchiveReport
+	Archive rules.ArchiveReport
 }
 
 // RunReport is the newest run's own facts. Outcome is the Job's verdict, not this layer's: a run that
@@ -127,19 +103,19 @@ func NewestRun(items [][]byte) (string, bool, error) {
 func backupOf(target Target, evidence Evidence) (BackupReport, error) {
 	if target.Backup == nil {
 		if evidence.Backup != nil {
-			return BackupReport{}, invalid("evidence", ReasonUnexpected)
+			return BackupReport{}, invalid("evidence", rules.ReasonUnexpected)
 		}
-		return BackupReport{State: BackupNotApplicable, Archive: ArchiveReport{State: BackupNotApplicable}}, nil
+		return BackupReport{State: rules.BackupNotApplicable, Archive: rules.ArchiveReport{State: rules.BackupNotApplicable}}, nil
 	}
 	if evidence.Backup == nil {
-		return BackupReport{State: BackupNotAssessed, Reason: NotRead, Schedule: target.Backup.Schedule,
-			Archive: ArchiveReport{State: BackupNotAssessed, Reason: NotRead}}, nil
+		return BackupReport{State: rules.BackupNotAssessed, Reason: NotRead, Schedule: target.Backup.Schedule,
+			Archive: rules.ArchiveReport{State: rules.BackupNotAssessed, Reason: NotRead}}, nil
 	}
 	report := BackupReport{Schedule: target.Backup.Schedule, MaxAge: evidence.Backup.MaxAge}
 	if report.MaxAge <= 0 {
-		return BackupReport{}, invalid("backup", ReasonMaxAge)
+		return BackupReport{}, invalid("backup", rules.ReasonMaxAge)
 	}
-	now, err := timestamp(evidence.ObservedAt, ReasonObservedTime)
+	now, err := timestamp(evidence.ObservedAt, rules.ReasonObservedTime)
 	if err != nil {
 		return BackupReport{}, err
 	}
@@ -164,11 +140,11 @@ func cronJobState(read Read, report *BackupReport) (string, string, error) {
 	switch read.Status {
 	case Present:
 	case Absent:
-		return BackupAbsent, ReasonNotFound, nil
+		return rules.BackupAbsent, ReasonNotFound, nil
 	case Unavailable:
-		return BackupUnavailable, read.Reason, nil
+		return rules.BackupUnavailable, read.Reason, nil
 	default:
-		return BackupNotAssessed, NotRead, nil
+		return rules.BackupNotAssessed, NotRead, nil
 	}
 	var document struct {
 		Spec struct {
@@ -196,7 +172,7 @@ func cronJobState(read Read, report *BackupReport) (string, string, error) {
 		*stated.into = stated.value
 	}
 	if document.Spec.Suspend {
-		return BackupSuspended, ReasonSuspended, nil
+		return rules.BackupSuspended, ReasonSuspended, nil
 	}
 	return "", "", nil
 }
@@ -207,15 +183,15 @@ func runState(backup *BackupEvidence, report *BackupReport, now time.Time) (stri
 	switch backup.Pods.Status {
 	case Present:
 	case Unavailable:
-		return BackupUnavailable, reasonOf(backup.Pods.Reason), nil
+		return rules.BackupUnavailable, reasonOf(backup.Pods.Reason), nil
 	default:
-		return BackupNotAssessed, NotRead, nil
+		return rules.BackupNotAssessed, NotRead, nil
 	}
 	if len(backup.Pods.Items) == 0 {
-		return BackupStale, ReasonNoRuns, nil
+		return rules.BackupStale, rules.ReasonNoRuns, nil
 	}
 	if backup.Run == nil {
-		return BackupNotAssessed, ReasonNoOwner, nil
+		return rules.BackupNotAssessed, rules.ReasonNoOwner, nil
 	}
 	switch backup.Run.Status {
 	case Present:
@@ -224,9 +200,9 @@ func runState(backup *BackupEvidence, report *BackupReport, now time.Time) (stri
 		// age, but nothing is claimed about the last run.
 		return successState(report, now)
 	case Unavailable:
-		return BackupUnavailable, reasonOf(backup.Run.Reason), nil
+		return rules.BackupUnavailable, reasonOf(backup.Run.Reason), nil
 	default:
-		return BackupNotAssessed, NotRead, nil
+		return rules.BackupNotAssessed, NotRead, nil
 	}
 	run, err := runOf(backup.Run.Object)
 	if err != nil {
@@ -234,7 +210,7 @@ func runState(backup *BackupEvidence, report *BackupReport, now time.Time) (stri
 	}
 	report.NewestRun = run.report()
 	if run.outcome() == RunFailed {
-		return BackupFailing, ReasonRunFailed, nil
+		return rules.BackupFailing, rules.ReasonRunFailed, nil
 	}
 	return successState(report, now)
 }
@@ -247,22 +223,22 @@ func successState(report *BackupReport, now time.Time) (string, string, error) {
 		succeeded = report.NewestRun.CompletedAt
 	}
 	if succeeded == "" {
-		return BackupStale, ReasonNoSuccess, nil
+		return rules.BackupStale, rules.ReasonNoSuccess, nil
 	}
 	at, err := timestamp(succeeded, "backup")
 	if err != nil {
 		return "", "", err
 	}
 	if now.Sub(at) > report.MaxAge {
-		return BackupStale, ReasonTooOld, nil
+		return rules.BackupStale, rules.ReasonTooOld, nil
 	}
-	return BackupCurrent, "", nil
+	return rules.BackupCurrent, "", nil
 }
 
 // reasonOf is a read's own reason, or the one this layer states when the read gave none.
 func reasonOf(reason string) string {
 	if reason == "" {
-		return ReasonRunsDown
+		return rules.ReasonRunsDown
 	}
 	return reason
 }
@@ -332,4 +308,13 @@ func timestamp(value, field string) (time.Time, error) {
 		return time.Time{}, invalid(field, ReasonMalformed)
 	}
 	return at, nil
+}
+
+// archiveOf is the object store's answer about the instance's newest archive, decided by recovery: this layer only
+// says whether a listing was supplied.
+func archiveOf(target Target, evidence Evidence, now time.Time) (rules.ArchiveReport, error) {
+	if evidence.Backup.Archive == nil {
+		return rules.ArchiveReport{State: rules.BackupNotAssessed, Reason: NotRead}, nil
+	}
+	return rules.InstanceArchive(*evidence.Backup.Archive, target.Namespace, evidence.Backup.MaxAge, now)
 }

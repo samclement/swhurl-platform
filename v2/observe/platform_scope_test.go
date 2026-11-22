@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // The platform scope's checks, case by case: each table names the evidence that changes from a healthy platform's and
@@ -42,8 +44,8 @@ const readyStatus = `"status":{"conditions":[{"type":"Ready","status":"True"}]}`
 
 func healthyScope() ScopeEvidence {
 	backupStamp := platformNow.Add(-time.Hour).Format("20060102T150405Z")
-	listing := func(prefix, name, suffix string) ArchiveList {
-		return ArchiveList{Status: Present, Objects: []Archive{{Key: prefix + name + "-" + backupStamp + suffix},
+	listing := func(prefix, name, suffix string) rules.ArchiveList {
+		return rules.ArchiveList{Status: Present, Objects: []rules.Archive{{Key: prefix + name + "-" + backupStamp + suffix},
 			{Key: prefix + name + "-" + backupStamp + ".json"}}}
 	}
 	push, images, tokens := healthyGitHub()
@@ -79,7 +81,7 @@ func healthyScope() ScopeEvidence {
 			Secrets: []string{"platform"}, Owners: map[string][]string{"demo": {"hello"}}},
 		Backups: MongoBackupEvidence{Job: presentRead(PlatformMongoBackup, mongoJob("s3://bucket-a/clickstack-mongodb/")),
 			Listing: listing("clickstack-mongodb/", "clickstack-mongodb", ".archive.gz.age")},
-		Databases: DatabaseEvidence{Location: ArchiveQuery{Bucket: "bucket-a", Prefix: "app-sqlite/"},
+		Databases: DatabaseEvidence{Location: rules.ArchiveQuery{Bucket: "bucket-a", Prefix: "app-sqlite/"},
 			Databases: []DatabaseBackup{{"hello-prod", listing("app-sqlite/hello-prod/", "sqlite", ".db.age")}}},
 		Console:     ConsoleEvidence{Jobs: true, Tag: "src-abc"},
 		Flux:        healthyFlux(),
@@ -354,10 +356,10 @@ func TestChannels(t *testing.T) {
 func TestMongoBackups(t *testing.T) {
 	old := platformNow.Add(-33 * time.Hour).Format("20060102T150405Z")
 	newer := platformNow.Add(-8 * time.Hour).Format("20060102T150405Z")
-	listed := func(names ...string) ArchiveList {
-		list := ArchiveList{Status: Present}
+	listed := func(names ...string) rules.ArchiveList {
+		list := rules.ArchiveList{Status: Present}
 		for _, name := range names {
-			list.Objects = append(list.Objects, Archive{Key: "clickstack-mongodb/clickstack-mongodb-" + name})
+			list.Objects = append(list.Objects, rules.Archive{Key: "clickstack-mongodb/clickstack-mongodb-" + name})
 		}
 		return list
 	}
@@ -370,7 +372,9 @@ func TestMongoBackups(t *testing.T) {
 		{"an archive without its metadata does not count", func(s *ScopeEvidence) {
 			s.Backups.Listing = listed(newer+".archive.gz.age", old+".archive.gz.age", old+".json")
 		}, CheckBad, "is 33 h old"},
-		{"an unlistable prefix fails", func(s *ScopeEvidence) { s.Backups.Listing = ArchiveList{Status: Unavailable, Reason: ReasonForbidden} },
+		{"an unlistable prefix fails", func(s *ScopeEvidence) {
+			s.Backups.Listing = rules.ArchiveList{Status: Unavailable, Reason: ReasonForbidden}
+		},
 			CheckBad, "cannot list backups in s3://bucket-a/clickstack-mongodb/: forbidden"},
 		{"a tighter limit fails", func(s *ScopeEvidence) {
 			s.MaxAge = 6 * time.Hour
@@ -390,7 +394,7 @@ func TestMongoBackups(t *testing.T) {
 func TestSQLiteBackups(t *testing.T) {
 	runScopeCases(t, "sqlite-backups", []scopeCase{
 		{"a fresh backup passes", unchanged, CheckOK, "hello-prod: newest SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ is 1.0 h old"},
-		{"no backup fails", func(s *ScopeEvidence) { s.Databases.Databases[0].Listing = ArchiveList{Status: Present} },
+		{"no backup fails", func(s *ScopeEvidence) { s.Databases.Databases[0].Listing = rules.ArchiveList{Status: Present} },
 			CheckBad, "hello-prod: no SQLite backup in s3://bucket-a/app-sqlite/hello-prod/ (run: make backup-sqlite)"},
 		{"no credentials is not supplied", func(s *ScopeEvidence) { s.Credentials = false },
 			CheckBad, "hello-prod: cannot list backups in s3://bucket-a/app-sqlite/hello-prod/: AWS credentials not supplied"},
@@ -433,23 +437,18 @@ func TestBackupNames(t *testing.T) {
 	present := map[string]bool{"sqlite-20260929T033000Z.db.age": true, "sqlite-20260929T033000Z.json": true,
 		"sqlite-20260930T033000Z.db.age": true, "other-20261001T033000Z.db.age": true, "other-20261001T033000Z.json": true,
 		"sqlite-2026.db.age": true}
-	taken, found := set.newest(func() []Archive {
-		objects := []Archive{}
+	taken, found := set.newest(func() []rules.Archive {
+		objects := []rules.Archive{}
 		for name := range present {
-			objects = append(objects, Archive{Key: "p/" + name})
+			objects = append(objects, rules.Archive{Key: "p/" + name})
 		}
-		return append(objects, Archive{Key: "elsewhere/sqlite-20261002T033000Z.db.age"})
+		return append(objects, rules.Archive{Key: "elsewhere/sqlite-20261002T033000Z.db.age"})
 	}(), "p/")
 	if !found || taken != time.Date(2026, 9, 29, 3, 30, 0, 0, time.UTC) {
 		t.Fatalf("%v %v", taken, found)
 	}
-	if _, found := set.newest([]Archive{{Key: "p/sqlite-20260929T033000Z.json"}, {Key: "p/notes.txt"}}, "p/"); found {
+	if _, found := set.newest([]rules.Archive{{Key: "p/sqlite-20260929T033000Z.json"}, {Key: "p/notes.txt"}}, "p/"); found {
 		t.Fatal("a metadata file alone is a backup")
-	}
-	for uri, ok := range map[string]bool{"s3://bucket/p/": true, "s3://bucket/": true, "s3://bucket/p": false, "bucket/p/": false, "s3:///p/": false} {
-		if _, found := BackupLocation(uri); found != ok {
-			t.Errorf("%s: %v", uri, found)
-		}
 	}
 }
 

@@ -435,26 +435,26 @@ adapters/route: type Answer struct {Status int Location string}
 adapters/route: type Error struct {Code, Subject, Reason string}
 adapters/route: type Prober interface {Get(ctx context.Context, address string) (Answer, error)}
 adapters/route: type Routes struct {}
-adapters/s3/s3test: func (*Fake) Get(_ context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
-adapters/s3/s3test: func (*Fake) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
-adapters/s3/s3test: func (*Fake) PresignURL(_ context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
+adapters/s3/s3test: func (*Fake) Get(_ context.Context, query rules.ArchiveQuery, key string) ([]byte, error)
+adapters/s3/s3test: func (*Fake) List(_ context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error)
+adapters/s3/s3test: func (*Fake) PresignURL(_ context.Context, query rules.ArchiveQuery, key string, ttl time.Duration) (string, error)
 adapters/s3/s3test: func Contract(t *testing.T, scenario Scenario, open func(*testing.T, Scenario) s3.Reader)
 adapters/s3/s3test: func New(scenario Scenario) *Fake
-adapters/s3/s3test: type Fake struct {Scenario Scenario Lists []observe.ArchiveQuery Gets []string Presigns []string Refuse error}
-adapters/s3/s3test: type Scenario struct {Query observe.ArchiveQuery Objects []observe.Archive Forbidden observe.ArchiveQuery Empty observe.ArchiveQuery Key, Body, Missing string}
+adapters/s3/s3test: type Fake struct {Scenario Scenario Lists []rules.ArchiveQuery Gets []string Presigns []string Refuse error}
+adapters/s3/s3test: type Scenario struct {Query rules.ArchiveQuery Objects []rules.Archive Forbidden rules.ArchiveQuery Empty rules.ArchiveQuery Key, Body, Missing string}
 adapters/s3: const MaxPresignTTL = 7 * 24 * time.Hour
 adapters/s3: const RefusedRequest = "refused_request"
 adapters/s3: func (*Error) Error() string
-adapters/s3: func (Client) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error)
-adapters/s3: func (Client) List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error)
-adapters/s3: func (Client) PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)
+adapters/s3: func (Client) Get(ctx context.Context, query rules.ArchiveQuery, key string) ([]byte, error)
+adapters/s3: func (Client) List(ctx context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error)
+adapters/s3: func (Client) PresignURL(ctx context.Context, query rules.ArchiveQuery, key string, ttl time.Duration) (string, error)
 adapters/s3: func DiscoverRegion(ctx context.Context, bucket string, client *http.Client) (string, error)
 adapters/s3: func New(region string, credentials Credentials, client *http.Client) Reader
-adapters/s3: func ParseURL(uri string) (observe.ArchiveQuery, error)
+adapters/s3: func ParseURL(uri string) (rules.ArchiveQuery, error)
 adapters/s3: type Client struct {}
 adapters/s3: type Credentials struct {AccessKey, SecretKey, SessionToken string}
 adapters/s3: type Error struct {Code, Subject, Reason string}
-adapters/s3: type Reader interface {List(ctx context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) Get(ctx context.Context, query observe.ArchiveQuery, key string) ([]byte, error) // PresignURL is a time-limited read of one object, for a caller that must hand the read to someone // else — a restore pod — without giving it the bucket credential. PresignURL(ctx context.Context, query observe.ArchiveQuery, key string, ttl time.Duration) (string, error)}
+adapters/s3: type Reader interface {List(ctx context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error) Get(ctx context.Context, query rules.ArchiveQuery, key string) ([]byte, error) // PresignURL is a time-limited read of one object, for a caller that must hand the read to someone // else — a restore pod — without giving it the bucket credential. PresignURL(ctx context.Context, query rules.ArchiveQuery, key string, ttl time.Duration) (string, error)}
 adapters/sops/sopstest: func (*Decrypter) Decrypt(path, keyFile string) ([]byte, error)
 adapters/sops/sopstest: func (*Fake) Encrypt(document []byte, recipient string) ([]byte, error)
 adapters/sops/sopstest: func Contract(t *testing.T, open func(*testing.T) sops.Encrypter, document []byte, recipient string)
@@ -837,6 +837,7 @@ kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
+kernel: func InstanceEgress(document []byte, application, environment string) (*Egress, error)
 kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
 kernel: func MergeDeclarations(current, adds, drops []string) []string
 kernel: func NamespaceOf(application, environment string) string
@@ -1094,14 +1095,6 @@ observe: const Absent = "absent"
 observe: const AppLabel = "platform.swhurl.com/app"
 observe: const Applied = "applied"
 observe: const AsIntended = "as_intended"
-observe: const BackupAbsent = "absent"
-observe: const BackupCurrent = "current"
-observe: const BackupFailing = "failing"
-observe: const BackupNotApplicable = "not_applicable"
-observe: const BackupNotAssessed = "not_assessed"
-observe: const BackupStale = "stale"
-observe: const BackupSuspended = "suspended"
-observe: const BackupUnavailable = "unavailable"
 observe: const CheckBad CheckLevel = "bad"
 observe: const CheckOK CheckLevel = "ok"
 observe: const CheckWarn CheckLevel = "warn"
@@ -1130,52 +1123,31 @@ observe: const PlatformKind = "v2-platform-checks"
 observe: const PlatformVersion = 1
 observe: const Present = "present"
 observe: const Ready = "ready"
-observe: const ReasonAnotherInstance = "metadata_names_another_instance"
-observe: const ReasonArchiveMissing = "chosen_archive_absent"
-observe: const ReasonArchiveOld = "last_archive_too_old"
-observe: const ReasonConfined = "not_confined_to_the_instance"
 observe: const ReasonContainers = "container_not_ready"
 observe: const ReasonDigest = "digest"
 observe: const ReasonFailed = "condition_failed"
 observe: const ReasonForbidden = "forbidden"
 observe: const ReasonIncomplete = "incomplete_list"
 observe: const ReasonMalformed = "malformed"
-observe: const ReasonMaxAge = "max_age_required"
-observe: const ReasonMetadataAbsent = "archive_metadata_absent"
-observe: const ReasonMetadataDown = "archive_metadata_unavailable"
-observe: const ReasonMetadataMalformed = "archive_metadata_malformed"
-observe: const ReasonNoArchive = "no_archive"
-observe: const ReasonNoChecksum = "metadata_has_no_checksum"
 observe: const ReasonNoCondition = "condition_absent"
 observe: const ReasonNoContainer = "container_absent"
-observe: const ReasonNoOwner = "no_owner_job"
-observe: const ReasonNoPlainChecksum = "metadata_has_no_plain_checksum"
 observe: const ReasonNoPods = "no_pods"
 observe: const ReasonNoReplicas = "no_replicas_intended"
-observe: const ReasonNoRuns = "no_runs"
-observe: const ReasonNoSuccess = "no_successful_run"
-observe: const ReasonNoTables = "metadata_has_no_table_count"
 observe: const ReasonNotAppliedRev = "revision_not_applied"
 observe: const ReasonNotAvailable = "condition_not_available"
 observe: const ReasonNotFound = "not_found"
 observe: const ReasonNotPulled = "not_pulled"
-observe: const ReasonNotRestorableStale = "archive_older_than_the_threshold"
 observe: const ReasonNotSupplied = "revision_not_supplied"
 observe: const ReasonNotTrue = "condition_not_ready"
-observe: const ReasonObservedTime = "observed_at"
 observe: const ReasonPodsDown = "pods_unavailable"
 observe: const ReasonReplicas = "available_replicas"
 observe: const ReasonRevisionShape = "unrecognised_revision"
-observe: const ReasonRunFailed = "last_run_failed"
-observe: const ReasonRunsDown = "runs_unavailable"
 observe: const ReasonStale = "status_stale"
 observe: const ReasonStatus = "status"
 observe: const ReasonSuspended = "suspended"
 observe: const ReasonTimedOut = "timed_out"
 observe: const ReasonTooLarge = "response_too_large"
-observe: const ReasonTooOld = "last_success_too_old"
 observe: const ReasonTransport = "transport"
-observe: const ReasonUnexpected = "unexpected_backup"
 observe: const ReasonUnitDown = "unit_unavailable"
 observe: const ReasonUnitGone = "unit_absent"
 observe: const ReasonUnpinnedPod = "unpinned_pod_image"
@@ -1185,11 +1157,6 @@ observe: const Reconciled = "reconciled"
 observe: const RemovedRelease = "release"
 observe: const RemovedUnit = "unit"
 observe: const RemovedUnitAndRelease = "unit_and_release"
-observe: const RestoreIncomplete = "incomplete"
-observe: const RestoreNoArchive = "no_archive"
-observe: const RestoreReady = "ready"
-observe: const RestoreStale = "stale"
-observe: const RestoreUnavailable = "unavailable"
 observe: const RunComplete = "complete"
 observe: const RunFailed = "failed"
 observe: const RunRunning = "running"
@@ -1214,10 +1181,7 @@ observe: func (CompiledInstance) Namespace() string
 observe: func (FluxSettings) Controllers() []string
 observe: func (ImagePolicy) Ready() bool
 observe: func (PlatformReport) Passed() bool
-observe: func (RestorePlan) Ready() bool
-observe: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
-observe: func BackupJobLocation(job Read) (ArchiveQuery, bool)
-observe: func BackupLocation(uri string) (ArchiveQuery, bool)
+observe: func BackupJobLocation(job Read) (rules.ArchiveQuery, bool)
 observe: func BackupTargetOf(cronJob []byte) (BackupTarget, error)
 observe: func BulkPlan(targets []Target) []ListRequest
 observe: func ClickStackPod(pods List) string
@@ -1249,22 +1213,15 @@ observe: func PlatformChecks(e PlatformEvidence) []PlatformCheck
 observe: func PlatformScopeChecks(e PlatformEvidence, s ScopeEvidence) []PlatformCheck
 observe: func PlatformText(r PlatformReport) string
 observe: func PromotionReadiness(report Report, reviewedDigest string) PromotionDecision
-observe: func RestoreOf(input RestoreInput) RestorePlan
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
-observe: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 observe: func StateOf(report Report) State
 observe: func SystemLogTTL(output []byte, failed bool) PlatformEntry
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
 observe: func TelemetryTTL(output []byte, failed bool) PlatformEntry
 observe: func UnitRef(unit []byte) (Ref, error)
 observe: func WebhookHost(domain string) (string, string)
-observe: type Archive struct {Key string LastModified time.Time}
-observe: type ArchiveList struct {Query ArchiveQuery Status string Reason string Objects []Archive}
-observe: type ArchiveMetadata struct {SHA256, PlainSHA256 string Tables int32 Source string}
-observe: type ArchiveQuery struct {Bucket, Prefix string}
-observe: type ArchiveReport struct {State string Reason string Bucket string Prefix string Newest string LastModified string Age time.Duration MaxAge time.Duration}
-observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *ArchiveList MaxAge time.Duration}
-observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive ArchiveReport}
+observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *rules.ArchiveList MaxAge time.Duration}
+observe: type BackupReport struct {State string Reason string Schedule string LastScheduledAt string LastSucceededAt string MaxAge time.Duration NewestRun *RunReport Archive rules.ArchiveReport}
 observe: type BackupTarget struct {CronJob Ref Pods Ref Selector string Schedule string}
 observe: type Candidates struct {}
 observe: type Certificate struct {Name string Outcome string Reason string}
@@ -1279,8 +1236,8 @@ observe: type Condition struct {Type string `json:"type"` Status string `json:"s
 observe: type ConsoleEvidence struct {Jobs bool JobsUnread string Tag string}
 observe: type ConsoleTokenEvidence struct {Problem string Tokens []TokenEvidence}
 observe: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
-observe: type DatabaseBackup struct {Namespace string Listing ArchiveList}
-observe: type DatabaseEvidence struct {Problem string Location ArchiveQuery Databases []DatabaseBackup}
+observe: type DatabaseBackup struct {Namespace string Listing rules.ArchiveList}
+observe: type DatabaseEvidence struct {Problem string Location rules.ArchiveQuery Databases []DatabaseBackup}
 observe: type EgressEvidence struct {Proxy Read Ports []InstancePort Problem string}
 observe: type Error struct {Field, Reason string}
 observe: type EventEvidence struct {Server, Controller Read Streams, Consumers map[string]List Storage JetStreamStorage}
@@ -1304,7 +1261,7 @@ observe: type JetStreamStorage struct {Output []byte Failed bool}
 observe: type List struct {Ref Ref Selector string Status string Reason string Items [][]byte}
 observe: type ListRequest struct {Ref Ref Selector string}
 observe: type LiveFacts struct {Unit FluxFacts `json:"unit"` Release FluxFacts `json:"release"` Workload WorkloadFacts `json:"workload"` Running RunningFacts `json:"running"`}
-observe: type MongoBackupEvidence struct {Job Read Listing ArchiveList}
+observe: type MongoBackupEvidence struct {Job Read Listing rules.ArchiveList}
 observe: type NewestImage struct {Digest, Problem string}
 observe: type PlatformCatalogueEntry struct {Name, Section, Passes, Reads string}
 observe: type PlatformCheck struct {Name string `json:"name"` Section string `json:"section"` Entries []PlatformEntry `json:"entries"`}
@@ -1319,8 +1276,6 @@ observe: type RegistrationEvidence struct {Readable, TeamExists bool}
 observe: type Removed struct {Application, Environment, Reason string}
 observe: type Report struct {Target Target Currentness Currentness Live LiveFacts Source string ObservedAt string Findings []Finding Verdict Verdict Backup BackupReport Problems []Problem Routes []Route Certificates []Certificate State State Assessed []string Unassessed []string NotCovered []string}
 observe: type RepositoryHooks struct {App, Repository, Problem string Listing HookListing}
-observe: type RestoreInput struct {Namespace, Application string Archive ArchiveReport Metadata *ArchiveMetadata Failure string}
-observe: type RestorePlan struct {State string Reason string Archive ArchiveReport Metadata ArchiveMetadata}
 observe: type RetentionEvidence struct {Telemetry, SystemLogs, Merges PlatformEntry Volume Read}
 observe: type Route struct {Name string Outcome string Reason string Hosts []string}
 observe: type RouteTarget struct {Ingress Ref Certificates []Ref}
@@ -1355,9 +1310,6 @@ observe: var PlatformQuotas = Ref{APIVersion: "v1", Kind: "ResourceQuota"}
 observe: var PlatformStreams = Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
 observe: var PlatformTraefik = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
 observe: var PlatformUnits = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
-orchestration: const AppRunning = "running"
-orchestration: const AppStopped = "stopped"
-orchestration: const AppUnknown = "unknown"
 orchestration: const BootstrapInfo BootstrapLevel = "info"
 orchestration: const BootstrapOK BootstrapLevel = "ok"
 orchestration: const BootstrapWarn BootstrapLevel = "warn"
@@ -1369,17 +1321,8 @@ orchestration: const FluxWaitHeading FluxWaitLevel = "heading"
 orchestration: const FluxWaitInfo FluxWaitLevel = "info"
 orchestration: const FluxWaitOK FluxWaitLevel = "ok"
 orchestration: const FluxWaitWarn FluxWaitLevel = "warn"
-orchestration: const JobComplete = "complete"
-orchestration: const JobFailed = "failed"
-orchestration: const JobRunning = "running"
-orchestration: const JobUnknown = "unknown"
 orchestration: const NoFlagsProblem = "This console has no NATS key (console-nats Secret), so overrides cannot be read or set."
-orchestration: const RestoreFailed = "failed"
-orchestration: const RestoreRestored = "restored"
 orchestration: const StaleDays = 14
-orchestration: const StepDone = "done"
-orchestration: const StepFailed = "failed"
-orchestration: const StepNotRead = "not_read"
 orchestration: func (*ConsoleBundle) Cached(revision string) bool
 orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
 orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
@@ -1456,7 +1399,6 @@ orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, e
 orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
 orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
-orchestration: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
@@ -1545,15 +1487,10 @@ orchestration: type RegistryInputs struct {Registry []byte RegistryPath string A
 orchestration: type RegistryOutcome struct {Team string Action kernel.TeamAction Channel string Written []files.Outcome}
 orchestration: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
 orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
-orchestration: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
-orchestration: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan observe.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}
-orchestration: type RestoreJobOutcome struct {Name string State string Log string LogReason string}
-orchestration: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
-orchestration: type RestoreStep struct {Name string Outcome string Detail string}
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
-orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)}
+orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *observe.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 orchestration: type TeamScenarioInputs struct {Instances []Inputs Environment string Executor kube.Executor}
@@ -1830,6 +1767,82 @@ producer: type Field struct {Name any Value any}
 producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
+recovery/rules: const BackupAbsent = "absent"
+recovery/rules: const BackupCurrent = "current"
+recovery/rules: const BackupFailing = "failing"
+recovery/rules: const BackupNotApplicable = "not_applicable"
+recovery/rules: const BackupNotAssessed = "not_assessed"
+recovery/rules: const BackupStale = "stale"
+recovery/rules: const BackupSuspended = "suspended"
+recovery/rules: const BackupUnavailable = "unavailable"
+recovery/rules: const NotRead = "not_read"
+recovery/rules: const Present = "present"
+recovery/rules: const ReasonAnotherInstance = "metadata_names_another_instance"
+recovery/rules: const ReasonArchiveMissing = "chosen_archive_absent"
+recovery/rules: const ReasonArchiveOld = "last_archive_too_old"
+recovery/rules: const ReasonConfined = "not_confined_to_the_instance"
+recovery/rules: const ReasonMalformed = "malformed"
+recovery/rules: const ReasonMaxAge = "max_age_required"
+recovery/rules: const ReasonMetadataAbsent = "archive_metadata_absent"
+recovery/rules: const ReasonMetadataDown = "archive_metadata_unavailable"
+recovery/rules: const ReasonMetadataMalformed = "archive_metadata_malformed"
+recovery/rules: const ReasonNoArchive = "no_archive"
+recovery/rules: const ReasonNoChecksum = "metadata_has_no_checksum"
+recovery/rules: const ReasonNoOwner = "no_owner_job"
+recovery/rules: const ReasonNoPlainChecksum = "metadata_has_no_plain_checksum"
+recovery/rules: const ReasonNoRuns = "no_runs"
+recovery/rules: const ReasonNoSuccess = "no_successful_run"
+recovery/rules: const ReasonNoTables = "metadata_has_no_table_count"
+recovery/rules: const ReasonNotRestorableStale = "archive_older_than_the_threshold"
+recovery/rules: const ReasonObservedTime = "observed_at"
+recovery/rules: const ReasonRunFailed = "last_run_failed"
+recovery/rules: const ReasonRunsDown = "runs_unavailable"
+recovery/rules: const ReasonTooOld = "last_success_too_old"
+recovery/rules: const ReasonUnexpected = "unexpected_backup"
+recovery/rules: const RestoreIncomplete = "incomplete"
+recovery/rules: const RestoreNoArchive = "no_archive"
+recovery/rules: const RestoreReady = "ready"
+recovery/rules: const RestoreStale = "stale"
+recovery/rules: const RestoreUnavailable = "unavailable"
+recovery/rules: const Unavailable = "unavailable"
+recovery/rules: func (*Error) Error() string
+recovery/rules: func (RestorePlan) Ready() bool
+recovery/rules: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
+recovery/rules: func BackupLocation(uri string) (ArchiveQuery, bool)
+recovery/rules: func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
+recovery/rules: func RestoreOf(input RestoreInput) RestorePlan
+recovery/rules: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
+recovery/rules: type Archive struct {Key string LastModified time.Time}
+recovery/rules: type ArchiveList struct {Query ArchiveQuery Status string Reason string Objects []Archive}
+recovery/rules: type ArchiveMetadata struct {SHA256, PlainSHA256 string Tables int32 Source string}
+recovery/rules: type ArchiveQuery struct {Bucket, Prefix string}
+recovery/rules: type ArchiveReport struct {State string Reason string Bucket string Prefix string Newest string LastModified string Age time.Duration MaxAge time.Duration}
+recovery/rules: type Error struct {Field, Reason string}
+recovery/rules: type RestoreInput struct {Namespace, Application string Archive ArchiveReport Metadata *ArchiveMetadata Failure string}
+recovery/rules: type RestorePlan struct {State string Reason string Archive ArchiveReport Metadata ArchiveMetadata}
+recovery: const AppRunning = "running"
+recovery: const AppStopped = "stopped"
+recovery: const AppUnknown = "unknown"
+recovery: const JobComplete = "complete"
+recovery: const JobFailed = "failed"
+recovery: const JobRunning = "running"
+recovery: const JobUnknown = "unknown"
+recovery: const RestoreFailed = "failed"
+recovery: const RestoreRestored = "restored"
+recovery: const StepDone = "done"
+recovery: const StepFailed = "failed"
+recovery: const StepNotRead = "not_read"
+recovery: func (*Refusal) Error() string
+recovery: func Plan(ctx context.Context, inputs PlanInputs) (rules.RestorePlan, error)
+recovery: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
+recovery: type Cluster struct {Reader kube.Reader Writer kube.Writer}
+recovery: type PlanInputs struct {Archives s3.Reader Query rules.ArchiveQuery Namespace, Application string From string MaxAge time.Duration Now time.Time}
+recovery: type Refusal struct {Subject, Reason string}
+recovery: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
+recovery: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan rules.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}
+recovery: type RestoreJobOutcome struct {Name string State string Log string LogReason string}
+recovery: type RestoreOutcome struct {State string Reason string Steps []RestoreStep Job RestoreJobOutcome App RestoreApp BackupSuspended bool Started time.Time Finished time.Time}
+recovery: type RestoreStep struct {Name string Outcome string Detail string}
 secretcheck: const Error Level = "ERROR"
 secretcheck: const IngestionKey = "CLICKSTACK_INGESTION_KEY"
 secretcheck: const None Failure = iota

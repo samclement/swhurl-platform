@@ -1,14 +1,10 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
-Status: parked
-Gate: choose the next slice from remaining work or deferred features
-Uncommitted: none
+Status: blocked
+Gate: D1, one archive verdict, then commit capability slice 1 (recovery)
+Uncommitted: `v2/`
 
-**The goal is one Go platform implementation.** v2 becomes the platform's only implementation —
-kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl`
-(Python) is retired. Bash stays for host glue. v2 already owns every instance and the live loop; Copier and the separate
-codegraph development aid are retained exceptions; the Go chart tests also call upstream PyYAML. Each retirement is its own approved slice; the console
-left by the [approved strangling](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026).
+**The goal is one Go platform implementation.** v2 becomes the platform's only implementation — kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl` (Python) is retired. Bash stays for host glue. v2 already owns every instance and the live loop; Copier and the separate codegraph development aid are retained exceptions; the Go chart tests also call upstream PyYAML. Each retirement is its own approved slice; the console left by the [approved strangling](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026).
 
 This page is the one place v2's progress, remaining work and deferred features live. Contracts are in
 [iteration 2](iteration-2-plan.md); dated evidence in [current state](current-state.md); the registry in
@@ -97,6 +93,7 @@ stays for Go, collector and live checks; Go, backup and codegraph tests stay int
 | Copier in the console image and template checks | Kept upstream Python tool | Pinned alone in `pyproject.toml`/`uv.lock`; Jinja2 and PyYAML remain transitive dependencies, not platform runtime libraries. No Starlette, uvicorn, httpx, check or backup group remains |
 | Codegraph and its own tests (`devtools/codegraph/`) | Kept read-only, standard-library development aid | Separate from the platform and console image; `check-codegraph` and Ruff remain in `make check` and CI |
 | Go chart tests' YAML reader (`python3` importing `yaml`) | Kept upstream test-only dependency | Validate and Deploy v2 explicitly install `PyYAML==6.0.3` with Python 3.12, outside the Copier-only runtime groups |
+| Capability layout ([§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)): recovery moved to `recovery/` and `recovery/rules/`; delivery, notifications, health and the rest not started | partial | [record](current-state.md#recovery-is-the-first-capability-package-offline-22-november-2026) |
 | Host connectivity probe | Dropped, no replacement | Source, systemd templates, make targets and installer support removed; installed units removed and no timer scheduled ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)) |
 
 ## Remaining work
@@ -179,6 +176,8 @@ operator decides against it.
 
 Rules that constrain the next change, one line each. The reasoning stays in Git and current-state.
 
+- Navigate by capability, depend by kind: a capability's rules are pure and its own, other pure packages reach
+  them only through `PureDependencies`, and no new shared type goes into `kernel` (22 November 2026).
 - One writer per fact, no compatibility layers, records are v2 JSON only, unused features stay on the
   backlog, promotion is one-way, and `edit` is the one settings primitive (31 October 2026).
 - A rollback is a promotion of an older release. A release from before declaration label version 2 is

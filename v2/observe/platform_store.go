@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // ChannelEvidence is what the channels check reads: the routes Git renders from the team registry, the routes and
@@ -95,12 +97,12 @@ func unroutedTeams(owners map[string][]string, routes map[string][]string) []Pla
 // backups are, and what the object store listed there.
 type MongoBackupEvidence struct {
 	Job     Read
-	Listing ArchiveList
+	Listing rules.ArchiveList
 }
 
 // BackupJobLocation is where the backup CronJob publishes: its first container's BACKUP_S3_URI, as a bucket and a
 // prefix; false when the job states none of the form s3://<bucket>/<prefix>/.
-func BackupJobLocation(job Read) (ArchiveQuery, bool) {
+func BackupJobLocation(job Read) (rules.ArchiveQuery, bool) {
 	var document struct {
 		Spec struct {
 			JobTemplate struct {
@@ -117,29 +119,23 @@ func BackupJobLocation(job Read) (ArchiveQuery, bool) {
 		} `json:"spec"`
 	}
 	if job.Status != Present || json.Unmarshal(job.Object, &document) != nil || len(document.Spec.JobTemplate.Spec.Template.Spec.Containers) == 0 {
-		return ArchiveQuery{}, false
+		return rules.ArchiveQuery{}, false
 	}
 	for _, variable := range document.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env {
 		if variable.Name == "BACKUP_S3_URI" {
-			return BackupLocation(variable.Value)
+			return rules.BackupLocation(variable.Value)
 		}
 	}
-	return ArchiveQuery{}, false
-}
-
-// BackupLocation is an s3://<bucket>/<prefix>/ URI as the bucket and prefix it names; false for any other text.
-func BackupLocation(uri string) (ArchiveQuery, bool) {
-	rest, found := strings.CutPrefix(uri, "s3://")
-	bucket, prefix, _ := strings.Cut(rest, "/")
-	if !found || !bucketPattern().MatchString(bucket) || !strings.HasSuffix(uri, "/") {
-		return ArchiveQuery{}, false
-	}
-	return ArchiveQuery{Bucket: bucket, Prefix: prefix}, true
+	return rules.ArchiveQuery{}, false
 }
 
 // backupSet is one kind of backup: its archives are <name>-<UTC stamp><suffix>, each complete only once its metadata,
 // <name>-<UTC stamp>.json, is beside it (the job publishes that last). What to run, and the namespace whose backup jobs
 // to check, are the operator's.
+//
+// For SQLite this is a second answer to the question recovery/rules owns (is there a fresh archive?), judged by the
+// name's stamp and the metadata beside it rather than by S3's time; which one rule wins is decision D1
+// (docs/iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026).
 type backupSet struct {
 	name, suffix, what, run, jobs, prefix string
 }
@@ -159,7 +155,7 @@ func platformBackups(e MongoBackupEvidence, credentials bool, maxAge time.Durati
 }
 
 // entry is the set's newest complete backup under the location, judged against the oldest one allowed.
-func (s backupSet) entry(location ArchiveQuery, listing ArchiveList, credentials bool, maxAge time.Duration, now time.Time) PlatformEntry {
+func (s backupSet) entry(location rules.ArchiveQuery, listing rules.ArchiveList, credentials bool, maxAge time.Duration, now time.Time) PlatformEntry {
 	uri := "s3://" + location.Bucket + "/" + location.Prefix
 	switch {
 	case !credentials:
@@ -184,7 +180,7 @@ func (s backupSet) entry(location ArchiveQuery, listing ArchiveList, credentials
 const backupStamp = "20060102T150405Z"
 
 // newest is when the newest complete backup under the prefix was taken, by the stamp in its name; false without one.
-func (s backupSet) newest(objects []Archive, prefix string) (time.Time, bool) {
+func (s backupSet) newest(objects []rules.Archive, prefix string) (time.Time, bool) {
 	present := map[string]bool{}
 	for _, object := range objects {
 		if name, found := strings.CutPrefix(object.Key, prefix); found {
@@ -219,14 +215,14 @@ type DatabaseEvidence struct {
 	// Problem says why the records or the profile do not say which databases are backed up, or where.
 	Problem string
 	// Location is the profile's backup location, one prefix per namespace below it.
-	Location  ArchiveQuery
+	Location  rules.ArchiveQuery
 	Databases []DatabaseBackup
 }
 
 // DatabaseBackup is one database instance's namespace and its listing.
 type DatabaseBackup struct {
 	Namespace string
-	Listing   ArchiveList
+	Listing   rules.ArchiveList
 }
 
 func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duration, now time.Time) []PlatformEntry {
@@ -240,7 +236,7 @@ func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duratio
 	for _, database := range e.Databases {
 		set := backupSet{name: "sqlite", suffix: ".db.age", what: "SQLite", run: "make backup-sqlite",
 			jobs: database.Namespace, prefix: database.Namespace + ": "}
-		location := ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
+		location := rules.ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
 		entries = append(entries, set.entry(location, database.Listing, credentials, maxAge, now))
 	}
 	return entries
@@ -300,7 +296,7 @@ func consoleImage(running, checkout string) PlatformEntry {
 }
 
 // listedReason is why a listing was not read: its own reason, or that it never was.
-func listedReason(listing ArchiveList) string {
+func listedReason(listing rules.ArchiveList) string {
 	if listing.Reason == "" {
 		return NotRead
 	}

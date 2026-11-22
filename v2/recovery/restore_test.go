@@ -1,4 +1,4 @@
-package orchestration
+package recovery
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // readFixture is one document the restore is given, from the kernel's own fixtures.
@@ -24,6 +25,9 @@ func readFixture(t *testing.T, name string) []byte {
 	}
 	return data
 }
+
+// revision is the commit the egress allocation records.
+const revision = "0123456789abcdef0123456789abcdef01234567"
 
 // allocationOf is the egress allocation that gives the fixture instance its own proxy port.
 func allocationOf() []byte {
@@ -53,14 +57,14 @@ func restoreTarget() observe.Target {
 
 // readyPlan is what the restore command hands the use case after the bucket answered: an archive within its
 // threshold whose metadata names this instance with both checksums and a table count.
-func readyPlan(t *testing.T) observe.RestorePlan {
+func readyPlan(t *testing.T) rules.RestorePlan {
 	t.Helper()
-	plan := observe.RestoreOf(observe.RestoreInput{
+	plan := rules.RestoreOf(rules.RestoreInput{
 		Namespace: "demo-orders-staging", Application: "demo-orders",
-		Archive: observe.ArchiveReport{State: observe.BackupCurrent, Bucket: "backups",
+		Archive: rules.ArchiveReport{State: rules.BackupCurrent, Bucket: "backups",
 			Prefix: "app-sqlite/demo-orders-staging/", Newest: "app-sqlite/demo-orders-staging/sqlite-20261026T082103Z.db.age",
 			LastModified: "2026-10-26T08:21:10Z", Age: time.Hour, MaxAge: 26 * time.Hour},
-		Metadata: &observe.ArchiveMetadata{SHA256: strings.Repeat("a", 64), PlainSHA256: strings.Repeat("b", 64),
+		Metadata: &rules.ArchiveMetadata{SHA256: strings.Repeat("a", 64), PlainSHA256: strings.Repeat("b", 64),
 			Tables: 2, Source: "demo-orders-staging/demo-orders"},
 	})
 	if !plan.Ready() {
@@ -418,11 +422,11 @@ func sameSteps(got, want []string) bool {
 // there. Each is reported by type, and no call is made that could change anything.
 func TestRestoreRefusesBeforeChangingAnything(t *testing.T) {
 	stale := readyPlan(t)
-	stale.State, stale.Reason = observe.RestoreStale, observe.ReasonNotRestorableStale
+	stale.State, stale.Reason = rules.RestoreStale, rules.ReasonNotRestorableStale
 	noDeployment := func(f *fakeCluster) { f.failOn = "read:Deployment" }
 	for _, tt := range []struct {
 		name    string
-		plan    observe.RestorePlan
+		plan    rules.RestorePlan
 		prepare func(*fakeCluster)
 	}{
 		{"plan not ready", stale, nil},

@@ -8,7 +8,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
-	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // errRefused stands in for a failure the adapter would report instead of a listing.
@@ -19,10 +19,10 @@ var errRefused = errors.New("refused")
 func scenario() s3test.Scenario {
 	modified := time.Date(2026, 10, 26, 8, 21, 21, 0, time.UTC)
 	return s3test.Scenario{
-		Query:     observe.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/hello-staging/"},
-		Objects:   []observe.Archive{{Key: "app-sqlite/hello-staging/sqlite-1.db.age", LastModified: modified}},
-		Forbidden: observe.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/refused/"},
-		Empty:     observe.ArchiveQuery{},
+		Query:     rules.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/hello-staging/"},
+		Objects:   []rules.Archive{{Key: "app-sqlite/hello-staging/sqlite-1.db.age", LastModified: modified}},
+		Forbidden: rules.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/refused/"},
+		Empty:     rules.ArchiveQuery{},
 		Key:       "app-sqlite/hello-staging/sqlite-1.json",
 		Body:      `{"tables":2}`,
 		Missing:   "app-sqlite/hello-staging/sqlite-missing.json",

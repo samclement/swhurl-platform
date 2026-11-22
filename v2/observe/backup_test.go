@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // backed is the target with a nightly protection.
@@ -117,7 +118,7 @@ func TestBackupIsCurrentWhenTheRunSucceeded(t *testing.T) {
 		cronJob(t, false, "2026-10-26T03:35:00Z", "2026-10-26T03:36:12Z"),
 		backupPod(t, "hello-backup-1-abc", "2026-10-26T03:35:00Z", "hello-backup-1"), succeededRun(t))
 	report := explainBackup(t, backed(target()), evidence)
-	if report.Backup.State != observe.BackupCurrent || report.Backup.Reason != "" {
+	if report.Backup.State != rules.BackupCurrent || report.Backup.Reason != "" {
 		t.Fatalf("backup %+v", report.Backup)
 	}
 	if report.Backup.Schedule != "35 3 * * *" || report.Backup.MaxAge != 26*time.Hour {
@@ -139,11 +140,11 @@ func TestBackupAgeIsJudgedAgainstTheThreshold(t *testing.T) {
 	document := cronJob(t, false, "2026-10-26T03:35:00Z", "2026-10-26T03:36:12Z")
 	pod := backupPod(t, "hello-backup-1-abc", "2026-10-26T03:35:00Z", "hello-backup-1")
 	runs := succeededRun(t)
-	if report := explainBackup(t, backed(target()), protection(t, 6*time.Hour, document, pod, runs)); report.Backup.State != observe.BackupCurrent {
+	if report := explainBackup(t, backed(target()), protection(t, 6*time.Hour, document, pod, runs)); report.Backup.State != rules.BackupCurrent {
 		t.Fatalf("six hours: %+v", report.Backup)
 	}
 	stale := explainBackup(t, backed(target()), protection(t, time.Hour, document, pod, runs))
-	if stale.Backup.State != observe.BackupStale || stale.Backup.Reason != observe.ReasonTooOld {
+	if stale.Backup.State != rules.BackupStale || stale.Backup.Reason != rules.ReasonTooOld {
 		t.Fatalf("one hour: %+v", stale.Backup)
 	}
 	// The last success is 5h37m48s before the observation: exactly that threshold is still current.
@@ -152,10 +153,10 @@ func TestBackupAgeIsJudgedAgainstTheThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed, _ := time.Parse(time.RFC3339, observedAt)
-	if report := explainBackup(t, backed(target()), protection(t, observed.Sub(at), document, pod, runs)); report.Backup.State != observe.BackupCurrent {
+	if report := explainBackup(t, backed(target()), protection(t, observed.Sub(at), document, pod, runs)); report.Backup.State != rules.BackupCurrent {
 		t.Fatalf("exactly the threshold: %+v", report.Backup)
 	}
-	if report := explainBackup(t, backed(target()), protection(t, observed.Sub(at)-time.Second, document, pod, runs)); report.Backup.State != observe.BackupStale {
+	if report := explainBackup(t, backed(target()), protection(t, observed.Sub(at)-time.Second, document, pod, runs)); report.Backup.State != rules.BackupStale {
 		t.Fatalf("a second over: %+v", report.Backup)
 	}
 }
@@ -167,7 +168,7 @@ func TestBackupFailsWhenTheNewestRunFailed(t *testing.T) {
 		backupPod(t, "hello-backup-2-def", "2026-10-26T09:00:00Z", "hello-backup-2"),
 		job(t, "hello-backup-2", "2026-10-26T09:00:00Z", "2026-10-26T09:04:00Z", observe.RunFailed))
 	report := explainBackup(t, backed(target()), evidence)
-	if report.Backup.State != observe.BackupFailing || report.Backup.Reason != observe.ReasonRunFailed {
+	if report.Backup.State != rules.BackupFailing || report.Backup.Reason != rules.ReasonRunFailed {
 		t.Fatalf("backup %+v", report.Backup)
 	}
 	if report.Backup.NewestRun == nil || report.Backup.NewestRun.Name != "hello-backup-2" {
@@ -182,7 +183,7 @@ func TestBackupIsSuspended(t *testing.T) {
 		cronJob(t, true, "2026-10-26T03:35:00Z", "2026-10-26T03:36:12Z"),
 		backupPod(t, "hello-backup-1-abc", "2026-10-26T03:35:00Z", "hello-backup-1"), succeededRun(t))
 	report := explainBackup(t, backed(target()), evidence)
-	if report.Backup.State != observe.BackupSuspended || report.Backup.Reason != observe.ReasonSuspended {
+	if report.Backup.State != rules.BackupSuspended || report.Backup.Reason != observe.ReasonSuspended {
 		t.Fatalf("backup %+v", report.Backup)
 	}
 }
@@ -191,14 +192,14 @@ func TestBackupIsSuspended(t *testing.T) {
 // none is current, and the reason says which.
 func TestBackupWithoutASuccessfulRun(t *testing.T) {
 	noRuns := explainBackup(t, backed(target()), protection(t, 26*time.Hour, cronJob(t, false, "", ""), nil, nil))
-	if noRuns.Backup.State != observe.BackupStale || noRuns.Backup.Reason != observe.ReasonNoRuns {
+	if noRuns.Backup.State != rules.BackupStale || noRuns.Backup.Reason != rules.ReasonNoRuns {
 		t.Fatalf("no runs: %+v", noRuns.Backup)
 	}
 	unfinished := explainBackup(t, backed(target()),
 		protection(t, 26*time.Hour, cronJob(t, false, "2026-10-26T09:00:00Z", ""),
 			backupPod(t, "hello-backup-2-def", "2026-10-26T09:00:00Z", "hello-backup-2"),
 			job(t, "hello-backup-2", "2026-10-26T09:00:00Z", "", observe.RunRunning)))
-	if unfinished.Backup.State != observe.BackupStale || unfinished.Backup.Reason != observe.ReasonNoSuccess {
+	if unfinished.Backup.State != rules.BackupStale || unfinished.Backup.Reason != rules.ReasonNoSuccess {
 		t.Fatalf("an unfinished run: %+v", unfinished.Backup)
 	}
 	if unfinished.Backup.NewestRun == nil || unfinished.Backup.NewestRun.Outcome != observe.RunRunning {
@@ -207,7 +208,7 @@ func TestBackupWithoutASuccessfulRun(t *testing.T) {
 	orphan := explainBackup(t, backed(target()),
 		protection(t, 26*time.Hour, cronJob(t, false, "2026-10-26T09:00:00Z", ""),
 			backupPod(t, "hello-backup-2-def", "2026-10-26T09:00:00Z", ""), nil))
-	if orphan.Backup.State != observe.BackupNotAssessed || orphan.Backup.Reason != observe.ReasonNoOwner {
+	if orphan.Backup.State != rules.BackupNotAssessed || orphan.Backup.Reason != rules.ReasonNoOwner {
 		t.Fatalf("a pod without a Job: %+v", orphan.Backup)
 	}
 }
@@ -217,18 +218,18 @@ func TestBackupWithoutASuccessfulRun(t *testing.T) {
 func TestBackupSeparatesAbsentFromUnavailable(t *testing.T) {
 	evidence := protection(t, 26*time.Hour, cronJob(t, false, "", ""), nil, nil)
 	evidence.Backup.CronJob = absent(backed(target()).Backup.CronJob)
-	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != observe.BackupAbsent ||
+	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != rules.BackupAbsent ||
 		report.Backup.Reason != observe.ReasonNotFound {
 		t.Fatalf("absent: %+v", report.Backup)
 	}
 	evidence.Backup.CronJob = unavailable(backed(target()).Backup.CronJob, observe.ReasonForbidden)
-	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != observe.BackupUnavailable ||
+	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != rules.BackupUnavailable ||
 		report.Backup.Reason != observe.ReasonForbidden {
 		t.Fatalf("unavailable: %+v", report.Backup)
 	}
 	evidence.Backup.CronJob = present(backed(target()).Backup.CronJob, cronJob(t, false, "", ""))
 	evidence.Backup.Pods.Status, evidence.Backup.Pods.Reason = observe.Unavailable, observe.ReasonTimedOut
-	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != observe.BackupUnavailable ||
+	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != rules.BackupUnavailable ||
 		report.Backup.Reason != observe.ReasonTimedOut {
 		t.Fatalf("pods unavailable: %+v", report.Backup)
 	}
@@ -236,11 +237,11 @@ func TestBackupSeparatesAbsentFromUnavailable(t *testing.T) {
 		backupPod(t, "hello-backup-1-abc", "2026-10-26T03:35:00Z", "hello-backup-1"), nil)
 	evidence.Backup.Run = &observe.Read{Ref: observe.Ref{APIVersion: "batch/v1", Kind: "Job",
 		Namespace: "hello-staging", Name: "hello-backup-1"}, Status: observe.Unavailable, Reason: observe.ReasonStatus}
-	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != observe.BackupUnavailable ||
+	if report := explainBackup(t, backed(target()), evidence); report.Backup.State != rules.BackupUnavailable ||
 		report.Backup.Reason != observe.ReasonStatus {
 		t.Fatalf("run unavailable: %+v", report.Backup)
 	}
-	if report := explainBackup(t, backed(target()), healthy(t)); report.Backup.State != observe.BackupNotAssessed ||
+	if report := explainBackup(t, backed(target()), healthy(t)); report.Backup.State != rules.BackupNotAssessed ||
 		report.Backup.Reason != observe.NotRead {
 		t.Fatalf("not read: %+v", report.Backup)
 	}
@@ -250,7 +251,7 @@ func TestBackupSeparatesAbsentFromUnavailable(t *testing.T) {
 // the target: one answer would otherwise describe two questions.
 func TestBackupNotApplicable(t *testing.T) {
 	report := explainBackup(t, target(), healthy(t))
-	if report.Backup.State != observe.BackupNotApplicable {
+	if report.Backup.State != rules.BackupNotApplicable {
 		t.Fatalf("an instance without a backup: %+v", report.Backup)
 	}
 	evidence := healthy(t)

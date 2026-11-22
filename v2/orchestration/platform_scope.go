@@ -17,6 +17,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // Checkout is the files of the checkout the platform scope compares the cluster with, as the command read them. A
@@ -363,14 +364,14 @@ func readMongoBackups(ctx context.Context, inputs PlatformAllInputs, scope *obse
 
 // listArchives lists one prefix. The object store's refusal is a failed read here: the location came from the
 // cluster or the checkout, not from the caller.
-func listArchives(ctx context.Context, objects func(string) (s3.Reader, error), location observe.ArchiveQuery) observe.ArchiveList {
+func listArchives(ctx context.Context, objects func(string) (s3.Reader, error), location rules.ArchiveQuery) rules.ArchiveList {
 	reader, err := objects(location.Bucket)
 	if err != nil {
-		return observe.ArchiveList{Query: location, Status: observe.Unavailable, Reason: err.Error()}
+		return rules.ArchiveList{Query: location, Status: observe.Unavailable, Reason: err.Error()}
 	}
 	listed, err := reader.List(ctx, location)
 	if err != nil {
-		return observe.ArchiveList{Query: location, Status: observe.Unavailable, Reason: err.Error()}
+		return rules.ArchiveList{Query: location, Status: observe.Unavailable, Reason: err.Error()}
 	}
 	return listed
 }
@@ -379,7 +380,7 @@ func listArchives(ctx context.Context, objects func(string) (s3.Reader, error), 
 // profile's backup location.
 func readDatabases(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
 	instances, problem := databaseInstances(inputs.Checkout.Releases)
-	location, found := observe.ArchiveQuery{}, false
+	location, found := rules.ArchiveQuery{}, false
 	if problem == "" {
 		location, found, problem = databaseLocation(inputs.Checkout.Profile)
 	}
@@ -416,14 +417,14 @@ func databaseInstances(releases map[string][]byte) ([][2]string, string) {
 }
 
 // databaseLocation is the profile's backup location, or why it states none.
-func databaseLocation(data []byte) (observe.ArchiveQuery, bool, string) {
+func databaseLocation(data []byte) (rules.ArchiveQuery, bool, string) {
 	profile, problem := profileOf(data)
 	if problem != "" {
-		return observe.ArchiveQuery{}, false, observe.CheckoutProfile + ": cannot read backup.s3Uri (" + problem + ")"
+		return rules.ArchiveQuery{}, false, observe.CheckoutProfile + ": cannot read backup.s3Uri (" + problem + ")"
 	}
-	location, found := observe.BackupLocation(profile.Backup.S3URI)
+	location, found := rules.BackupLocation(profile.Backup.S3URI)
 	if !found {
-		return observe.ArchiveQuery{}, false, observe.CheckoutProfile + ": the backup location must be s3://<bucket>/<prefix>/"
+		return rules.ArchiveQuery{}, false, observe.CheckoutProfile + ": the backup location must be s3://<bucket>/<prefix>/"
 	}
 	return location, true, ""
 }

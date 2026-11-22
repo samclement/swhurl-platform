@@ -2,6 +2,22 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Recovery is the first capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 1.
+  `v2/recovery/rules` (pure) now owns archive selection and eligibility, archive metadata, the restore plan's
+  decision, the backup location URI and the backup state vocabulary, moved from `observe/{archive,restore}.go` with
+  their tests; `v2/recovery` owns the restore workflow (from `orchestration/restore.go`) and the restore plan's reads
+  (from `cmd/swhurl-v2/restore.go`). `observe` reports recovery's archive verdict through `rules.InstanceArchive`,
+  `adapters/s3` speaks `rules` types, and the egress lookup both use cases share is `kernel.InstanceEgress`.
+  `archtest`: `recovery` is a listed use-case package, `recovery/rules` is pure, and `PureDependencies` allows
+  `observe` → `recovery/rules` alone.
+- **Checks:** `make check-v2` passes; `swhurl-v2 restore`'s command tests pass with only type names changed; new
+  archtest fixtures show a pure capability package reading the clock is refused and the reverse edge
+  `recovery/rules` → `observe` is refused.
+- **Not exercised:** no live restore was run; nothing is deployed. D1 (one archive verdict for `verify-platform`'s
+  `sqlite-backups` check and restore) is open.
+
 ## S3 signing on AWS's signer (16 November 2026)
 
 - **Change:** `adapters/s3` signs its listing and object requests, and the presigned URL a restore pod reads one

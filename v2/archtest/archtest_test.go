@@ -53,7 +53,7 @@ func TestLayers(t *testing.T)          { report(t, checkLayers(module(t))) }
 func TestPure(t *testing.T)            { report(t, checkPure(module(t))) }
 func TestOrchestration(t *testing.T)   { report(t, checkOrchestration(module(t), Orchestration)) }
 func TestNoSubprocess(t *testing.T)    { report(t, checkNoSubprocess(module(t))) }
-func TestPlaces(t *testing.T)          { report(t, checkPlaces(module(t), Layers, Pure)) }
+func TestPlaces(t *testing.T)          { report(t, checkPlaces(module(t), Layers, Pure, Orchestration)) }
 func TestAdapterComplete(t *testing.T) { report(t, checkAdapters(module(t))) }
 
 func TestPublicAPI(t *testing.T) {

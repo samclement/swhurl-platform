@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"regexp"
@@ -48,31 +48,15 @@ type ArchiveReport struct {
 	MaxAge       time.Duration
 }
 
-// archiveOf decides whether an archive exists and how old the newest one is. It is a fact beside the job's:
-// a job can report success and leave no archive, and an archive can be current while the job that wrote it
-// has since failed — the two disagreeing is what the check exists to expose.
-func archiveOf(target Target, evidence Evidence, now time.Time) (ArchiveReport, error) {
-	if target.Backup == nil {
-		return ArchiveReport{State: BackupNotApplicable}, nil
-	}
-	if evidence.Backup == nil || evidence.Backup.Archive == nil {
-		return ArchiveReport{State: BackupNotAssessed, Reason: NotRead}, nil
-	}
-	listed := *evidence.Backup.Archive
-	report := ArchiveReport{Bucket: listed.Query.Bucket, Prefix: listed.Query.Prefix, MaxAge: evidence.Backup.MaxAge}
-	if err := validateArchiveQuery(listed.Query, target.Namespace); err != nil {
+// InstanceArchive is one instance's newest archive, judged for an instance report. It is a fact beside the
+// backup job's: a job can report success and leave no archive, and an archive can be current while the job
+// that wrote it has since failed — the two disagreeing is what the check exists to expose. The listing must be
+// confined to the instance's namespace; anything else is refused rather than judged.
+func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration, now time.Time) (ArchiveReport, error) {
+	if err := validateArchiveQuery(listed.Query, namespace); err != nil {
 		return ArchiveReport{}, err
 	}
-	switch listed.Status {
-	case Present:
-	case Unavailable:
-		report.State, report.Reason = BackupUnavailable, reasonOf(listed.Reason)
-		return report, nil
-	default:
-		report.State, report.Reason = BackupNotAssessed, NotRead
-		return report, nil
-	}
-	return judgeArchive(report, listed.Objects, "", now)
+	return SelectArchive(listed, listed.Query.Prefix, "", maxAge, now)
 }
 
 // SelectArchive is one archive out of a listing: the newest, or the one the operator names. A named archive
@@ -114,6 +98,16 @@ func judgeArchive(report ArchiveReport, objects []Archive, key string, now time.
 	}
 	report.State = BackupCurrent
 	return report, nil
+}
+
+// BackupLocation is an s3://<bucket>/<prefix>/ URI as the bucket and prefix it names; false for any other text.
+func BackupLocation(uri string) (ArchiveQuery, bool) {
+	rest, found := strings.CutPrefix(uri, "s3://")
+	bucket, prefix, _ := strings.Cut(rest, "/")
+	if !found || !bucketPattern().MatchString(bucket) || !strings.HasSuffix(uri, "/") {
+		return ArchiveQuery{}, false
+	}
+	return ArchiveQuery{Bucket: bucket, Prefix: prefix}, true
 }
 
 // validateArchiveQuery keeps a listing inside the instance's own directory: a bucket, and a prefix that ends

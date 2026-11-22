@@ -23,3 +23,6 @@ notes:
   - at: 2026-11-22T17:06:06.695Z
     commit: a873f7e4a60c
     text: "Carry task 40 followup: docs/iteration-2-plan.md capability map names delivery/rules as owner of the deployment-health verdict (incident imports it; status does not yet - open operator decision, do not claim status uses it)."
+  - at: 2026-11-22T17:41:06.039Z
+    commit: 158ad0eb3525
+    text: "Carry followups into this scope: task 42 asks for the workstream row and a dated current-state entry for the restore move (recovery.Prepare owns observe->refuse->plan->archive sequencing; CLI wires apps.Status as a port). Slice 5 as landed: tasks 39 (registry row), 40 (delivery/rules deployment-health verdict, incident imports it), 44 (new pure provisioning/rules: Inputs/Compile/Declare; Declare now reports release error before profile when both malformed), 41 (apps owns Status/StatusAll; orchestration->apps edge; console stays in orchestration with health and apps edges), 42 (restore sequencing in recovery). Still deferred: delivery/write.go copied documents()/write decisions -> provisioning slice; status adopting the delivery/rules verdict -> operator decision. docs/v2-status.md is near its 250-line cap: edit rows rather than add lines. Do not claim post-merge or live checks."

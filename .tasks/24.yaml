@@ -1,6 +1,6 @@
 id: 24
 title: Record slice 3 in the plan, status, evidence and registry
-state: ready
+state: cancelled
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -20,7 +20,7 @@ checks:
   - "\"! grep -rqE '\\\\]\\\\((\\\\.\\\\./)?v2/(notify|incident|heartbeat|orchestration/notify|orchestration/notifications)' docs GLOSSARY.md\""
 after:
   - 23
-reason: null
+reason: correct quoted checks; dependency replaces 23
 notes:
   - at: 2026-11-22T13:28:57.272Z
     commit: f0ce9efde7f9

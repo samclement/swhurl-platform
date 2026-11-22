@@ -1,6 +1,6 @@
 id: 21
 title: Move the heartbeat rules to notifications/rules/heartbeat
-state: ready
+state: cancelled
 scope:
   - v2/heartbeat/**
   - v2/notifications/rules/heartbeat/**
@@ -22,7 +22,7 @@ checks:
   - "\"! grep -rq 'swhurl-platform/v2/heartbeat\\\"' v2 --include=*.go\""
 after:
   - 20
-reason: null
+reason: correct quoted checks; dependency replaces 20
 notes:
   - at: 2026-11-22T13:28:55.501Z
     commit: f0ce9efde7f9

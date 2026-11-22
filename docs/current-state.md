@@ -2,6 +2,24 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Delivery is the second capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 2.
+  `v2/delivery` owns promotion, deployment and flux-wait (from `orchestration/{promote,deploy,flux_wait}.go`), with
+  `delivery/write.go` copying the write plumbing they share from `orchestration`, each copy naming its origin, until
+  slice 5. `v2/delivery/rules` (pure) owns promotion's rule `SelectPromotion` (from `kernel/promote.go`), a unit's
+  rollout verdict `FluxUnitAt` (from `observe/flux_wait.go`), the landed-revision verdict (`Currentness`,
+  `Changes`, `CurrentnessOf`, from `observe/changes.go`) and `PromotionReadiness` (from `observe/live.go`, now on
+  its own `Readiness` input), with their tests. `observe` reports currentness and readiness through
+  `delivery/rules`; `kernel.SelectRelease` stays in `kernel`. `archtest`: `delivery` is a listed use-case package,
+  `delivery/rules` is pure, and `PureDependencies` allows `observe` → `delivery/rules` and `delivery/rules` →
+  `kernel`.
+- **Checks:** `make check-v2` passes; `swhurl-v2 promote`, `deploy` and `flux-wait`'s command tests pass unmodified;
+  the instance report keeps `Version` 5 and its JSON; new archtest fixtures show `delivery/rules` reading the clock
+  is refused and `delivery/rules` → `observe` is refused.
+- **Not exercised:** nothing live changed: no promotion, deployment or `flux-wait` was run on the moved code, and
+  the slice is not on `main`.
+
 ## One archive verdict: an archive counts only with its metadata, offline (22 November 2026)
 
 - **Change:** [D1](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026), decided by

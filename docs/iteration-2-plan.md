@@ -218,7 +218,7 @@ This is selection, not promotion: there are no staging-readiness, actor-authoris
 
 ### Promotion: selection for production (implemented offline and first promoted live 30 October 2026)
 
-`kernel.SelectPromotion` is promotion's rule on top of selection, and `swhurl-v2 promote --records DIR --app APP
+`delivery/rules.SelectPromotion` is promotion's rule on top of selection, and `swhurl-v2 promote --records DIR --app APP
 --env prod --profile PROFILE.json --expect REVISION --out DIR` performs it from the tree both instances keep their
 records in. Order is contractual:
 
@@ -321,7 +321,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 | Capability | Owns | Code today (until its slice moves it) |
 | --- | --- | --- |
 | apps | App and environment records, instance lifecycle, and the intent to run a selected release | creation, editing, removal and instance records in `kernel` and `orchestration` |
-| delivery | Release identity and selection, staging-to-production promotion, deployment, and the evidence that the requested revision landed | `kernel/promote.go`, `orchestration/{promote,deploy,flux_wait}.go`, the rollout parts of `observe` |
+| delivery | Release identity and selection, staging-to-production promotion, deployment, and the evidence that the requested revision landed | `delivery/` and `delivery/rules/`; release selection in `kernel/select.go`; the `unit.revision` finding in `observe/explain.go` |
 | provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | compilation and rendering in `kernel`, egress allocation, `policy` |
 | connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `calls`, `events`, their rules in `kernel`; provisioning turns them into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
@@ -1162,7 +1162,7 @@ Kubernetes → applied revisions and live object evidence ─┘
   arrays/zero/false remain values. The ready count is not synthesized from available replicas. The
   `unit.revision` finding says `unaffected`, not `applied`, when exempted. Python must not infer these facts
   from the selected state or invent values.
-- The pure `observe.PromotionReadiness(report, reviewedDigest)` returns `{ready,reason}`; it requires currentness
+- The pure `delivery/rules.PromotionReadiness` returns `{ready,reason}` from the report and the reviewed digest; it requires currentness
   applied/unaffected, healthy state, the reviewed digest still selected, and only that digest proved running.
   Each version-5 JSON report exposes that decision as `promotion:{ready,reason}`, for the selected digest by
   default. Single status accepts `--reviewed-digest DIGEST` to evaluate a submitted review (an explicitly empty or
@@ -3017,7 +3017,7 @@ and effects unchanged and its existing tests moved with the code they test.
 | Slice | Capability | Operation followed through the move | State |
 | --- | --- | --- | --- |
 | 1 | recovery | `swhurl-v2 restore` (`make restore-sqlite`) | code moved and one archive verdict (D1 decided), offline |
-| 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | proposed |
+| 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | code moved; health reports the verdict, offline |
 | 3 | notifications | incident, heartbeat and notify workflows | proposed |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | proposed |
 | 5 | connectivity, provisioning, apps, console | split from `kernel` and `orchestration` as their slices need | proposed |
@@ -3055,3 +3055,43 @@ v2/cmd/swhurl-v2/       restore's flags, reading the operator's files, wiring an
   (`FROM=`) is chosen without that test, so a restore still refuses it as `incomplete/archive_metadata_absent`.
   Platform verification reuses the verdict: `sqlite-backups` through `rules.InstanceArchive`, MongoDB's backups
   through `rules.NewestArchive` with their `.archive.gz.age` suffix, so `observe` keeps no archive rule of its own.
+
+**Slice 2: delivery.**
+
+```text
+v2/delivery/            promotion, deployment and flux-wait (layer 2), from orchestration/{promote,deploy,flux_wait}.go
+                        with their tests; write.go holds the write plumbing promotion and deployment share
+v2/delivery/rules/      promotion's own rule (SelectPromotion, from kernel/promote.go), a unit's rollout verdict
+                        (FluxUnitAt, from observe/flux_wait.go), the landed-revision verdict (Currentness and its
+                        comparison evidence, from observe/changes.go) and promotion readiness (from observe/live.go),
+                        with their tests and the vocabulary they share (layer 0)
+v2/observe/             reports delivery's currentness and readiness in the instance report, document Version 5
+v2/cmd/swhurl-v2/       promote's, deploy's and flux-wait's flags, reading the operator's files, wiring and output only
+```
+
+- **Stays put.** `kernel/select.go` (`kernel.SelectRelease`) and the compiler's release checks: selection is shared
+  by creation and deployment and moves with apps or provisioning in slice 5. `orchestration/orchestration.go`'s own
+  write plumbing, which creation, editing and removal still use: `delivery/write.go` copies the parts promotion and
+  deployment need, each declaration naming its origin, and `absentOrUnavailable` is copied in
+  `delivery/fluxwait.go` from `orchestration/flux.go`; the **two copies stay until slice 5** moves the rest of
+  orchestration's writers. `observe/explain.go`'s `unit.revision` finding: its "the unit applied this commit" rule
+  and its own `appliedCommit` duplicate the one `delivery/rules.CurrentnessOf` uses, and fold into delivery's when
+  health (slice 4) assembles the report.
+- **Checks.** `archtest` recognises the new paths: `delivery` is layer 2 and listed in `Orchestration`,
+  `delivery/rules` is layer 0 and in `Pure`, and `PureDependencies` names two edges: `observe` → `delivery/rules`
+  (health reporting delivery's verdicts) and `delivery/rules` → `kernel` (promotion refines kernel's selection).
+  Fixtures show `delivery/rules` reading the clock is refused and `delivery/rules` → `observe` is refused while
+  `observe` → `delivery/rules` is allowed. `delivery` imports no other use-case package.
+- **Acceptance.** `swhurl-v2 promote`, `deploy` and `flux-wait` keep their flags, documents, stderr and effects: their
+  command tests pass unmodified, and only type names changed in the callers; the moved rules' tests pass in
+  `delivery/rules`; the instance report keeps `Version` 5 and its JSON, `promotion:{ready,reason}` included, and
+  `DecodeChanges`' error text; `make check-v2` passes; `kernel`, `observe` and `orchestration` no longer define
+  promotion, deployment, flux-wait, a unit's rollout verdict, currentness or readiness. The navigation test: a
+  `wrong_release` refusal, a `flux-wait` failure or a report saying `revision_not_current` points to
+  `delivery/rules` for the contract, its implementation and its tests.
+- **Decisions, 22 November 2026.** (1A) Copy the write plumbing promotion and deployment share into
+  `delivery/write.go` rather than export it from `orchestration` or move creation's writers early; the copies name
+  their origin and merge at slice 5. (2A) Move only promotion's rule, `SelectPromotion`; `kernel.SelectRelease` stays
+  for apps or provisioning. (3A) Move currentness, its change evidence and promotion readiness to `delivery/rules`
+  now, with readiness taking its own `Readiness` input instead of observe's report, and keep the observation
+  document's `Version` 5 and JSON unchanged. No behaviour changed.

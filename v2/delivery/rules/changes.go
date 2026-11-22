@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"bytes"
@@ -102,15 +102,6 @@ func changesField(decoder *json.Decoder, fields []string, seen map[string]bool) 
 	return nil
 }
 
-func containsField(fields []string, key string) bool {
-	for _, field := range fields {
-		if field == key {
-			return true
-		}
-	}
-	return false
-}
-
 // Validate also protects callers constructing evidence directly instead of decoding JSON.
 func (c Changes) Validate() error {
 	if c.Kind != "v2-changes" || c.Version != 1 || c.Comparisons == nil {
@@ -148,18 +139,6 @@ func (c Comparison) validate() error {
 	return nil
 }
 
-func repositoryPath(path string) bool {
-	if path == "" || strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\\\x00\r\n") {
-		return false
-	}
-	for _, part := range strings.Split(path, "/") {
-		if part == "" || part == "." || part == ".." {
-			return false
-		}
-	}
-	return true
-}
-
 // CurrentnessOf applies only complete matching comparisons. Availability is the unit read's status;
 // callers keep revision currency separate from reconciliation, suspension and workload health.
 func CurrentnessOf(expected, literal, availability string, scope ChangeScope, changes *Changes) (Currentness, error) {
@@ -169,7 +148,7 @@ func CurrentnessOf(expected, literal, availability string, scope ChangeScope, ch
 	if availability != Present && availability != Absent && availability != Unavailable && availability != NotRead {
 		return Currentness{}, invalid("unit", "unsupported_status")
 	}
-	if err := scope.validate(); err != nil {
+	if err := scope.Validate(); err != nil {
 		return Currentness{}, err
 	}
 	if changes != nil {
@@ -200,7 +179,7 @@ func currentnessOf(expected, literal, availability string, scope ChangeScope, ch
 		return result
 	}
 	if commit == expected {
-		result.State, result.Reason = Applied, "revision_matches"
+		result.State, result.Reason = "applied", "revision_matches"
 		return result
 	}
 	return compareCurrentness(result, commit, expected, scope, changes)
@@ -224,7 +203,7 @@ func comparedCurrentness(result Currentness, scope ChangeScope, comparison Compa
 		result.Reason = "comparison_" + comparison.Status
 		return result
 	}
-	if len(scope.Files)+len(scope.Folders) == 0 || scope.validate() != nil {
+	if len(scope.Files)+len(scope.Folders) == 0 || scope.Validate() != nil {
 		result.Reason = "relevance_unknown"
 		return result
 	}
@@ -252,14 +231,8 @@ func (s ChangeScope) relevant(path string) bool {
 	return false
 }
 
-func changeScopeOf(target Target) ChangeScope {
-	if target.Scope == nil {
-		return ChangeScope{}
-	}
-	return *target.Scope
-}
-
-func (s ChangeScope) validate() error {
+// Validate refuses a scope naming anything but repository-relative paths.
+func (s ChangeScope) Validate() error {
 	for _, paths := range [][]string{s.Files, s.Folders} {
 		for _, path := range paths {
 			if !repositoryPath(path) {

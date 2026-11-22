@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
@@ -432,7 +433,7 @@ func TestRevisionRelevanceUsesRecordWriterAndCompilerPaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			options := observationInputs(f)
 			options.Inputs = inputs
-			options.Changes = &observe.Changes{Kind: "v2-changes", Version: 1, Comparisons: []observe.Comparison{{From: old, To: revision, Status: "complete", Paths: test.paths}}}
+			options.Changes = &deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{{From: old, To: revision, Status: "complete", Paths: test.paths}}}
 			single, err := Status(t.Context(), options)
 			if err != nil {
 				t.Fatal(err)

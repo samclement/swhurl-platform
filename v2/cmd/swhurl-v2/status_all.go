@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
@@ -159,7 +160,7 @@ func (c cli) statusChanges(r request, inputs *orchestration.StatusInputs) int {
 	if status != 0 {
 		return status
 	}
-	changes, err := observe.DecodeChanges(data)
+	changes, err := deliveryrules.DecodeChanges(data)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}

@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 )
@@ -130,4 +131,35 @@ func sortedGrants(grants []string) []string {
 		return []string{}
 	}
 	return sorted
+}
+
+// The allocation document is what Allocate's result is written as: connectivity reads and writes its bytes
+// (connectivity/rules), and the kernel keeps its shape because the proxy renders from it and a declaration reports it.
+
+// EgressDocument is the platform's allocation: one port per instance, and the hosts each declares it needs.
+type EgressDocument struct {
+	Kind      string             `json:"kind"`
+	Version   int                `json:"version"`
+	Revision  string             `json:"revision"`
+	Instances []EgressAllocation `json:"instances"`
+}
+
+// EgressAllocation is one instance's place on the proxy. It is used both as an input (a previous
+// allocation, kept) and as an output (the allocation written), so the document and the decision share it.
+type EgressAllocation struct {
+	Application string   `json:"application"`
+	Environment string   `json:"environment"`
+	Port        int32    `json:"port"`
+	Grants      []string `json:"grants"`
+}
+
+// EgressOf picks one instance's own way out out of an allocation. An instance the document does not name has
+// none, which is a refusal: an instance compiled with --egress asked for one.
+func (d EgressDocument) EgressOf(application, environment string) (*Egress, error) {
+	for _, allocated := range d.Instances {
+		if allocated.Application == application && allocated.Environment == environment {
+			return &Egress{Port: allocated.Port, Grants: slices.Clone(allocated.Grants)}, nil
+		}
+	}
+	return nil, fmt.Errorf("missing: egress: the instance has no allocation")
 }

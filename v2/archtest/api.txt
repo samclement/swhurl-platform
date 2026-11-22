@@ -594,6 +594,12 @@ connectivity/rules/events: type Declaration struct {Application, Environment str
 connectivity/rules/events: type Error struct {Application, Environment, Field, Reason string}
 connectivity/rules/events: type Resolved struct {Connected []Subscription Pending []string}
 connectivity/rules/events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+connectivity/rules: func ConnectionsOf(data []byte, application, environment string) (kernel.Connections, error)
+connectivity/rules: func DecodeConnectionsDocument(data []byte) (kernel.ConnectionsDocument, error)
+connectivity/rules: func DecodeEgressDocument(data []byte) (kernel.EgressDocument, error)
+connectivity/rules: func EncodeEgressDocument(document kernel.EgressDocument) ([]byte, error)
+connectivity/rules: func InstanceEgress(document []byte, application, environment string) (*kernel.Egress, error)
+connectivity/rules: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -926,11 +932,9 @@ kernel: func CheckOwnership(compiled []Compilation, foreign []Object) error
 kernel: func CheckTeams(registry TeamRegistry, apps []AppSpec, instances []InstanceSpec) error
 kernel: func Compile(spec InstanceSpec, release ReleaseBundle, profile PlatformProfile) (Compilation, error)
 kernel: func CompileWith(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, connections Connections, egress *Egress) (Compilation, error)
-kernel: func ConnectionsOf(data []byte, application, environment string) (Connections, error)
-kernel: func Declare(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, resolution, allocation []byte) (Declared, error)
+kernel: func Declare(spec InstanceSpec, release ReleaseBundle, app AppSpec, profile PlatformProfile, resolution ConnectionsDocument, allocation EgressDocument) Declared
 kernel: func DecodeApp(data []byte) (AppSpec, error)
 kernel: func DecodeDeclaration(data []byte) (Declaration, error)
-kernel: func DecodeEgressDocument(data []byte) (EgressDocument, error)
 kernel: func DecodeInstance(data []byte) (InstanceSpec, error)
 kernel: func DecodeNameCatalogue(data []byte) (NameCatalogue, error)
 kernel: func DecodeProfile(data []byte) (PlatformProfile, error)
@@ -939,7 +943,6 @@ kernel: func DecodeTeams(data []byte) (TeamRegistry, error)
 kernel: func EgressGrants(grants []string) ([]string, error)
 kernel: func EncodeApp(app AppSpec) ([]byte, error)
 kernel: func EncodeCompilation(c Compilation) []byte
-kernel: func EncodeEgressDocument(document EgressDocument) ([]byte, error)
 kernel: func EncodeInstance(spec InstanceSpec) ([]byte, error)
 kernel: func EncodeRelease(release ReleaseBundle) ([]byte, error)
 kernel: func EncodeTeams(registry TeamRegistry) ([]byte, error)
@@ -955,7 +958,6 @@ kernel: func ImageParts(image string) (host, repository string, err error)
 kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
-kernel: func InstanceEgress(document []byte, application, environment string) (*Egress, error)
 kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
 kernel: func MergeDeclarations(current, adds, drops []string) []string
 kernel: func NamespaceOf(application, environment string) string
@@ -976,7 +978,6 @@ kernel: func RestoreJobName(application string, started time.Time) string
 kernel: func RevisionOf(tag ImageTag, revision string) (string, error)
 kernel: func SelectRelease(current InstanceSpec, candidate ReleaseBundle, expected InstanceRevision) (InstanceSpec, error)
 kernel: func SplitImage(reference string) (string, ImageTag, error)
-kernel: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 kernel: func UnitPath(application, environment string, profile PlatformProfile) string
 kernel: func UnitRegistrationPath(profile PlatformProfile) string
 kernel: func WithAllows(spec InstanceSpec, allows []string) (InstanceSpec, error)

@@ -4,7 +4,10 @@
 // same records the same way.
 package rules
 
-import "github.com/samclement/swhurl-platform/v2/kernel"
+import (
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
+	"github.com/samclement/swhurl-platform/v2/kernel"
+)
 
 // Inputs is one instance's compilation inputs, as the documents read them: its records, the platform
 // profile, and the two optional documents — the resolution that names its pairs and the allocation that
@@ -42,17 +45,27 @@ func Compile(inputs Inputs) (kernel.Compilation, error) {
 }
 
 // Declare is the instance's identity and the declaration its records state: the compiler's own facts and the two
-// committed resolution documents, never a read of the cluster.
+// committed resolution documents, never a read of the cluster. A document that was not given is the empty one, so
+// the declaration states no outcome for it.
 func Declare(inputs Inputs) (Declaration, error) {
 	spec, release, app, profile, err := decode(inputs)
 	if err != nil {
 		return Declaration{}, err
 	}
-	declared, err := kernel.Declare(spec, release, app, profile, inputs.Calls, inputs.Egress)
-	if err != nil {
-		return Declaration{}, err
+	allocation := kernel.EgressDocument{}
+	if inputs.Egress != nil {
+		if allocation, err = connectivityrules.DecodeEgressDocument(inputs.Egress); err != nil {
+			return Declaration{}, err
+		}
 	}
-	return Declaration{Application: spec.Application, Environment: spec.Environment, Declared: declared}, nil
+	resolution := kernel.ConnectionsDocument{}
+	if inputs.Calls != nil {
+		if resolution, err = connectivityrules.DecodeConnectionsDocument(inputs.Calls); err != nil {
+			return Declaration{}, err
+		}
+	}
+	return Declaration{Application: spec.Application, Environment: spec.Environment,
+		Declared: kernel.Declare(spec, release, app, profile, resolution, allocation)}, nil
 }
 
 // decode reads the records and the profile; an absent app record is the empty app.
@@ -84,13 +97,13 @@ func decode(inputs Inputs) (kernel.InstanceSpec, kernel.ReleaseBundle, kernel.Ap
 func documents(inputs Inputs, application, environment string) (kernel.Connections, *kernel.Egress, error) {
 	connections := kernel.Connections{}
 	if inputs.Calls != nil {
-		read, err := kernel.ConnectionsOf(inputs.Calls, application, environment)
+		read, err := connectivityrules.ConnectionsOf(inputs.Calls, application, environment)
 		if err != nil {
 			return kernel.Connections{}, nil, err
 		}
 		connections = read
 	}
-	egress, err := kernel.InstanceEgress(inputs.Egress, application, environment)
+	egress, err := connectivityrules.InstanceEgress(inputs.Egress, application, environment)
 	if err != nil {
 		return kernel.Connections{}, nil, err
 	}

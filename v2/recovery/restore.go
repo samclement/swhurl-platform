@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
@@ -134,7 +135,7 @@ func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error) 
 	if err != nil {
 		return RestoreOutcome{}, err
 	}
-	egress, err := kernel.InstanceEgress(inputs.Egress, spec.Application, spec.Environment)
+	egress, err := connectivityrules.InstanceEgress(inputs.Egress, spec.Application, spec.Environment)
 	if err != nil {
 		return RestoreOutcome{}, err
 	}

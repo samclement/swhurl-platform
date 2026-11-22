@@ -14,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
@@ -247,7 +248,7 @@ func readEgress(ctx context.Context, inputs PlatformAllInputs, scope *healthrule
 		scope.Egress.Problem = "the checkout has no " + healthrules.CheckoutAllocation
 		return nil
 	}
-	allocation, err := kernel.DecodeEgressDocument(inputs.Checkout.Allocation)
+	allocation, err := connectivityrules.DecodeEgressDocument(inputs.Checkout.Allocation)
 	if err != nil {
 		scope.Egress.Problem = err.Error()
 		return nil

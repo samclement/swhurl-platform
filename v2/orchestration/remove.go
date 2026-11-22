@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -87,14 +88,14 @@ func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Remo
 // its events. Both are relationships another instance's files render, so they are removed first.
 func removable(spec kernel.InstanceSpec, calls [][]byte) error {
 	for _, document := range calls {
-		connections, err := kernel.ConnectionsOf(document, spec.Application, spec.Environment)
+		connections, err := connectivityrules.ConnectionsOf(document, spec.Application, spec.Environment)
 		if err != nil {
 			return err
 		}
 		if len(connections.Callers) > 0 {
 			return &Refusal{Subject: "remove", Reason: "called_by " + strings.Join(connections.Callers, " ")}
 		}
-		subscribers, err := kernel.SubscribersOf(document, spec.Application, spec.Environment)
+		subscribers, err := connectivityrules.SubscribersOf(document, spec.Application, spec.Environment)
 		if err != nil {
 			return err
 		}

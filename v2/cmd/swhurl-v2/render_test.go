@@ -12,6 +12,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -177,7 +178,7 @@ func TestRenderWritesEveryDerivedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connections, err := kernel.ConnectionsOf(data, "demo-shop", "staging")
+	connections, err := connectivityrules.ConnectionsOf(data, "demo-shop", "staging")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +339,7 @@ func TestRenderGrantsADatabaseItsBackupOrRefusesIt(t *testing.T) {
 	if status, _, diagnostic := renderRun(t, writer, renderArgs(out, records, "--revision", renderRevision)...); status != 0 {
 		t.Fatalf("render exited %d: %s", status, diagnostic)
 	}
-	allocation, err := kernel.DecodeEgressDocument(writer.Contents[allocationPath])
+	allocation, err := connectivityrules.DecodeEgressDocument(writer.Contents[allocationPath])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +383,7 @@ func TestRenderGrantsAnInstanceTheHostsItsRecordDeclares(t *testing.T) {
 	if status, _, diagnostic := renderRun(t, writer, renderArgs(out, records, "--revision", renderRevision)...); status != 0 {
 		t.Fatalf("render exited %d: %s", status, diagnostic)
 	}
-	allocation, err := kernel.DecodeEgressDocument(writer.Contents[allocationPath])
+	allocation, err := connectivityrules.DecodeEgressDocument(writer.Contents[allocationPath])
 	if err != nil {
 		t.Fatal(err)
 	}

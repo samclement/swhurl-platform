@@ -1,9 +1,22 @@
 package kernel
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 )
+
+const revision = "0123456789abcdef0123456789abcdef01234567"
+
+// committed is a committed document as connectivity reads it; its reading is connectivity's to test.
+func committed[T any](t *testing.T, text string) T {
+	t.Helper()
+	var read T
+	if err := json.Unmarshal([]byte(text), &read); err != nil {
+		t.Fatal(err)
+	}
+	return read
+}
 
 // declaredSpec is one instance record whose relationships and exposure the tests vary.
 func declaredSpec() InstanceSpec {
@@ -50,11 +63,8 @@ const declaredAllocationDocument = `{"kind":"v2-egress","version":1,"revision":"
 // TestDeclareStatesWhatTheRecordsHold: every fact a page shows comes from the records, profile and committed
 // documents, with no read of the cluster.
 func TestDeclareStatesWhatTheRecordsHold(t *testing.T) {
-	declared, err := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t),
-		[]byte(declaredResolutionDocument), []byte(declaredAllocationDocument))
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t),
+		committed[ConnectionsDocument](t, declaredResolutionDocument), committed[EgressDocument](t, declaredAllocationDocument))
 	expected := Declared{
 		Team: "demo", Kind: "web", Exposure: "authenticated-web", Port: 8080,
 		Hosts:   []string{"demo-orders.homelab.swhurl.com"},
@@ -80,11 +90,8 @@ func TestDeclareStatesWhatTheRecordsHold(t *testing.T) {
 // TestDeclareRowsFollowTheResolution: a row is connected, waiting or refused by what the resolution says, in the
 // order a page lists them, and a declaration the document does not mention stays a row without an outcome.
 func TestDeclareRowsFollowTheResolution(t *testing.T) {
-	declared, err := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t),
-		[]byte(declaredResolutionDocument), []byte(declaredAllocationDocument))
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t),
+		committed[ConnectionsDocument](t, declaredResolutionDocument), committed[EgressDocument](t, declaredAllocationDocument))
 	want := []DeclaredConnection{
 		{Role: RoleCalls, App: "shop", Outcome: Connected},
 		{Role: RoleCalls, App: "ledger", Outcome: Waiting, Reason: "no_consent"},
@@ -104,10 +111,7 @@ func TestDeclareRowsFollowTheResolution(t *testing.T) {
 // TestDeclareWithoutDocumentsStatesNoOutcome: a caller that supplies no resolution or allocation gets declarations
 // without outcomes and a zero egress — never a connection nobody agreed to.
 func TestDeclareWithoutDocumentsStatesNoOutcome(t *testing.T) {
-	declared, err := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t), nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(declaredSpec(), declaredRecord(t), app(t), profile(t), ConnectionsDocument{}, EgressDocument{})
 	if declared.Egress.Port != 0 || len(declared.Egress.Grants) != 0 || len(declared.Callers) != 0 {
 		t.Fatalf("egress or callers invented: %+v", declared)
 	}
@@ -130,10 +134,7 @@ func TestDeclareGivesAWorkerNoAddress(t *testing.T) {
 	record.Runtime.Kind = "worker"
 	spec := declaredSpec()
 	spec.Grants.Exposure = "private"
-	declared, err := Declare(spec, record, app(t), profile(t), []byte(declaredResolutionDocument), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(spec, record, app(t), profile(t), committed[ConnectionsDocument](t, declaredResolutionDocument), EgressDocument{})
 	if len(declared.Hosts) != 0 || declared.Address != "" || declared.API != "" {
 		t.Fatalf("a worker has an address: %+v", declared)
 	}
@@ -147,10 +148,7 @@ func TestDeclareGivesAWorkerNoAddress(t *testing.T) {
 func TestDeclareKeepsAPrivateInstanceOffItsRoute(t *testing.T) {
 	spec := declaredSpec()
 	spec.Grants.Exposure = "private"
-	declared, err := Declare(spec, declaredRecord(t), app(t), profile(t), nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(spec, declaredRecord(t), app(t), profile(t), ConnectionsDocument{}, EgressDocument{})
 	if len(declared.Hosts) != 0 || declared.API != "" || declared.Address == "" {
 		t.Fatalf("declared %+v", declared)
 	}
@@ -160,10 +158,7 @@ func TestDeclareKeepsAPrivateInstanceOffItsRoute(t *testing.T) {
 func TestDeclareStatesNoDatabaseForAReleaseWithoutOne(t *testing.T) {
 	record := declaredRecord(t)
 	record.Database = ""
-	declared, err := Declare(declaredSpec(), record, app(t), profile(t), nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	declared := Declare(declaredSpec(), record, app(t), profile(t), ConnectionsDocument{}, EgressDocument{})
 	if declared.Database.Kind != "" || declared.Database.Path != "" {
 		t.Fatalf("a stateless release states a database: %+v", declared.Database)
 	}

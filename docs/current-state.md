@@ -2,6 +2,40 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Health is the fourth capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)
+  slice 4. The platform model, catalogue, report and checks moved from `observe/platform*.go` to
+  `health/rules/`; collectors and tests moved from `orchestration/platform*.go` to `health/`. Health reports
+  observe facts and recovery’s archive verdict through named pure dependencies. The shared `AppLabel` and
+  `StagingEnvironment` vocabulary belongs to `kernel`; GitHub Hook types, checkout checks, compiled-instance
+  and ClickStack helpers belong to `health/rules`. Verify calls health directly. `orchestration.ConsoleChecks`
+  keeps console composition through the sole registered `orchestration` → `health` workflow edge, a
+  transitional compromise to revisit when console moves in slice 5, not blanket peer-import permission.
+  Notifications’ pure rules own the platform destination Secret names shared by heartbeat and dashboards.
+  Observe now derives `unit.revision` from `delivery/rules.CurrentnessOf`; its duplicate parser and five reason
+  constants are deleted. Exact applied and proved-unaffected remain positive; a recognised different commit
+  without comparison/relevance proof stays `Different`/`Updating`, even with unknown currentness. A short
+  digest such as `main@sha1:deadbeef` now follows delivery’s `unrecognised_revision`: unassessed/Unknown,
+  not the old parser’s known Different/Updating. Observation Version 5, JSON and error formats are unchanged;
+  the platform report stays `v2-platform-checks` version 1 with unchanged field order and output semantics.
+  The [deferred ownership violations](v2-status.md#deferred-features) remain: incident deployment health and
+  restore CLI sequencing/refusals/report mutation await apps/status; copied delivery write decisions await
+  apps/provisioning. The channel-address read-loop copy contains no duplicated business verdict.
+- **Checks:** `make check-v2` and `make check-repo` pass on the integrated documentation tree. The Go suite
+  includes health’s pure-rule tests, verify/console bad-evidence and refusal/failure regressions, revision
+  presentation cases (comparison proof, no proof, malformed/short revision), public API snapshots and
+  architecture fixtures for pure clock refusal and directional workflow edges/reverse edges/cycles. Rendered
+  comparisons remain unchanged. Read-only documentation checks confirm gate/status alignment, local links
+  and removal of the deleted operational/contributing paths; `git diff --check` passes. Broader `make check-docs`
+  reports one remaining error: `docs/workload-identity-status.md` says `Uncommitted: none` while that
+  workstream’s broad registry scope includes these documentation edits. Status/gate agreement and progress
+  shape/size checks pass. The unrelated registry/page is outside this task’s scope; the full check is not green.
+- **Not exercised:** no cluster, bucket, console, restore, deployment, promotion, notification or live verify
+  run was performed for this integration; nothing live was changed or verified. Documentation changes are
+  uncommitted for review. **Next gate: operator approval of slice 5** (connectivity, provisioning, apps and
+  console), including the named ownership corrections; no slice-5 implementation is approved by this record.
+
 ## Notifications is the third capability package, offline (22 November 2026)
 
 - **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 3.

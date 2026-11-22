@@ -1,8 +1,8 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: blocked
-Gate: approve and deliver capability slice 4 (health): verify-platform's report assembling other capabilities' verdicts
-Uncommitted: v2/health/, v2/cmd/swhurl-v2/verify*.go, v2/orchestration/, v2/archtest/, docs/v2-status.md
+Gate: approve capability slice 5 (connectivity, provisioning, apps and console)
+Uncommitted: none
 
 **The goal is one Go platform implementation.** v2 becomes the platform's only implementation — kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl` (Python) is retired. Bash stays for host glue. v2 already owns every instance and the live loop; Copier and the separate codegraph development aid are retained exceptions; the Go chart tests also call upstream PyYAML. Each retirement is its own approved slice; the console left by the [approved strangling](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026).
 
@@ -91,7 +91,7 @@ stays for Go, collector and live checks; Go, backup and codegraph tests stay int
 | Copier in the console image and template checks | Kept upstream Python tool | Pinned alone in `pyproject.toml`/`uv.lock`; Jinja2 and PyYAML remain transitive dependencies, not platform runtime libraries. No Starlette, uvicorn, httpx, check or backup group remains |
 | Codegraph and its own tests (`devtools/codegraph/`) | Kept read-only, standard-library development aid | Separate from the platform and console image; `check-codegraph` and Ruff remain in `make check` and CI |
 | Go chart tests' YAML reader (`python3` importing `yaml`) | Kept upstream test-only dependency | Validate and Deploy v2 explicitly install `PyYAML==6.0.3` with Python 3.12, outside the Copier-only runtime groups |
-| Capability layout ([§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)): recovery moved to `recovery/` and `recovery/rules/`, whose one archive verdict restore, app status and `verify-platform` share; delivery, whose verdict that a requested revision landed (and promotion readiness) the instance report shows, moved to `delivery/` and `delivery/rules/` with promote, deploy and flux-wait; notifications, whose incident lifecycle, routing, delivery, retry and deduplication moved to `notifications/` and `notifications/rules/{incident,heartbeat,notify}` with the notify service, checker and host heartbeat workflows; `notifications/rules/notify` also owns the platform destination Secret names shared by heartbeat and dashboards (unchanged reads and delivery); health's pure platform model, catalogue and checks moved unchanged to `health/rules/`, which reports observe facts and recovery verdicts; shared `AppLabel` and `StagingEnvironment` vocabulary belongs to `kernel`, and platform collectors and their tests moved unchanged to `health/`; verify calls health directly, while `orchestration.ConsoleChecks` retains console composition through the single approved `orchestration → health` workflow edge (reconsidered in the console slice); the rest not started | partial | [recovery](current-state.md#one-archive-verdict-an-archive-counts-only-with-its-metadata-offline-22-november-2026), [delivery](current-state.md#delivery-is-the-second-capability-package-offline-22-november-2026), [notifications](current-state.md#notifications-is-the-third-capability-package-offline-22-november-2026), [health rules](../v2/health/rules/platform.go), [health collectors](../v2/health/platform.go) |
+| Capability layout ([§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)): recovery’s one archive verdict, delivery’s currentness/readiness and notifications’ incident/routing/delivery workflows are moved; notifications’ pure rules also own the shared platform destination names. Health is the fourth capability: `health/` collects and `health/rules/` owns the platform model, catalogue and checks, reporting observe facts and recovery verdicts; `kernel` owns approved `AppLabel`/`StagingEnvironment` vocabulary. Verify calls health; `ConsoleChecks` retains composition through the sole `orchestration → health` workflow edge. Observe presents delivery currentness without a duplicate parser: a known difference without comparison/relevance proof stays Updating; short digests are unrecognised/unassessed, not known Different. Platform moves preserve behavior; observation Version 5 and JSON/error formats stay unchanged. The remaining ownership violations are [deferred explicitly](#deferred-features); slice 5 awaits approval | partial | [recovery](current-state.md#one-archive-verdict-an-archive-counts-only-with-its-metadata-offline-22-november-2026), [delivery](current-state.md#delivery-is-the-second-capability-package-offline-22-november-2026), [notifications](current-state.md#notifications-is-the-third-capability-package-offline-22-november-2026), [health, offline](current-state.md#health-is-the-fourth-capability-package-offline-22-november-2026) |
 | Host connectivity probe | Dropped, no replacement | Source, systemd templates, make targets and installer support removed; installed units removed and no timer scheduled ([record](current-state.md#python-tests-and-the-host-probe-retired-offline-13-november-2026)) |
 
 ## Remaining work
@@ -100,6 +100,8 @@ Ordered; each item is small enough to land and verify alone. The order follows w
 what Python each slice deletes, not feature parity: v2 changes eight things after creation (`replicas`,
 `memoryMiB`, `exposure`, `calls`, `allows`, `subscriptions`, `egress`, `team`), and the deferred list is capability,
 not migration.
+
+**Capability migration:** slices 1–4 are implemented and tested offline, not accepted live. Slice 5 (connectivity, provisioning, apps and console) awaits operator approval, including the ownership corrections below and reconsideration of the console’s workflow edge.
 
 **A. The record.** One open item, and it changes no behaviour: **Renovate's app-template bumps take a shorter
 hand step** — one Renovate PR bumps the profile and the three platform releases together, and the v2 tests read the
@@ -142,11 +144,13 @@ Copier in the console image stays Python: it renders a new app's repository
 
 ## Deferred features
 
-The one list of features v2 does not model. A row leaves this table when its capability lands, or when the
-operator decides against it.
+The one list of unmodelled features and known ownership violations. A row leaves when its capability lands or the operator decides against it. Passing import checks does not make deferred ownership violations compliant.
 
 | Feature | v2 today | Reopen when |
 | --- | --- | --- |
+| Incident deployment-health ownership | `notifications/rules/incident/health.go` still decides deployment health independently; health does not consume it and slice 4 did not unify it with delivery’s verdict | Slice 5 apps/status must establish and reuse the owning verdict rather than duplicate delivery |
+| Restore CLI business sequencing | `cmd/swhurl-v2/restore.go` still sequences observation → plan → restore, refuses unsupported instances and mutates `report.Backup.Archive`; moving the plan’s reads to recovery did not remove command-owned business sequencing | Slice 5 apps/status moves sequencing, refusals and report mutation into the owning workflow; CLI only wires, invokes and formats |
+| Copied delivery write decisions | `delivery/write.go` and orchestration’s writers retain duplicated decisions (optional-document validation, offers placement/refusals and prune scope), not just mechanical plumbing; these violate the one-owner rule | Slice 5 apps/provisioning establishes one owner and removes the copied decisions when the remaining writers move |
 | An instance that must not reach outside | Every instance that needs one gets a proxy port; nothing withholds one | A kind that must not egress |
 | The egress namespace's own egress | Not restricted (the rendered policy states Ingress only) | Default-deny for the platform's own namespaces |
 | Routes: `public`, a host override | `authenticated-web` and `private` only; no host is stored; status reads the expected route and certificates by name | An instance needs a public route or an unusual host |
@@ -174,11 +178,7 @@ operator decides against it.
 
 Rules that constrain the next change, one line each. The reasoning stays in Git and current-state.
 
-- Navigate by capability, depend by kind: a capability's rules are pure and its own, other pure packages reach
-  them only through `PureDependencies`, and no new shared type goes into `kernel`; workflow imports require
-  [named directional edges](iteration-2-plan.md#workflow-dependency-policy-approved-22-november-2026)
-  (`WorkflowDependencies`, initially empty), never copied business verdicts or command-owned sequencing
-  (22 November 2026).
+- Navigate by capability, depend by kind: pure imports need `PureDependencies`, no new shared type goes into `kernel`, and [workflow imports](iteration-2-plan.md#workflow-dependency-policy-approved-22-november-2026) need `WorkflowDependencies` (only `orchestration` → `health`, reconsidered at console slice 5); [deferred violations](#deferred-features) are not permission for copied business verdicts or command-owned sequencing (22 November 2026).
 - One writer per fact, no compatibility layers, records are v2 JSON only, unused features stay on the
   backlog, promotion is one-way, and `edit` is the one settings primitive (31 October 2026).
 - A rollback is a promotion of an older release. A release from before declaration label version 2 is

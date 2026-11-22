@@ -1,6 +1,6 @@
 id: 40
 title: "Deployment health: one pure verdict owned beside the data it judges; incident reuses it"
-state: ready
+state: active
 scope:
   - v2/delivery/rules/**
   - v2/apps/rules/**

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/heartbeat"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
 )
 
 const first = "console/console-notifications"

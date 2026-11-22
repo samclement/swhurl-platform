@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/heartbeat"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
 )
 
 // now is 3 October 2026, 12:00 UTC, the Python tests' clock.

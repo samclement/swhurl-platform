@@ -13,7 +13,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
-	"github.com/samclement/swhurl-platform/v2/heartbeat"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/heartbeat"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )

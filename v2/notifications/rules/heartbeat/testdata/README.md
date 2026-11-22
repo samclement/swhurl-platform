@@ -2,7 +2,7 @@
 
 This is a test-fixture contract, not a progress log. The Python heartbeat (`tools/swhurl/notifications/heartbeat.py`)
 still runs until the cutover; this page maps its tests to the Go tests that keep its behaviour. See
-[the approved contract](../../../docs/iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026).
+[the approved contract](../../../../../docs/iteration-2-plan.md#15-the-host-heartbeat-in-go-approved-7-november-2026).
 
 ## Provenance
 

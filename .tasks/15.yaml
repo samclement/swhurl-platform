@@ -31,3 +31,6 @@ notes:
       From task 7: also record in docs/iteration-2-plan.md 'two copies of the write plumbing (orchestration and delivery/write.go) until slice 5'.
       ---
       From task 8: docs/iteration-2-plan.md:221 and :324 still name kernel.SelectPromotion / kernel/promote.go; update to delivery/rules.SelectPromotion.
+  - at: 2026-11-22T12:37:24.336Z
+    commit: e2545e12f81f
+    text: "From tasks 10/14: docs/iteration-2-plan.md:324 still lists orchestration/flux_wait.go as delivery's; absentOrUnavailable is now copied in orchestration/flux.go and delivery/fluxwait.go (another copy to merge at slice 5)."

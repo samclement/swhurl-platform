@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // statusCluster is a selected-list API scenario. All discovery comes from lists; only explicit
@@ -282,7 +284,7 @@ func TestStatusAllFixedListsAndKnownUnlabeledBackupJobs(t *testing.T) {
 			t.Fatalf("%d instances: %d lists %d reads", count, len(f.lists), len(f.reads))
 		}
 		for i, entry := range result.Instances {
-			if entry.Report.Backup.State != observe.BackupCurrent || f.reads[i].Namespace != entry.Report.Target.Namespace || f.reads[i].Name != "same-run-name" || f.reads[i].Kind != "Job" {
+			if entry.Report.Backup.State != rules.BackupCurrent || f.reads[i].Namespace != entry.Report.Target.Namespace || f.reads[i].Name != "same-run-name" || f.reads[i].Kind != "Job" {
 				t.Fatalf("%+v reads %+v", entry.Report.Backup, f.reads)
 			}
 			options := observationInputs(f)
@@ -318,7 +320,7 @@ func TestStatusAllListFailuresAreNeverAbsence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(f.reads) != 0 || result.Instances[0].Report.Backup.State != observe.BackupUnavailable {
+		if len(f.reads) != 0 || result.Instances[0].Report.Backup.State != rules.BackupUnavailable {
 			t.Fatalf("%+v reads %v", result.Instances[0].Report.Backup, f.reads)
 		}
 	}
@@ -360,15 +362,15 @@ func TestStatusAllBackupMissingOwnersAndFailedVersusAbsentJobs(t *testing.T) {
 		backup := result.Instances[0].Report.Backup
 		switch scenario {
 		case "no owner", "older owner":
-			if len(f.reads) != 0 || backup.State != observe.BackupNotAssessed || backup.Reason != observe.ReasonNoOwner {
+			if len(f.reads) != 0 || backup.State != rules.BackupNotAssessed || backup.Reason != rules.ReasonNoOwner {
 				t.Fatalf("%s: %+v reads %v", scenario, backup, f.reads)
 			}
 		case "failed job":
-			if backup.State != observe.BackupUnavailable {
+			if backup.State != rules.BackupUnavailable {
 				t.Fatalf("%+v", backup)
 			}
 		default:
-			if backup.State != observe.BackupCurrent || backup.NewestRun != nil || len(f.reads) != 1 || f.reads[0] != job {
+			if backup.State != rules.BackupCurrent || backup.NewestRun != nil || len(f.reads) != 1 || f.reads[0] != job {
 				t.Fatalf("%s: %+v reads %v", scenario, backup, f.reads)
 			}
 		}
@@ -431,7 +433,7 @@ func TestRevisionRelevanceUsesRecordWriterAndCompilerPaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			options := observationInputs(f)
 			options.Inputs = inputs
-			options.Changes = &observe.Changes{Kind: "v2-changes", Version: 1, Comparisons: []observe.Comparison{{From: old, To: revision, Status: "complete", Paths: test.paths}}}
+			options.Changes = &deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{{From: old, To: revision, Status: "complete", Paths: test.paths}}}
 			single, err := Status(t.Context(), options)
 			if err != nil {
 				t.Fatal(err)

@@ -2,6 +2,57 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Delivery is the second capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 2.
+  `v2/delivery` owns promotion, deployment and flux-wait (from `orchestration/{promote,deploy,flux_wait}.go`), with
+  `delivery/write.go` copying the write plumbing they share from `orchestration`, each copy naming its origin, until
+  slice 5. `v2/delivery/rules` (pure) owns promotion's rule `SelectPromotion` (from `kernel/promote.go`), a unit's
+  rollout verdict `FluxUnitAt` (from `observe/flux_wait.go`), the landed-revision verdict (`Currentness`,
+  `Changes`, `CurrentnessOf`, from `observe/changes.go`) and `PromotionReadiness` (from `observe/live.go`, now on
+  its own `Readiness` input), with their tests. `observe` reports currentness and readiness through
+  `delivery/rules`; `kernel.SelectRelease` stays in `kernel`. `archtest`: `delivery` is a listed use-case package,
+  `delivery/rules` is pure, and `PureDependencies` allows `observe` → `delivery/rules` and `delivery/rules` →
+  `kernel`.
+- **Checks:** `make check-v2` passes; `swhurl-v2 promote`, `deploy` and `flux-wait`'s command tests pass unmodified;
+  the instance report keeps `Version` 5 and its JSON; new archtest fixtures show `delivery/rules` reading the clock
+  is refused and `delivery/rules` → `observe` is refused.
+- **Not exercised:** nothing live changed: no promotion, deployment or `flux-wait` was run on the moved code, and
+  the slice is not on `main`.
+
+## One archive verdict: an archive counts only with its metadata, offline (22 November 2026)
+
+- **Change:** [D1](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026), decided by
+  the operator: `recovery/rules` alone decides whether an archive counts, and it counts only when its metadata is
+  listed beside it, aged by S3's `LastModified`. Restore and app status skip a half-uploaded newest archive for the
+  previous complete one (they used to choose it and then refuse the restore as `incomplete`); an archive named with
+  `--from` (`FROM=`) is still chosen without metadata and refused as `incomplete/archive_metadata_absent`.
+  `verify-platform`'s `sqlite-backups` check takes `rules.InstanceArchive` and its MongoDB backups check
+  `rules.NewestArchive` (the `.archive.gz.age` suffix), both now aged by S3's time rather than the stamp in the
+  archive's name; `observe`'s own rule (`backupSet`) is deleted. A backup location with an empty prefix
+  (`s3://bucket/`) now makes `sqlite-backups` report `not_confined_to_the_instance`, as the instance report already
+  did; the profile uses `app-sqlite/`.
+- **Checks:** `make check-v2` passes, including new `recovery/rules` tests (a newest archive without metadata falls
+  back, a named one is refused, one with no `LastModified` is malformed) and `observe`'s platform-check fixtures
+  with a `LastModified` per archive.
+- **Not exercised:** nothing live changed: no restore and no `make verify-platform` against the bucket were run on
+  the new rule, and the slice is not on `main`.
+
+## Recovery is the first capability package, offline (22 November 2026)
+
+- **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026) slice 1.
+  `v2/recovery/rules` (pure) now owns archive selection and eligibility, archive metadata, the restore plan's
+  decision, the backup location URI and the backup state vocabulary, moved from `observe/{archive,restore}.go` with
+  their tests; `v2/recovery` owns the restore workflow (from `orchestration/restore.go`) and the restore plan's reads
+  (from `cmd/swhurl-v2/restore.go`). `observe` reports recovery's archive verdict through `rules.InstanceArchive`,
+  `adapters/s3` speaks `rules` types, and the egress lookup both use cases share is `kernel.InstanceEgress`.
+  `archtest`: `recovery` is a listed use-case package, `recovery/rules` is pure, and `PureDependencies` allows
+  `observe` → `recovery/rules` alone.
+- **Checks:** `make check-v2` passes; `swhurl-v2 restore`'s command tests pass with only type names changed; new
+  archtest fixtures show a pure capability package reading the clock is refused and the reverse edge
+  `recovery/rules` → `observe` is refused.
+- **Not exercised:** no live restore was run; nothing is deployed.
+
 ## S3 signing on AWS's signer (16 November 2026)
 
 - **Change:** `adapters/s3` signs its listing and object requests, and the presigned URL a restore pod reads one

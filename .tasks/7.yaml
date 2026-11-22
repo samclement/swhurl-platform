@@ -1,0 +1,40 @@
+id: 7
+title: Promote moves into v2/delivery with the write plumbing it shares with deploy
+state: done
+scope:
+  - v2/delivery/promote.go
+  - v2/delivery/promote_test.go
+  - v2/delivery/write.go
+  - v2/delivery/fixtures_test.go
+  - v2/orchestration/promote.go
+  - v2/orchestration/promote_test.go
+  - v2/cmd/swhurl-v2/promote.go
+  - v2/cmd/swhurl-v2/promote_test.go
+  - v2/archtest/api.txt
+checks:
+  - make check-v2
+  - cd v2 && go test ./delivery/... ./cmd/swhurl-v2 -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! test -e v2/orchestration/promote.go"
+  - "! test -e v2/orchestration/promote_test.go"
+  - "! grep -q 'v2/orchestration\"' v2/cmd/swhurl-v2/promote.go"
+  - cd v2 && go test ./cmd/swhurl-v2 -run TestPromote
+after:
+  - 6
+reason: null
+notes:
+  - at: 2026-11-22T12:07:50.621Z
+    commit: 7f70a48d5699
+    text: "Slice 2 (delivery), plan block 1. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `git mv v2/orchestration/promote.go v2/delivery/promote.go` and the same for its test; `Promote`, `PromoteInputs`, `Promotion` keep their names and fields, so `cmd/swhurl-v2/promote.go` changes only its import and `orchestration.`→`delivery.` (`:56,97-131`). `write.go` copies, verbatim with a one-line note saying which package it came from: `Refusal`, `reasonOf`, `unavailable` (`orchestration/usecase.go:20-40`), `recordsRoot` (`orchestration/records.go:7`), `writeCompiled`+`prune` (`orchestration/orchestration.go:108-136`), `documents` (`:164-182`), `WithOffers`+`plainName`+`instanceFolder`+`refuseOffers` (`:184-224`), `instanceDocuments` (`orchestration/deploy.go:181-204`) — deploy (task 3) reuses them, do not redeclare. `fixtures_test.go` holds `fixture(t,name)` (`orchestration/deploy_test.go:30-37`, reads `../testdata`) plus any promote-only fixture helper, because `orchestration/promote_test.go` borrows `fixture` today; delivery sits at the same depth so `../testdata` paths still work. `kernel.SelectPromotion` is still called as-is; task 2 moves it. Promote's document kind, `promoteNote`, the stderr summary and exit statuses must not change (`cmd/swhurl-v2/promote_test.go` passes unmodified apart from type names)."
+  - at: 2026-11-22T12:17:08.608Z
+    commit: 93260292450c
+    text: delivery/write.go's documents() takes (calls, egress []byte, app, env) instead of orchestration's Inputs, which delivery has no copy of; deploy (task 3) calls documents(inputs.Calls, inputs.Egress, ...). reasonOf/unavailable are copied but unused until deploy moves. The plan doc (two copies until slice 5; observe/explain.go duplicate currentness rule in the deferred list) is outside this task's scope and was not edited.
+  - at: 2026-11-22T12:17:12.876Z
+    commit: 93260292450c
+    text: "done: Promote/PromoteInputs/Promotion moved by git mv to v2/delivery; cmd promote imports delivery. delivery/write.go copies the shared write plumbing (each naming its origin; documents takes calls/egress bytes, not Inputs); fixtures_test.go holds fixture. api.txt updated. Not verified live; no docs edited."
+  - at: 2026-11-22T12:17:12.876Z
+    commit: 93260292450c
+    text: "followup: docs/iteration-2-plan.md: record 'two copies of the write plumbing until slice 5' and, in the deferred list, that observe/explain.go's 'unit applied this revision' rule duplicates delivery's currentness rule (both out of task 7's scope)."
+  - at: 2026-11-22T12:18:49.804Z
+    commit: 93260292450c
+    text: branch dsa/01M81JTDZ3KR987FDW78SR2XVF/task-7

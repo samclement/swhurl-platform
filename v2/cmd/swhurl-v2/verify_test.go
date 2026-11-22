@@ -21,6 +21,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // platformAPI answers the eight reads the platform checks make, as the API server writes them; a path in failing
@@ -130,9 +131,9 @@ func TestVerifyNeedsExactlyOneCredential(t *testing.T) {
 
 // verifyPlatform runs the platform scope against the test server and the checkout at the repository's root, with a
 // registry and an object store that answer without a network.
-func verifyPlatform(t *testing.T, server *httptest.Server, extra ...string) (int, string, string, *[]observe.ArchiveQuery) {
+func verifyPlatform(t *testing.T, server *httptest.Server, extra ...string) (int, string, string, *[]rules.ArchiveQuery) {
 	t.Helper()
-	listed := &[]observe.ArchiveQuery{}
+	listed := &[]rules.ArchiveQuery{}
 	c := cli{readFile: readInput, writer: files.New(), encrypter: sops.New(), seed: randomSeed, inCluster: podServiceAccount(),
 		registries: func(string) (registry.Reader, error) { return registrytest.New(registrytest.Scenario{}), nil },
 		archives: func(bucket, region string) (s3.Reader, error) {
@@ -149,16 +150,16 @@ func verifyPlatform(t *testing.T, server *httptest.Server, extra ...string) (int
 }
 
 // listingStore answers every listing with an empty prefix, and records it.
-type listingStore struct{ listed *[]observe.ArchiveQuery }
+type listingStore struct{ listed *[]rules.ArchiveQuery }
 
-func (l listingStore) List(_ context.Context, query observe.ArchiveQuery) (observe.ArchiveList, error) {
+func (l listingStore) List(_ context.Context, query rules.ArchiveQuery) (rules.ArchiveList, error) {
 	*l.listed = append(*l.listed, query)
-	return observe.ArchiveList{Query: query, Status: observe.Present, Objects: []observe.Archive{}}, nil
+	return rules.ArchiveList{Query: query, Status: observe.Present, Objects: []rules.Archive{}}, nil
 }
-func (listingStore) Get(context.Context, observe.ArchiveQuery, string) ([]byte, error) {
+func (listingStore) Get(context.Context, rules.ArchiveQuery, string) ([]byte, error) {
 	return nil, nil
 }
-func (listingStore) PresignURL(context.Context, observe.ArchiveQuery, string, time.Duration) (string, error) {
+func (listingStore) PresignURL(context.Context, rules.ArchiveQuery, string, time.Duration) (string, error) {
 	return "", nil
 }
 

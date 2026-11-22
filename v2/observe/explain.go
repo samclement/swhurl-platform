@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 )
 
 // Ref identifies one Kubernetes object as its API names it.
@@ -37,7 +39,7 @@ type Target struct {
 	// Route is the route the records expect; nil when the instance renders none.
 	Route *RouteTarget
 	// Scope is compiler/writer-derived repository relevance, empty when it is not known.
-	Scope *ChangeScope
+	Scope *deliveryrules.ChangeScope
 }
 
 // A read's status, and the outcomes a finding can have. The same word means the same thing wherever
@@ -125,7 +127,7 @@ type Evidence struct {
 	// Backup is the protection's evidence; nil when the caller made no such read, which is reported as
 	// unassessed rather than assumed.
 	Backup  *BackupEvidence
-	Changes *Changes
+	Changes *deliveryrules.Changes
 }
 
 // Finding is one fact: whether it was established, what was found, and why not.
@@ -147,7 +149,7 @@ const (
 // names as assessed was read from anywhere but the evidence it was given.
 type Report struct {
 	Target      Target
-	Currentness Currentness
+	Currentness deliveryrules.Currentness
 	Live        LiveFacts
 	Source      string
 	ObservedAt  string
@@ -216,16 +218,24 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 }
 
 // revisionFindings changes only the revision finding; failures and missing evidence remain independent.
-func revisionFindings(target Target, facts facts, changes *Changes) ([]Finding, Currentness, error) {
-	currentness, err := CurrentnessOf(target.Revision, facts.unit.flux.lastAppliedRevision, facts.unit.read.Status, changeScopeOf(target), changes)
+func revisionFindings(target Target, facts facts, changes *deliveryrules.Changes) ([]Finding, deliveryrules.Currentness, error) {
+	currentness, err := deliveryrules.CurrentnessOf(target.Revision, facts.unit.flux.lastAppliedRevision, facts.unit.read.Status, changeScopeOf(target), changes)
 	if err != nil {
-		return nil, Currentness{}, err
+		return nil, deliveryrules.Currentness{}, err
 	}
 	findings := findingsOf(target, facts)
 	if currentness.State == "unaffected" {
 		findings[1] = Finding{"unit.revision", Unaffected, "complete_comparison_unaffected"}
 	}
 	return findings, currentness, nil
+}
+
+// changeScopeOf is the target's repository relevance, empty when it is not known.
+func changeScopeOf(target Target) deliveryrules.ChangeScope {
+	if target.Scope == nil {
+		return deliveryrules.ChangeScope{}
+	}
+	return *target.Scope
 }
 
 // findingsOf reports the target's facts in fixed order. Each finding answers one question, so a
@@ -515,7 +525,7 @@ func (t Target) validate() error {
 		return err
 	}
 	if t.Scope != nil {
-		if err := t.Scope.validate(); err != nil {
+		if err := t.Scope.Validate(); err != nil {
 			return err
 		}
 	}

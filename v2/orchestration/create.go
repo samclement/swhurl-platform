@@ -132,3 +132,23 @@ func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.Ap
 	return recordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
 		instanceDocument, secret, declaration.OfferedFiles()), nil
 }
+
+// revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag
+// carries an abbreviation, and the release states a full commit.
+func revisionOf(tag kernel.ImageTag, published registry.Image) (string, error) {
+	revision := published.Labels[kernel.RevisionLabel]
+	if revision == "" {
+		return "", &Refusal{"source", "revision_absent"}
+	}
+	return kernel.RevisionOf(tag, revision)
+}
+
+// declarationOf reads the image's declaration label. An image without one is refused rather than guessed:
+// the platform cannot apply facts the build did not state.
+func declarationOf(published registry.Image) (kernel.Declaration, error) {
+	value, found := published.Labels[kernel.DeclarationLabel]
+	if !found || value == "" {
+		return kernel.Declaration{}, &Refusal{"declaration", "absent"}
+	}
+	return kernel.DecodeDeclaration([]byte(value))
+}

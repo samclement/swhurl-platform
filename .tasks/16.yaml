@@ -1,0 +1,53 @@
+id: 16
+title: The landed-revision verdict (currentness and its comparison evidence) moves to delivery/rules
+state: done
+scope:
+  - v2/delivery/rules/changes.go
+  - v2/delivery/rules/changes_test.go
+  - v2/observe/changes.go
+  - v2/observe/changes_test.go
+  - v2/observe/explain.go
+  - v2/observe/report.go
+  - v2/observe/batch_test.go
+  - v2/orchestration/console.go
+  - v2/orchestration/console_internal_test.go
+  - v2/orchestration/status.go
+  - v2/orchestration/status_all.go
+  - v2/orchestration/status_all_test.go
+  - v2/orchestration/status_scope.go
+  - v2/cmd/swhurl-v2/status_all.go
+  - v2/cmd/swhurl-v2/status.go
+  - v2/cmd/swhurl-v2/status_test.go
+  - v2/cmd/swhurl-v2/status_all_test.go
+  - v2/archtest/api.txt
+  - v2/observe/report_test.go
+checks:
+  - make check-v2
+  - cd v2 && go test ./delivery/rules ./observe ./orchestration -count=1
+  - cd v2 && go test ./cmd/swhurl-v2 -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - cd v2 && go test ./archtest -run TestLayers
+  - "! test -e v2/observe/changes.go"
+  - "! test -e v2/observe/changes_test.go"
+  - "! grep -rq 'observe.Currentness\\|observe.Changes\\|observe.Comparison\\|observe.ChangeScope\\|observe.DecodeChanges' v2"
+after:
+  - 6
+reason: null
+notes:
+  - at: 2026-11-22T12:44:09.010Z
+    commit: acf86f205705
+    text: |-
+      Replaces task 11 (re-created with v2/observe/report_test.go in scope (tk cannot widen scope); work is in worktree .dsa/01M81M5YMT9K5WW9JHJ0J6YMJB/task-11). Notes carried over:
+      Slice 2 (delivery), plan block 5. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `observe/changes.go` moves whole to `delivery/rules/changes.go` with its export names (`Currentness`, `Changes`, `Comparison`, `ChangeScope`, `DecodeChanges`, `CurrentnessOf`), using task 0's vocabulary instead of observe's private copies; `observe/changes_test.go` is already `package observe_test` and moves with it. The judge stays single: `observe/explain.go:219-222` calls `rules.CurrentnessOf`, and `observe.Target.Scope` (`explain.go:40`), `observe.Evidence.Changes` (`:126-128`), `observe.Report.Currentness` (`:150`) and the report document field (`report.go:26,69`) take the rules' types. Callers to update: `orchestration/console.go:310-344`, `orchestration/status.go:24`, `orchestration/status_all.go:23-24,138`, `orchestration/status_scope.go:27`, `cmd/swhurl-v2/status_all.go:162,174`, and the tests `orchestration/console_internal_test.go:13`, `orchestration/status_all_test.go:435,444`, `cmd/swhurl-v2/status_all_test.go:52`, `observe/batch_test.go:93,104`. The report's JSON must not move: same field names, `Version` stays 5 — a status document is byte-identical for the same evidence, so `cmd` status tests need only type names. Do not touch `observe/explain.go:305-320`'s own revision *finding*: reporting the unit's revision is health's, and collapsing the two is a separate change.
+      ---
+      From task 6: observe.Error formats as field/reason, delivery/rules.Error as 'code: field: reason'. Moving DecodeChanges must keep the error text commands and documents print today (commands keep their output); if that is impossible without a shim, release and say why.
+      ---
+      Question from worker: where do the Explain-level currentness tests and TestPromotionReadiness... go once observe/changes_test.go is deleted? -> Option 1: observe/report_test.go (task 12 owns it and moves TestPromotionReadiness from there); task re-created with v2/observe/report_test.go in scope because tk cannot widen scope.
+      ---
+      Work is done and uncommitted in this worktree; all five checks plus the three greps pass (make check-v2 exit 0). Placement: observe/changes.go moved to delivery/rules/changes.go (package rules, reusing rules.go's invalid/repositoryPath/containsField/appliedCommit/unitReason; ChangeScope.validate exported as Validate because observe's Target.validate calls it; changeScopeOf stays in observe/explain.go). Pure tests (CurrentnessOf table, DecodeChanges strictness, malformed-proof refusal, endpoint mismatch) are in delivery/rules/changes_test.go. Explain-level tests (unaffectedReport, TestUnaffectedNeverWaivesUnhealthyEvidence, TestExplainRefusesInvalidProof…, TestPromotionReadinessUsesReviewedSelectedAndRunningDigest, TestPromotionReadinessNeedsTheReviewedDigestRunning) moved to observe/report_test.go per operator option 1, so task 12 moves TestPromotionReadiness* from report_test.go, not changes_test.go. Outside packages import delivery/rules as deliveryrules (recovery/rules already owns the name rules). Error text unchanged: rules.Error with Code invalid prints 'invalid: field: reason' like observe.Error; cmd status_all_test asserts 'invalid: changes:'. JSON unchanged (Version 5).
+  - at: 2026-11-22T12:44:46.511Z
+    commit: acf86f205705
+    text: "done: observe/changes.go moved to delivery/rules/changes.go (Currentness, Changes, Comparison, ChangeScope, DecodeChanges, CurrentnessOf; ChangeScope.Validate exported for observe.Target). Pure tests in delivery/rules/changes_test.go; Explain-level tests in observe/report_test.go. Callers import deliveryrules. JSON (Version 5) and error text unchanged. No live run."
+  - at: 2026-11-22T12:46:36.170Z
+    commit: d48585b954e7
+    text: branch dsa/01M81M5YMT9K5WW9JHJ0J6YMJB/task-11

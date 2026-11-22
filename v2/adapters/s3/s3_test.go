@@ -14,6 +14,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3/s3test"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // recorded is the recorded listing answer from testdata.
@@ -27,7 +28,7 @@ func recorded(t *testing.T) []byte {
 }
 
 // listedObjects is what the recorded answer holds, as the adapter reads it.
-func listedObjects(t *testing.T) []observe.Archive {
+func listedObjects(t *testing.T) []rules.Archive {
 	t.Helper()
 	archive, err := time.Parse(time.RFC3339, "2026-10-26T08:21:21Z")
 	if err != nil {
@@ -37,7 +38,7 @@ func listedObjects(t *testing.T) []observe.Archive {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return []observe.Archive{
+	return []rules.Archive{
 		{Key: "app-sqlite/hello-staging/sqlite-20261026T082103Z.db.age", LastModified: archive},
 		{Key: "app-sqlite/hello-staging/sqlite-20261026T082103Z.json", LastModified: metadata},
 	}
@@ -48,12 +49,12 @@ func listedObjects(t *testing.T) []observe.Archive {
 func answers(t *testing.T) s3test.Scenario {
 	t.Helper()
 	return s3test.Scenario{
-		Query: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694",
+		Query: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694",
 			Prefix: "app-sqlite/hello-staging/"},
 		Objects: listedObjects(t),
-		Forbidden: observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694",
+		Forbidden: rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694",
 			Prefix: "app-sqlite/refused/"},
-		Empty:   observe.ArchiveQuery{},
+		Empty:   rules.ArchiveQuery{},
 		Key:     "app-sqlite/hello-staging/sqlite-20261026T082103Z.json",
 		Body:    `{"sha256":"` + strings.Repeat("a", 64) + `","tables":2,"source":"hello-staging"}`,
 		Missing: "app-sqlite/hello-staging/sqlite-missing.db.age.json",
@@ -155,7 +156,7 @@ func TestListFollowsPages(t *testing.T) {
 	}}
 	instance := answering.serve(t)
 	listed, err := reader(t, instance).List(context.Background(),
-		observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
+		rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
 	if err != nil || listed.Status != observe.Present || len(listed.Objects) != 2 {
 		t.Fatalf("listing: %+v %v", listed, err)
 	}
@@ -182,7 +183,7 @@ func TestListFailures(t *testing.T) {
 				w.WriteHeader(tt.status)
 			}}).serve(t)
 			listed, err := reader(t, instance).List(context.Background(),
-				observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
+				rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
 			if err != nil || listed.Status != observe.Unavailable || listed.Reason != tt.reason ||
 				len(listed.Objects) != 0 {
 				t.Fatalf("status %d: %+v %v", tt.status, listed, err)
@@ -201,7 +202,7 @@ func TestListFailures(t *testing.T) {
 				write(t, w, tt.body)
 			}}).serve(t)
 			listed, err := reader(t, instance).List(context.Background(),
-				observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
+				rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
 			want := observe.ReasonMalformed
 			if tt.name == "oversized" {
 				want = observe.ReasonTooLarge
@@ -227,7 +228,7 @@ func TestListTimesOut(t *testing.T) {
 	expiring := client(t, instance)
 	expiring.Timeout = 100 * time.Millisecond
 	listed, err := s3.New("eu-west-2", s3.Credentials{AccessKey: "k", SecretKey: "s"}, expiring).
-		List(context.Background(), observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
+		List(context.Background(), rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"})
 	if err != nil || listed.Status != observe.Unavailable || listed.Reason != observe.ReasonTimedOut {
 		t.Fatalf("timeout: %+v %v", listed, err)
 	}
@@ -275,7 +276,7 @@ func TestParseURL(t *testing.T) {
 		}
 	}
 	if _, err := s3.New("eu-west-2", s3.Credentials{}, http.DefaultClient).
-		List(context.Background(), observe.ArchiveQuery{}); err == nil {
+		List(context.Background(), rules.ArchiveQuery{}); err == nil {
 		t.Fatal("a listing without a bucket was answered")
 	}
 }
@@ -294,7 +295,7 @@ func TestPrefixIsEncodedOnce(t *testing.T) {
 		write(t, w, listing(nil, ""))
 	}}).serve(t)
 	if _, err := reader(t, instance).List(context.Background(),
-		observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/hello staging/"}); err != nil {
+		rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/hello staging/"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -346,7 +347,7 @@ func TestListDiscoversTheRegion(t *testing.T) {
 		write(t, w, listing(nil, ""))
 	}}
 	instance := answering.serve(t)
-	query := observe.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"}
+	query := rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "p/"}
 	if listed, err := s3.New("", s3.Credentials{AccessKey: "k", SecretKey: "s"}, client(t, instance)).
 		List(context.Background(), query); err != nil || listed.Status != observe.Present {
 		t.Fatalf("discovered listing: %+v %v", listed, err)

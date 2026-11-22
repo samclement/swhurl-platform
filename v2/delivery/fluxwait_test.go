@@ -1,4 +1,4 @@
-package orchestration
+package delivery
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -23,7 +24,7 @@ type waitCluster struct {
 }
 
 func (c *waitCluster) Read(_ context.Context, ref observe.Ref) (observe.Read, error) {
-	if ref.Kind != "GitRepository" || ref.Name != observe.FluxSource || ref.Namespace != "flux-system" {
+	if ref.Kind != "GitRepository" || ref.Name != rules.FluxSource || ref.Namespace != "flux-system" {
 		return observe.Read{}, fmt.Errorf("unexpected read of %+v", ref)
 	}
 	if c.sourceErr != nil {

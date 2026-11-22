@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"time"
+
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // EncodeReport is one observation as a versioned JSON document: the target it is about, the evidence's
@@ -20,7 +23,7 @@ func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error) 
 	document := reportDocument{
 		Kind:        "v2-observation",
 		Version:     5,
-		Promotion:   PromotionReadiness(report, reviewedDigest),
+		Promotion:   promotionReadiness(report, reviewedDigest),
 		Currentness: report.Currentness, Live: report.Live,
 		Source:       report.Source,
 		ObservedAt:   report.ObservedAt,
@@ -57,27 +60,37 @@ func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error) 
 	return bytes.TrimSuffix(out.Bytes(), []byte{'\n'}), nil
 }
 
+// promotionReadiness is delivery's readiness rule over this report: the selected digest is the target's, the
+// currency its currentness state, and the running digests the live facts'.
+func promotionReadiness(report Report, reviewedDigest string) deliveryrules.PromotionDecision {
+	return deliveryrules.PromotionReadiness(deliveryrules.Readiness{
+		ReviewedDigest: reviewedDigest, SelectedDigest: report.Target.Digest,
+		Currency: report.Currentness.State, Healthy: report.State.Name == StateHealthy,
+		Running: deliveryrules.Running{Status: report.Live.Running.Status, Digests: report.Live.Running.Digests},
+	})
+}
+
 // reportDocument is the report's shape on stdout: field order is the document order, and a change to it
 // raises Version.
 type reportDocument struct {
-	Kind         string                `json:"kind"`
-	Version      int                   `json:"version"`
-	Source       string                `json:"source"`
-	ObservedAt   string                `json:"observedAt"`
-	Currentness  Currentness           `json:"currentness"`
-	Live         LiveFacts             `json:"live"`
-	State        stateDocument         `json:"state"`
-	Promotion    PromotionDecision     `json:"promotion"`
-	Verdict      Verdict               `json:"verdict"`
-	Backup       backupDocument        `json:"backup"`
-	Findings     []findingDocument     `json:"findings"`
-	Problems     []problemDocument     `json:"problems"`
-	Routes       []routeDocument       `json:"routes"`
-	Certificates []certificateDocument `json:"certificates"`
-	Assessed     []string              `json:"assessed"`
-	Unassessed   []string              `json:"unassessed"`
-	NotCovered   []string              `json:"notCovered"`
-	Target       targetDocument        `json:"target"`
+	Kind         string                          `json:"kind"`
+	Version      int                             `json:"version"`
+	Source       string                          `json:"source"`
+	ObservedAt   string                          `json:"observedAt"`
+	Currentness  deliveryrules.Currentness       `json:"currentness"`
+	Live         LiveFacts                       `json:"live"`
+	State        stateDocument                   `json:"state"`
+	Promotion    deliveryrules.PromotionDecision `json:"promotion"`
+	Verdict      Verdict                         `json:"verdict"`
+	Backup       backupDocument                  `json:"backup"`
+	Findings     []findingDocument               `json:"findings"`
+	Problems     []problemDocument               `json:"problems"`
+	Routes       []routeDocument                 `json:"routes"`
+	Certificates []certificateDocument           `json:"certificates"`
+	Assessed     []string                        `json:"assessed"`
+	Unassessed   []string                        `json:"unassessed"`
+	NotCovered   []string                        `json:"notCovered"`
+	Target       targetDocument                  `json:"target"`
 }
 
 // stateDocument is the instance's state and the fact that decided it; a healthy state names none.
@@ -139,7 +152,7 @@ type archiveDocument struct {
 	MaxAgeSeconds int64  `json:"maxAgeSeconds,omitempty"`
 }
 
-func archiveDocumentOf(report ArchiveReport) archiveDocument {
+func archiveDocumentOf(report rules.ArchiveReport) archiveDocument {
 	return archiveDocument{State: report.State, Reason: report.Reason, Bucket: report.Bucket, Prefix: report.Prefix,
 		Newest: report.Newest, LastModified: report.LastModified,
 		AgeSeconds: int64(report.Age / time.Second), MaxAgeSeconds: int64(report.MaxAge / time.Second)}

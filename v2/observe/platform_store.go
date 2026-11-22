@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // ChannelEvidence is what the channels check reads: the routes Git renders from the team registry, the routes and
@@ -95,12 +97,12 @@ func unroutedTeams(owners map[string][]string, routes map[string][]string) []Pla
 // backups are, and what the object store listed there.
 type MongoBackupEvidence struct {
 	Job     Read
-	Listing ArchiveList
+	Listing rules.ArchiveList
 }
 
 // BackupJobLocation is where the backup CronJob publishes: its first container's BACKUP_S3_URI, as a bucket and a
 // prefix; false when the job states none of the form s3://<bucket>/<prefix>/.
-func BackupJobLocation(job Read) (ArchiveQuery, bool) {
+func BackupJobLocation(job Read) (rules.ArchiveQuery, bool) {
 	var document struct {
 		Spec struct {
 			JobTemplate struct {
@@ -117,32 +119,19 @@ func BackupJobLocation(job Read) (ArchiveQuery, bool) {
 		} `json:"spec"`
 	}
 	if job.Status != Present || json.Unmarshal(job.Object, &document) != nil || len(document.Spec.JobTemplate.Spec.Template.Spec.Containers) == 0 {
-		return ArchiveQuery{}, false
+		return rules.ArchiveQuery{}, false
 	}
 	for _, variable := range document.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env {
 		if variable.Name == "BACKUP_S3_URI" {
-			return BackupLocation(variable.Value)
+			return rules.BackupLocation(variable.Value)
 		}
 	}
-	return ArchiveQuery{}, false
+	return rules.ArchiveQuery{}, false
 }
 
-// BackupLocation is an s3://<bucket>/<prefix>/ URI as the bucket and prefix it names; false for any other text.
-func BackupLocation(uri string) (ArchiveQuery, bool) {
-	rest, found := strings.CutPrefix(uri, "s3://")
-	bucket, prefix, _ := strings.Cut(rest, "/")
-	if !found || !bucketPattern().MatchString(bucket) || !strings.HasSuffix(uri, "/") {
-		return ArchiveQuery{}, false
-	}
-	return ArchiveQuery{Bucket: bucket, Prefix: prefix}, true
-}
-
-// backupSet is one kind of backup: its archives are <name>-<UTC stamp><suffix>, each complete only once its metadata,
-// <name>-<UTC stamp>.json, is beside it (the job publishes that last). What to run, and the namespace whose backup jobs
-// to check, are the operator's.
-type backupSet struct {
-	name, suffix, what, run, jobs, prefix string
-}
+// backupCheck is how one kind of backup's entry reads: its label, what is backed up, what takes a backup, and the
+// namespace whose backup jobs to check. Whether a recent complete archive is there is recovery's verdict.
+type backupCheck struct{ label, what, run, jobs string }
 
 func platformBackups(e MongoBackupEvidence, credentials bool, maxAge time.Duration, now time.Time) []PlatformEntry {
 	what := "the MongoDB backup job (observability/backup-mongodb)"
@@ -153,64 +142,35 @@ func platformBackups(e MongoBackupEvidence, credentials bool, maxAge time.Durati
 	if !found {
 		return []PlatformEntry{bad(what + " states no BACKUP_S3_URI of the form s3://<bucket>/<prefix>/, so its backups are unchecked")}
 	}
-	set := backupSet{name: "clickstack-mongodb", suffix: ".archive.gz.age", what: "MongoDB", run: "make backup-mongodb",
-		jobs: PlatformMongoBackup.Namespace}
-	return []PlatformEntry{set.entry(location, e.Listing, credentials, maxAge, now)}
+	check := backupCheck{what: "MongoDB", run: "make backup-mongodb", jobs: PlatformMongoBackup.Namespace}
+	return []PlatformEntry{check.entry(location, e.Listing, credentials, func(listed rules.ArchiveList) (rules.ArchiveReport, error) {
+		return rules.NewestArchive(listed, ".archive.gz.age", maxAge, now)
+	})}
 }
 
-// entry is the set's newest complete backup under the location, judged against the oldest one allowed.
-func (s backupSet) entry(location ArchiveQuery, listing ArchiveList, credentials bool, maxAge time.Duration, now time.Time) PlatformEntry {
+// entry is recovery's verdict on the newest complete backup the listing of the location holds.
+func (c backupCheck) entry(location rules.ArchiveQuery, listing rules.ArchiveList, credentials bool,
+	judge func(rules.ArchiveList) (rules.ArchiveReport, error)) PlatformEntry {
 	uri := "s3://" + location.Bucket + "/" + location.Prefix
 	switch {
 	case !credentials:
 		return bad(fmt.Sprintf("%scannot list backups in %s: AWS credentials not supplied (make verify-platform exports "+
-			"them with aws configure export-credentials)", s.prefix, uri))
+			"them with aws configure export-credentials)", c.label, uri))
 	case listing.Status != Present:
-		return bad(fmt.Sprintf("%scannot list backups in %s: %s", s.prefix, uri, listedReason(listing)))
+		return bad(fmt.Sprintf("%scannot list backups in %s: %s", c.label, uri, listedReason(listing)))
 	}
-	taken, found := s.newest(listing.Objects, location.Prefix)
-	if !found {
-		return bad(fmt.Sprintf("%sno %s backup in %s (run: %s)", s.prefix, s.what, uri, s.run))
-	}
-	age := now.Sub(taken)
-	if age > maxAge {
+	listing.Query = location
+	report, err := judge(listing)
+	switch {
+	case err != nil:
+		return bad(fmt.Sprintf("%scannot judge the %s backups in %s (%v)", c.label, c.what, uri, err))
+	case report.Reason == rules.ReasonNoArchive:
+		return bad(fmt.Sprintf("%sno %s backup in %s (run: %s)", c.label, c.what, uri, c.run))
+	case report.State != rules.BackupCurrent:
 		return bad(fmt.Sprintf("%snewest %s backup in %s is %.0f h old; check: kubectl -n %s get jobs -l "+
-			"platform.swhurl.com/backup=true", s.prefix, s.what, uri, age.Hours(), s.jobs))
+			"platform.swhurl.com/backup=true", c.label, c.what, uri, report.Age.Hours(), c.jobs))
 	}
-	return ok(fmt.Sprintf("%snewest %s backup in %s is %.1f h old", s.prefix, s.what, uri, age.Hours()))
-}
-
-// backupStamp is the UTC time a backup's name carries.
-const backupStamp = "20060102T150405Z"
-
-// newest is when the newest complete backup under the prefix was taken, by the stamp in its name; false without one.
-func (s backupSet) newest(objects []Archive, prefix string) (time.Time, bool) {
-	present := map[string]bool{}
-	for _, object := range objects {
-		if name, found := strings.CutPrefix(object.Key, prefix); found {
-			present[name] = true
-		}
-	}
-	newest, found := time.Time{}, false
-	for name := range present {
-		taken, complete := s.taken(name, present)
-		if complete && (!found || taken.After(newest)) {
-			newest, found = taken, true
-		}
-	}
-	return newest, found
-}
-
-// taken is when the archive with this name was taken; false for any other file, or an archive whose metadata is not
-// among the names.
-func (s backupSet) taken(name string, present map[string]bool) (time.Time, bool) {
-	stamp, named := strings.CutPrefix(name, s.name+"-")
-	stamp, archive := strings.CutSuffix(stamp, s.suffix)
-	if !named || !archive || len(stamp) != len(backupStamp) || !present[s.name+"-"+stamp+".json"] {
-		return time.Time{}, false
-	}
-	taken, err := time.Parse(backupStamp, stamp)
-	return taken, err == nil
+	return ok(fmt.Sprintf("%snewest %s backup in %s is %.1f h old", c.label, c.what, uri, report.Age.Hours()))
 }
 
 // DatabaseEvidence is what the SQLite backup check reads: each instance whose release declares a SQLite database,
@@ -219,14 +179,14 @@ type DatabaseEvidence struct {
 	// Problem says why the records or the profile do not say which databases are backed up, or where.
 	Problem string
 	// Location is the profile's backup location, one prefix per namespace below it.
-	Location  ArchiveQuery
+	Location  rules.ArchiveQuery
 	Databases []DatabaseBackup
 }
 
 // DatabaseBackup is one database instance's namespace and its listing.
 type DatabaseBackup struct {
 	Namespace string
-	Listing   ArchiveList
+	Listing   rules.ArchiveList
 }
 
 func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duration, now time.Time) []PlatformEntry {
@@ -238,10 +198,11 @@ func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duratio
 	}
 	entries := make([]PlatformEntry, 0, len(e.Databases))
 	for _, database := range e.Databases {
-		set := backupSet{name: "sqlite", suffix: ".db.age", what: "SQLite", run: "make backup-sqlite",
-			jobs: database.Namespace, prefix: database.Namespace + ": "}
-		location := ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
-		entries = append(entries, set.entry(location, database.Listing, credentials, maxAge, now))
+		check := backupCheck{label: database.Namespace + ": ", what: "SQLite", run: "make backup-sqlite", jobs: database.Namespace}
+		location := rules.ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
+		entries = append(entries, check.entry(location, database.Listing, credentials, func(listed rules.ArchiveList) (rules.ArchiveReport, error) {
+			return rules.InstanceArchive(listed, database.Namespace, maxAge, now)
+		}))
 	}
 	return entries
 }
@@ -300,7 +261,7 @@ func consoleImage(running, checkout string) PlatformEntry {
 }
 
 // listedReason is why a listing was not read: its own reason, or that it never was.
-func listedReason(listing ArchiveList) string {
+func listedReason(listing rules.ArchiveList) string {
 	if listing.Reason == "" {
 		return NotRead
 	}

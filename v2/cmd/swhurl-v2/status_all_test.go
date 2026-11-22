@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -49,7 +50,7 @@ func TestStatusChangesCLIUsesExactEndpointsAndRepositoryRelativeV2Paths(t *testi
 		{[]string{"v2-apps/instances/demo-orders/prod/helmrelease.json"}, "pending"},
 		{[]string{recordsName + "/profile.json"}, "pending"},
 	} {
-		proof := observe.Changes{Kind: "v2-changes", Version: 1, Comparisons: []observe.Comparison{{From: old, To: observedRevision, Status: "complete", Paths: test.paths}}}
+		proof := deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{{From: old, To: observedRevision, Status: "complete", Paths: test.paths}}}
 		data, _ := json.Marshal(proof)
 		writeStatusFile(t, proofPath, data)
 		status, stdout, stderr := runStatus(t, append(args, "--changes", proofPath, "--repo-root", filepath.Dir(root))...)

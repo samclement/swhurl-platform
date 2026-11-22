@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import "regexp"
 

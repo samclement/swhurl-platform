@@ -19,6 +19,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -307,9 +308,9 @@ func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, 
 
 // consoleChanges is one comparison per distinct applied commit, finished or not: a comparison that could not be
 // completed is evidence the revision is not proved unaffected.
-func consoleChanges(units [][]byte, revision string, compare func(from, to string) ([]string, bool, error)) (*observe.Changes, error) {
+func consoleChanges(units [][]byte, revision string, compare func(from, to string) ([]string, bool, error)) (*deliveryrules.Changes, error) {
 	seen := map[string]bool{}
-	changes := &observe.Changes{Kind: "v2-changes", Version: 1, Comparisons: []observe.Comparison{}}
+	changes := &deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{}}
 	for _, unit := range units {
 		applied, err := appliedCommitOf(unit)
 		if err != nil {
@@ -321,7 +322,7 @@ func consoleChanges(units [][]byte, revision string, compare func(from, to strin
 		seen[applied] = true
 		changes.Comparisons = append(changes.Comparisons, comparisonOf(applied, revision, compare))
 	}
-	slices.SortFunc(changes.Comparisons, func(a, b observe.Comparison) int { return strings.Compare(a.From, b.From) })
+	slices.SortFunc(changes.Comparisons, func(a, b deliveryrules.Comparison) int { return strings.Compare(a.From, b.From) })
 	return changes, nil
 }
 
@@ -340,8 +341,8 @@ func appliedCommitOf(unit []byte) (string, error) {
 
 // comparisonOf is one ended comparison: complete with its paths, incomplete when GitHub truncated the list, or
 // unavailable when it could not be read or does not contain the commit.
-func comparisonOf(from, to string, compare func(from, to string) ([]string, bool, error)) observe.Comparison {
-	found := observe.Comparison{From: from, To: to, Status: "unavailable", Paths: []string{}}
+func comparisonOf(from, to string, compare func(from, to string) ([]string, bool, error)) deliveryrules.Comparison {
+	found := deliveryrules.Comparison{From: from, To: to, Status: "unavailable", Paths: []string{}}
 	if compare == nil {
 		return found
 	}

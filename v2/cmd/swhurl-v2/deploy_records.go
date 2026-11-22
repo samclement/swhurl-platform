@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // deploy records: every v2-owned staging instance, from the tree its records live in.
@@ -105,9 +105,9 @@ func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []b
 		entry.Outcome, entry.Reason = outcomeRefused, err.Error()
 		return entry
 	}
-	inputs := orchestration.DeployInputs{Instance: one.instance, Release: one.release, App: one.app,
+	inputs := delivery.DeployInputs{Instance: one.instance, Release: one.release, App: one.app,
 		Profile: profile, Calls: calls, Egress: egress, Expected: one.revision}
-	result, err := orchestration.DeployImage(context.Background(), inputs, images, r.out, c.writer)
+	result, err := delivery.DeployImage(context.Background(), inputs, images, r.out, c.writer)
 	entry.Files = result.Written
 	switch {
 	case err != nil:

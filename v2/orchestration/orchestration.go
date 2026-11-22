@@ -170,31 +170,11 @@ func documents(inputs Inputs, application, environment string) (kernel.Connectio
 		}
 		connections = read
 	}
-	egress, err := egressOf(inputs.Egress, application, environment)
+	egress, err := kernel.InstanceEgress(inputs.Egress, application, environment)
 	if err != nil {
 		return kernel.Connections{}, nil, err
 	}
 	return connections, egress, nil
-}
-
-// egressOf reads the allocation's place for one instance. The document is given whole and an instance takes it only
-// when it records something that instance may reach: a port kept for an instance with nothing to reach is not a
-// reason to put it behind the proxy, and a database's backup grant is what makes it use one. A caller with no
-// allocation passes nil and gets nil, and an instance the document does not name takes none; whether an instance may
-// be without one is the renderer's refusal (a database must leave through the proxy), not this helper's.
-func egressOf(document []byte, application, environment string) (*kernel.Egress, error) {
-	if document == nil {
-		return nil, nil
-	}
-	allocation, err := kernel.DecodeEgressDocument(document)
-	if err != nil {
-		return nil, err
-	}
-	own, err := allocation.EgressOf(application, environment)
-	if err != nil || len(own.Grants) == 0 {
-		return nil, nil
-	}
-	return own, nil
 }
 
 // refuseSecret is a use case's refusal about the instance's seed: a fact the caller supplies or does not, never a

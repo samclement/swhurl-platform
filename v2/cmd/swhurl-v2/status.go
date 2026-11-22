@@ -16,6 +16,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // readTimeout bounds one observation's requests: a server that does not answer leaves every fact
@@ -202,43 +203,43 @@ func (c cli) mounted(path string) ([]byte, int) {
 
 // archiveLister lists the instance's own prefix in the object store: the credential is the operator's, the bucket
 // and root are the platform profile's, and the prefix is the instance's namespace.
-func (c cli) archiveLister(r request, profile []byte) func(context.Context, string) (observe.ArchiveList, error) {
-	return func(ctx context.Context, namespace string) (observe.ArchiveList, error) {
+func (c cli) archiveLister(r request, profile []byte) func(context.Context, string) (rules.ArchiveList, error) {
+	return func(ctx context.Context, namespace string) (rules.ArchiveList, error) {
 		query, err := archiveQueryOf(profile, namespace)
 		if err != nil {
-			return observe.ArchiveList{}, err
+			return rules.ArchiveList{}, err
 		}
 		reader, err := c.archives(query.Bucket, r.region)
 		if err != nil {
-			return observe.ArchiveList{}, err
+			return rules.ArchiveList{}, err
 		}
 		return reader.List(ctx, query)
 	}
 }
 
 // archiveQuery is the instance's own prefix: the profile's root and the instance's namespace.
-func (c cli) archiveQuery(r request, target observe.Target) (observe.ArchiveQuery, int) {
+func (c cli) archiveQuery(r request, target observe.Target) (rules.ArchiveQuery, int) {
 	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
-		return observe.ArchiveQuery{}, status
+		return rules.ArchiveQuery{}, status
 	}
 	query, err := archiveQueryOf(profile, target.Namespace)
 	if err != nil {
-		return observe.ArchiveQuery{}, fail(c.diagnostic, err)
+		return rules.ArchiveQuery{}, fail(c.diagnostic, err)
 	}
 	return query, 0
 }
 
-func archiveQueryOf(document []byte, namespace string) (observe.ArchiveQuery, error) {
+func archiveQueryOf(document []byte, namespace string) (rules.ArchiveQuery, error) {
 	profile, err := kernel.DecodeProfile(document)
 	if err != nil {
-		return observe.ArchiveQuery{}, err
+		return rules.ArchiveQuery{}, err
 	}
 	root, err := s3.ParseURL(profile.Backup.S3URI)
 	if err != nil {
-		return observe.ArchiveQuery{}, err
+		return rules.ArchiveQuery{}, err
 	}
-	return observe.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + namespace + "/"}, nil
+	return rules.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + namespace + "/"}, nil
 }
 
 // maxAge is the threshold the backup answer is judged by: the operator's, or the default.
@@ -325,7 +326,7 @@ func routeLines(report observe.Report) []string {
 
 // backupLines is a database instance's protection and its archive; an instance that renders none has no lines.
 func backupLines(backup observe.BackupReport) []string {
-	if backup.State == observe.BackupNotApplicable {
+	if backup.State == rules.BackupNotApplicable {
 		return nil
 	}
 	return []string{"Backup     " + outcomeText(backup.State, backup.Reason),

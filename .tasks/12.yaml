@@ -1,0 +1,27 @@
+id: 12
+title: The promotion-readiness verdict moves to delivery/rules and observe reports it
+state: cancelled
+scope:
+  - v2/delivery/rules/readiness.go
+  - v2/delivery/rules/readiness_test.go
+  - v2/observe/live.go
+  - v2/observe/live_test.go
+  - v2/observe/report.go
+  - v2/observe/report_test.go
+  - v2/observe/changes_test.go
+  - v2/archtest/api.txt
+checks:
+  - make check-v2
+  - cd v2 && go test ./delivery/rules ./observe -count=1
+  - cd v2 && go test ./cmd/swhurl-v2 -run TestStatus -count=1
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! grep -q 'func PromotionReadiness' v2/observe/live.go"
+  - "! grep -q 'type PromotionDecision' v2/observe"
+  - "! grep -q 'reviewed_digest' v2/observe/live.go"
+after:
+  - 11
+reason: re-created to wait on task 16, which replaces task 11
+notes:
+  - at: 2026-11-22T12:07:52.347Z
+    commit: 7f70a48d5699
+    text: "Slice 2 (delivery), plan block 6. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `observe/live.go:80-105` is the one implementation of \"the reviewed release is running\"; it takes `observe.Report` today, so give `delivery/rules` its own input instead of importing observe: e.g. `type Readiness struct { ReviewedDigest, SelectedDigest string; Currency string; Healthy bool; Running Running }` with `Running{Status string; Digests []string}`, and `PromotionReadiness(Readiness) PromotionDecision` keeping the reason words (`reviewed_digest_invalid`, `reviewed_digest_changed`, `revision_not_current`, `instance_not_healthy`, `reviewed_digest_not_running`, `ready`). `observe/report.go:25,72` maps its report into that input and keeps the document field name and shape (`{\"ready\",\"reason\"}`, `Version` 5). `observe/live.go` keeps `FluxFacts`/`WorkloadFacts`/`RunningFacts`/`LiveFacts` — only the decision leaves. Move `TestPromotionReadinessUsesReviewedSelectedAndRunningDigest` (`observe/changes_test.go:128-185`) and `observe/report_test.go:76-90`'s equality assertion to the rules' new input; `pages/app.go:411,515` needs no change."

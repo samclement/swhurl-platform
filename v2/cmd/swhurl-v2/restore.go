@@ -15,7 +15,8 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/recovery"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // ageIdentityPattern is an age X25519 identity: the one credential the restore pod decrypts with. A file that
@@ -55,7 +56,7 @@ func (c cli) restore(r request) int {
 		return status
 	}
 	target := report.Target
-	if report.Backup.State == observe.BackupNotApplicable {
+	if report.Backup.State == rules.BackupNotApplicable {
 		return fail(c.diagnostic, errors.New("unsupported: instance: it keeps no database to restore"))
 	}
 	spec, status := c.instance(r.instance)
@@ -88,7 +89,7 @@ func (c cli) restore(r request) int {
 // runs the use case, and reports what it did. A refusal changed nothing and is an exit 2; a failure part-way
 // is written as the document and is an exit 1.
 func (c cli) performRestore(r request, target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan observe.RestorePlan) int {
+	report observe.Report, plan rules.RestorePlan) int {
 	if want := spec.Application + "/" + spec.Environment; r.confirm != want {
 		return fail(c.diagnostic, fmt.Errorf("invalid: confirm: expected %s", want))
 	}
@@ -118,9 +119,9 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, restoreTimeout)
 	defer cancel()
-	outcome, err := orchestration.Restore(ctx, inputs)
+	outcome, err := recovery.Restore(ctx, inputs)
 	if err != nil {
-		var refusal *orchestration.Refusal
+		var refusal *recovery.Refusal
 		// A refusal, or a request that never took a step, changed nothing: it is reported as such, with no
 		// document claiming a restore was attempted.
 		if errors.As(err, &refusal) || len(outcome.Steps) == 0 {
@@ -133,7 +134,7 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 
 // reportRestore writes the document and the one human line, and returns the status.
 func (c cli) reportRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan observe.RestorePlan, outcome *orchestration.RestoreOutcome, status int) int {
+	report observe.Report, plan rules.RestorePlan, outcome *recovery.RestoreOutcome, status int) int {
 	document, err := encodeRestore(target, spec, release, report, plan, outcome, "")
 	if err != nil {
 		return fail(c.diagnostic, err)
@@ -144,28 +145,28 @@ func (c cli) reportRestore(target observe.Target, spec kernel.InstanceSpec, rele
 
 // restoreInputs is what the use case takes: the three documents, the plan, the two credentials, the target
 // and the cluster.
-func (c cli) restoreInputs(r request, spec kernel.InstanceSpec, target observe.Target, plan observe.RestorePlan,
-	identity, readURL string, cluster orchestration.Cluster) (orchestration.RestoreInputs, int) {
+func (c cli) restoreInputs(r request, spec kernel.InstanceSpec, target observe.Target, plan rules.RestorePlan,
+	identity, readURL string, cluster recovery.Cluster) (recovery.RestoreInputs, int) {
 	instance, status := c.read(r.instance, "instance")
 	if status != 0 {
-		return orchestration.RestoreInputs{}, status
+		return recovery.RestoreInputs{}, status
 	}
 	release, status := c.read(r.release, "release")
 	if status != 0 {
-		return orchestration.RestoreInputs{}, status
+		return recovery.RestoreInputs{}, status
 	}
 	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
-		return orchestration.RestoreInputs{}, status
+		return recovery.RestoreInputs{}, status
 	}
 	var egress []byte
 	if r.egressFile != "" {
 		egress, status = c.read(r.egressFile, "egress")
 		if status != 0 {
-			return orchestration.RestoreInputs{}, status
+			return recovery.RestoreInputs{}, status
 		}
 	}
-	return orchestration.RestoreInputs{Instance: instance, Release: release, Profile: profile, Egress: egress,
+	return recovery.RestoreInputs{Instance: instance, Release: release, Profile: profile, Egress: egress,
 		Plan: plan, Target: target, AgeIdentity: identity, ReadURL: readURL, Cluster: cluster,
 		Sleep: time.Sleep, Now: time.Now}, 0
 }
@@ -207,30 +208,30 @@ func ageIdentityOf(file string) (string, bool) {
 
 // restoreCluster is the API server the restore changes and reads, from the same kubeconfig a live
 // observation takes.
-func (c cli) restoreCluster(r request) (orchestration.Cluster, int) {
+func (c cli) restoreCluster(r request) (recovery.Cluster, int) {
 	data, status := c.read(r.kubeconfig, "kubeconfig")
 	if status != 0 {
-		return orchestration.Cluster{}, status
+		return recovery.Cluster{}, status
 	}
 	connection, err := kube.Connect(data)
 	if err != nil {
-		return orchestration.Cluster{}, fail(c.diagnostic, err)
+		return recovery.Cluster{}, fail(c.diagnostic, err)
 	}
 	reader, err := connection.Reader()
 	if err != nil {
-		return orchestration.Cluster{}, fail(c.diagnostic, err)
+		return recovery.Cluster{}, fail(c.diagnostic, err)
 	}
 	writer, err := connection.Writer()
 	if err != nil {
-		return orchestration.Cluster{}, fail(c.diagnostic, err)
+		return recovery.Cluster{}, fail(c.diagnostic, err)
 	}
-	return orchestration.Cluster{Reader: reader, Writer: writer}, 0
+	return recovery.Cluster{Reader: reader, Writer: writer}, 0
 }
 
 // presignedRead signs one read of the chosen archive, so the pod holds a URL for that object instead of the
 // bucket credential. The credentials are the operator's own environment, as they are for an observation, and
 // the expiry is bounded by SigV4's own maximum.
-func (c cli) presignedRead(r request, target observe.Target, plan observe.RestorePlan) (string, int) {
+func (c cli) presignedRead(r request, target observe.Target, plan rules.RestorePlan) (string, int) {
 	reader, query, status := c.archiveOf(r, target)
 	if status != 0 {
 		return "", status
@@ -252,64 +253,33 @@ func (c cli) presignedRead(r request, target observe.Target, plan observe.Restor
 }
 
 // archiveOf is the instance's own prefix and the reader the operator's credentials make.
-func (c cli) archiveOf(r request, target observe.Target) (s3.Reader, observe.ArchiveQuery, int) {
+func (c cli) archiveOf(r request, target observe.Target) (s3.Reader, rules.ArchiveQuery, int) {
 	query, status := c.archiveQuery(r, target)
 	if status != 0 {
-		return nil, observe.ArchiveQuery{}, status
+		return nil, rules.ArchiveQuery{}, status
 	}
 	reader, err := c.archives(query.Bucket, r.region)
 	if err != nil {
-		return nil, observe.ArchiveQuery{}, fail(c.diagnostic, err)
+		return nil, rules.ArchiveQuery{}, fail(c.diagnostic, err)
 	}
 	return reader, query, 0
 }
 
-// restorePlan chooses the archive and reads what the bucket records beside it.
-func (c cli) restorePlan(r request, target observe.Target, maxAge time.Duration) (observe.RestorePlan, int) {
+// restorePlan asks recovery for the plan: the instance's own prefix, the reader the operator's credentials make,
+// and the archive the operator named.
+func (c cli) restorePlan(r request, target observe.Target, maxAge time.Duration) (rules.RestorePlan, int) {
 	reader, query, status := c.archiveOf(r, target)
 	if status != 0 {
-		return observe.RestorePlan{}, status
+		return rules.RestorePlan{}, status
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	listed, err := reader.List(ctx, query)
+	plan, err := recovery.Plan(ctx, recovery.PlanInputs{Archives: reader, Query: query, Namespace: target.Namespace,
+		Application: target.Release.Name, From: r.from, MaxAge: maxAge, Now: time.Now().UTC()})
 	if err != nil {
-		return observe.RestorePlan{}, fail(c.diagnostic, err)
+		return rules.RestorePlan{}, fail(c.diagnostic, err)
 	}
-	archive, err := observe.SelectArchive(listed, query.Prefix, r.from, maxAge, time.Now().UTC())
-	if err != nil {
-		return observe.RestorePlan{}, fail(c.diagnostic, err)
-	}
-	plan := observe.RestoreInput{Namespace: target.Namespace, Application: target.Release.Name, Archive: archive}
-	if archive.Newest != "" {
-		metadata, failure := c.metadata(ctx, reader, query, archive.Newest)
-		plan.Metadata, plan.Failure = metadata, failure
-	}
-	return observe.RestoreOf(plan), 0
-}
-
-// metadata reads the record the backup job published beside one archive, and says why it could not when it
-// could not: an incomplete upload is not an unreachable bucket.
-func (c cli) metadata(ctx context.Context, reader s3.Reader, query observe.ArchiveQuery,
-	key string) (*observe.ArchiveMetadata, string) {
-	body, err := reader.Get(ctx, query, strings.TrimSuffix(key, ".db.age")+".json")
-	switch {
-	case err == nil:
-		metadata, err := observe.ArchiveMetadataOf(body)
-		if err != nil {
-			return nil, observe.ReasonMetadataMalformed
-		}
-		return &metadata, ""
-	case notFound(err):
-		return nil, observe.ReasonMetadataAbsent
-	}
-	return nil, observe.ReasonMetadataDown
-}
-
-// notFound is whether the object store answered that the key is not there.
-func notFound(err error) bool {
-	var failure *s3.Error
-	return errors.As(err, &failure) && failure.Code == "not_found"
+	return plan, 0
 }
 
 // restoreDocument is the plan's shape: the instance's facts, the archive and its metadata, the observation it
@@ -412,7 +382,7 @@ type restoreStep struct {
 // encodeRestore is the document: the plan, and the run when there was one (nil for a plan-only invocation).
 // maxAge is the --max-age the operator stated, empty for the default, which the plan's step repeats.
 func encodeRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan observe.RestorePlan, outcome *orchestration.RestoreOutcome, maxAge string) ([]byte, error) {
+	report observe.Report, plan rules.RestorePlan, outcome *recovery.RestoreOutcome, maxAge string) ([]byte, error) {
 	claim := spec.Storage.ClaimName
 	if claim == "" {
 		// An instance that creates its own volume has no claim name in its record: the pinned chart names
@@ -466,7 +436,7 @@ func restorePlannedAction() restoreActionDocument {
 }
 
 // restorePerformedAction is the action block of a restore this command performed, step by step.
-func restorePerformedAction(outcome orchestration.RestoreOutcome) restoreActionDocument {
+func restorePerformedAction(outcome recovery.RestoreOutcome) restoreActionDocument {
 	action := restoreActionDocument{State: outcome.State, Reason: outcome.Reason,
 		StartedAt:  outcome.Started.UTC().Format(time.RFC3339),
 		FinishedAt: outcome.Finished.UTC().Format(time.RFC3339),
@@ -511,7 +481,7 @@ func marshalDocument(document any) ([]byte, error) {
 }
 
 // restoreSummary is the one human line for stderr: whether the archive can be restored, and from which.
-func restoreSummary(plan observe.RestorePlan) string {
+func restoreSummary(plan rules.RestorePlan) string {
 	summary := "restore: " + plan.State
 	if plan.Reason != "" {
 		summary += "/" + plan.Reason
@@ -523,7 +493,7 @@ func restoreSummary(plan observe.RestorePlan) string {
 }
 
 // restoreActionSummary is the one line for a restore that ran: what it did, and the app's own state.
-func restoreActionSummary(outcome orchestration.RestoreOutcome) string {
+func restoreActionSummary(outcome recovery.RestoreOutcome) string {
 	summary := "restore: " + outcome.State
 	if outcome.Reason != "" {
 		summary += "/" + outcome.Reason

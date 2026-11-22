@@ -33,8 +33,8 @@ var Rules = []Rule{
 	{"approved-modules", "v2 imports only the Go standard library, its own packages and the approved modules in Modules, each from the adapters it was approved for; go.mod requires exactly those modules at their approved versions",
 		"remove the import, or ask the operator to approve the module and add it to Modules (archtest/rules_test.go) with the adapters that may import it",
 		"third-party-modules"},
-	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers",
-		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down",
+	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, or a pure package PureDependencies lists for it",
+		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down; a pure type another capability needs is imported from its owner through a PureDependencies entry, never a shared model package",
 		"4-development-layers-and-adapters"},
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
@@ -48,13 +48,13 @@ var Rules = []Rule{
 	{"budgets", "no function exceeds the complexity and length limits in archtest/budgets.json unless listed there, and listed ones never grow",
 		"split the function; only if it truly cannot be split, add it to budgets.json with a reason (reviewed)",
 		"guardrails"},
-	{"places", "a package's place matches its layer: layer 0 is listed in Pure, layer 1 is under adapters/, layer 2 is orchestration, layer 3 is a main package under cmd/",
-		"move the package, or correct its entry in Layers or Pure (archtest/rules_test.go)",
+	{"places", "a package's place matches its layer: layer 0 is listed in Pure, layer 1 is under adapters/, layer 2 is listed in Orchestration, layer 3 is a main package under cmd/",
+		"move the package, or correct its entry in Layers, Pure or Orchestration (archtest/rules_test.go)",
 		"extension-recipes"},
 	{"adapter-complete", "each adapter adapters/<name> exports an interface, has raw fixtures in testdata/, and a fake in adapters/<name>/<name>test that satisfies each interface and runs one Contract suite with the real adapter; only tests import a fake",
 		"add the missing piece the violation names, following the new-adapter recipe",
 		"fixtures-and-fakes"},
-	{"orchestration-wires", "orchestration packages parse no arguments, print nothing, choose no exit code and hold no mutable package state: they assemble, sequence and report, and the command above them does the rest",
+	{"orchestration-wires", "use-case packages (Orchestration) parse no arguments, print nothing, choose no exit code and hold no mutable package state: they assemble, sequence and report, and the command above them does the rest",
 		"move the argument parsing, printing or exit status into the command, and the decision into a pure package",
 		"4-development-layers-and-adapters"},
 	{"rules-documented", "the plan's Guardrails table lists exactly these rules and every principle link resolves",
@@ -63,7 +63,8 @@ var Rules = []Rule{
 }
 
 // Layers: a package may import v2 packages only from lower layers. 0 is the pure model, 1 adapters
-// (one per external dependency, speaking domain terms), 2 commands that wire adapters to the model.
+// (one per external dependency, speaking domain terms), 2 the use cases, 3 the command that wires them. A
+// capability's pure rules are layer 0 (recovery/rules) and its use cases layer 2 (recovery).
 var Layers = map[string]int{
 	"calls":                              0,
 	"certissuer":                         0,
@@ -122,12 +123,28 @@ var Layers = map[string]int{
 	"adapters/sops":                      1,
 	"adapters/sops/sopstest":             1,
 	"orchestration":                      2,
+	"recovery":                           2,
+	"recovery/rules":                     0,
 	"cmd/swhurl-v2":                      3,
+
+	// The delivery capability: its use cases and its pure rules.
+	"delivery": 2, "delivery/rules": 0,
 }
 
-// Orchestration is the published list of packages that run use cases: they sequence pure decisions and the
-// one effect a use case performs, and they are held to OrchestrationNot.
-var Orchestration = []string{"orchestration"}
+// PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
+// is the imported package, reported by the importer rather than re-derived. A new entry is a reviewed change, and
+// a package everyone imports is the shared model this list exists to prevent. observe reports recovery's backup
+// verdict and archive types and delivery's currentness and promotion readiness; delivery's promotion rule refines
+// kernel's release selection (docs/iteration-2-plan.md#capability-map).
+var PureDependencies = map[string][]string{
+	"observe":        {"recovery/rules", "delivery/rules"},
+	"delivery/rules": {"kernel"},
+}
+
+// Orchestration is the published list of packages that run use cases (layer 2): orchestration, and each
+// capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
+// to OrchestrationImports and OrchestrationCalls, and never import one another.
+var Orchestration = []string{"orchestration", "recovery", "delivery"}
 
 // OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are
 // the command's business, and a mutable package variable would make a use case's result depend on history.
@@ -135,7 +152,7 @@ var OrchestrationImports = []string{"flag", "os", "log", "testing"}
 var OrchestrationCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln", "panic"}
 
 // Pure packages: decisions only. Their inputs are arguments; they have no effects.
-var Pure = []string{"incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "secretcheck", "teamscenario", "telemetry", "workstreams"}
+var Pure = []string{"incident", "apptemplatetest", "calls", "certissuer", "checkrepo", "dashboards", "datadestroy", "events", "heartbeat", "kernel", "lifecycletest", "notify", "observe", "pages", "policy", "producer", "recovery/rules", "secretcheck", "teamscenario", "telemetry", "workstreams", "delivery/rules"}
 
 // encoding/base64 carries offered bytes; math/big compares source flag integers without rounding.
 // PureImports are the standard packages a pure package may use: none reads the clock, randomness,
@@ -156,8 +173,8 @@ var PureImports = []string{
 var pureBannedCalls = []string{"fmt.Print", "fmt.Printf", "fmt.Println", "time.Now", "time.Since", "time.Until",
 	"time.After", "time.Tick", "time.Sleep", "time.NewTimer", "time.NewTicker", "time.AfterFunc"}
 
-// Where each layer lives: adapters under adapters/, use cases under orchestration/, commands under cmd/.
-const adapterRoot, orchestrationRoot, commandRoot = "adapters/", "orchestration/", "cmd/"
+// Where two layers live: adapters under adapters/, commands under cmd/. Use cases are the packages Orchestration lists.
+const adapterRoot, commandRoot = "adapters/", "cmd/"
 
 // ApprovedModule is one approved third-party module at its one approved version. Importers are the directories whose
 // source may import its packages, and Tests the directories whose tests may; a module with neither comes only as
@@ -473,7 +490,7 @@ func checkLayers(m *Module) []Violation {
 				if isFake(dir) && target == path.Dir(dir) {
 					continue // a fake asserts it satisfies the adapter it fakes; the recipe requires it
 				}
-				if other, ok := Layers[target]; !ok || other >= layer {
+				if other, ok := Layers[target]; !ok || (other >= layer && !pureDependency(dir, target)) {
 					found = append(found, Violation{"layers", m.at(file, spec.Pos()),
 						fmt.Sprintf("%s (layer %d) imports %s (layer %s)", dir, layer, target, layerName(target))})
 				}
@@ -481,6 +498,11 @@ func checkLayers(m *Module) []Violation {
 		}
 	}
 	return found
+}
+
+// pureDependency is whether one pure package may import another: only an edge PureDependencies lists.
+func pureDependency(dir, target string) bool {
+	return Layers[dir] == 0 && Layers[target] == 0 && slices.Contains(PureDependencies[dir], target)
 }
 
 func layerName(dir string) string {
@@ -660,7 +682,7 @@ func checkNoSubprocess(m *Module) []Violation {
 	return found
 }
 
-func checkPlaces(m *Module, layers map[string]int, pure []string) []Violation {
+func checkPlaces(m *Module, layers map[string]int, pure, useCases []string) []Violation {
 	var found []Violation
 	for _, dir := range m.Dirs() {
 		source := m.Packages[dir].Source()
@@ -668,7 +690,8 @@ func checkPlaces(m *Module, layers map[string]int, pure []string) []Violation {
 		if len(source) == 0 || !declared {
 			continue // tests only, or undeclared: the layers rule reports that
 		}
-		if problem := placeProblem(dir, layer, slices.Contains(pure, dir), source[0].AST.Name.Name == "main"); problem != "" {
+		if problem := placeProblem(dir, layer, slices.Contains(pure, dir), slices.Contains(useCases, dir),
+			source[0].AST.Name.Name == "main"); problem != "" {
 			found = append(found, Violation{"places", source[0].Path, problem})
 		}
 	}
@@ -676,10 +699,8 @@ func checkPlaces(m *Module, layers map[string]int, pure []string) []Violation {
 }
 
 // placeProblem is what is wrong with a package's place for its layer, or "".
-func placeProblem(dir string, layer int, pure, main bool) string {
+func placeProblem(dir string, layer int, pure, useCase, main bool) string {
 	adapter := strings.HasPrefix(dir, adapterRoot)
-	// The use-case layer is one package, so its own directory is the root.
-	orchestration := dir == strings.TrimSuffix(orchestrationRoot, "/") || strings.HasPrefix(dir, orchestrationRoot)
 	command := strings.HasPrefix(dir, commandRoot)
 	switch {
 	case layer < 0 || layer > 3:
@@ -692,10 +713,10 @@ func placeProblem(dir string, layer int, pure, main bool) string {
 		return dir + " is layer 1 (adapters) but is not under " + adapterRoot
 	case layer != 1 && adapter:
 		return fmt.Sprintf("%s is under %s but is layer %d", dir, adapterRoot, layer)
-	case layer == 2 && !orchestration:
-		return dir + " is layer 2 (use cases) but is not " + orchestrationRoot
-	case layer != 2 && orchestration:
-		return fmt.Sprintf("%s is %s but is layer %d", dir, orchestrationRoot, layer)
+	case layer == 2 && !useCase:
+		return dir + " is layer 2 (use cases) but is not listed in Orchestration"
+	case layer != 2 && useCase:
+		return fmt.Sprintf("%s is listed in Orchestration but is layer %d", dir, layer)
 	case layer == 3 && !(command && main):
 		return dir + " is layer 3 (commands) but is not a main package under " + commandRoot
 	case layer != 3 && command:

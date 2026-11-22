@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // promote moves one app's production to the release its staging selects, from the tree both instances keep their
@@ -53,7 +53,7 @@ func (c cli) promote(r request) int {
 	if status != 0 {
 		return status
 	}
-	result, err := orchestration.Promote(inputs, r.out, c.writer)
+	result, err := delivery.Promote(inputs, r.out, c.writer)
 	if err != nil {
 		for _, outcome := range result.Written {
 			fmt.Fprintf(c.out, "%s %s\n", outcome.State, outcome.Path)
@@ -94,39 +94,39 @@ func promoteSummary(document promoteDocument) string {
 
 // promoteInputs reads the two instances, the app record, the profile and the two optional documents. A tree that
 // does not hold them refuses before anything runs.
-func (c cli) promoteInputs(r request) (orchestration.PromoteInputs, int) {
+func (c cli) promoteInputs(r request) (delivery.PromoteInputs, int) {
 	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
 	calls, status := c.optional(r.callFile, "calls")
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
 	egress, status := c.optional(r.egressFile, "egress")
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
 	apps := map[string][]byte{}
 	staging, status := c.readInstance(r.records, r.app, "staging", apps)
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
 	target, status := c.readInstance(r.records, r.app, r.env, apps)
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
 	app, seen := apps[r.app]
 	if !seen {
 		if app, status = c.read(filepath.Join(r.records, r.app, appFile), "app"); status != 0 {
-			return orchestration.PromoteInputs{}, status
+			return delivery.PromoteInputs{}, status
 		}
 	}
 	offers, status := c.stagingOffers(r.records, r.app)
 	if status != 0 {
-		return orchestration.PromoteInputs{}, status
+		return delivery.PromoteInputs{}, status
 	}
-	return orchestration.PromoteInputs{StagingInstance: staging.instance, StagingRelease: staging.release,
+	return delivery.PromoteInputs{StagingInstance: staging.instance, StagingRelease: staging.release,
 		Instance: target.instance, Release: target.release, App: app, Profile: profile, Calls: calls,
 		Egress: egress, Offers: offers, Expected: kernel.InstanceRevision(r.expected)}, 0
 }

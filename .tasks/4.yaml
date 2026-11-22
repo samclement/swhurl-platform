@@ -1,0 +1,33 @@
+id: 4
+title: sqlite-backups and backups reuse recovery's verdict; delete observe's duplicate rule
+state: done
+scope:
+  - v2/observe/platform_store.go
+  - v2/observe/platform_scope_test.go
+  - v2/cmd/swhurl-v2/verify_test.go
+  - v2/archtest/api.txt
+  - v2/recovery/rules/**
+checks:
+  - make check-v2
+  - cd v2 && go test -count=1 ./observe/... ./recovery/... -run 'Backups|SQLite|ScopeChecks|Archive'
+  - cd v2 && go test -count=1 ./cmd/swhurl-v2/... -run 'VerifyPlatform|BackupMaxAge'
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! grep -q backupSet v2/observe/platform_store.go"
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T11:33:08.923Z
+    commit: 15078dc9dd19
+    text: "Replaces task 2 (cancelled for scope; read task 2's notes). Decision D1 option 1: one archive rule, owned by v2/recovery/rules; platform verification reuses it. Add one exported, namespace-unconfined entry point in v2/recovery/rules/archive.go that takes the archive suffix from the caller (internal newestArchive/metadataKey already take one). platformDatabases (SQLite, namespace-confined: rules.InstanceArchive fits) and platformBackups (MongoDB clickstack-mongodb/, .archive.gz.age) in v2/observe/platform_store.go both use recovery's verdict; delete backupSet and its 'second answer / decision D1' comment. Keep entry text, levels and their order, and credentials/listing-failure messages the tests assert. Fixtures in platform_scope_test.go must give archives a LastModified, since the check now ages by S3 time; the rule's error for an archive with no time must become an entry in the observe check. Regenerate api.txt with 'go test ./archtest -run TestPublicAPI -update'."
+  - at: 2026-11-22T11:38:41.072Z
+    commit: 7adf2a843da6
+    text: "done: Added rules.NewestArchive (unconfined, caller's suffix; refuses empty suffix); InstanceArchive uses it. platformBackups (MongoDB) and platformDatabases (SQLite, via InstanceArchive) take recovery's verdict, aged by S3 time; backupSet deleted; a refused judgement is a bad entry. Fixtures carry LastModified. Not verified live (make verify-platform)."
+  - at: 2026-11-22T11:38:41.072Z
+    commit: 7adf2a843da6
+    text: "followup: Docs still say D1 is open: docs/iteration-2-plan.md (slice table row 1 and 'Open decision (D1)'), docs/v2-status.md gate line, docs/workstreams.md v2 row; update when slice 1 is committed."
+  - at: 2026-11-22T11:38:41.072Z
+    commit: 7adf2a843da6
+    text: "followup: Behaviour change: a profile backup location with an empty prefix (s3://bucket/) now makes sqlite-backups report 'not_confined_to_the_instance' for every instance, as the instance report already did; the profile uses app-sqlite/, so nothing live changes."
+  - at: 2026-11-22T11:40:06.767Z
+    commit: 7adf2a843da6
+    text: branch dsa/01M81GGBRNG8XGZEHJT7GFQJJD/task-4

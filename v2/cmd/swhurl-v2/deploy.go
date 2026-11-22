@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // deployNote is what the document says about itself: the image's own declaration reached v2's records and
@@ -37,7 +37,7 @@ func (c cli) deploy(r request) int {
 	if err != nil {
 		return c.failure(err)
 	}
-	result, err := orchestration.DeployImage(context.Background(), inputs, images, r.out, c.writer)
+	result, err := delivery.DeployImage(context.Background(), inputs, images, r.out, c.writer)
 	if err != nil {
 		// A write that stopped part-way says which files it completed; the document would not be an answer.
 		for _, outcome := range result.Written {
@@ -55,12 +55,12 @@ func (c cli) deploy(r request) int {
 
 // deployInputs reads what a delivery takes: the instance's records, the app record, the profile and the two
 // optional documents, plus the revision the caller reviewed.
-func (c cli) deployInputs(r request) (orchestration.DeployInputs, int) {
+func (c cli) deployInputs(r request) (delivery.DeployInputs, int) {
 	inputs, status := c.inputs(r)
 	if status != 0 {
-		return orchestration.DeployInputs{}, status
+		return delivery.DeployInputs{}, status
 	}
-	return orchestration.DeployInputs{Instance: inputs.Instance, Release: inputs.Release, App: inputs.App,
+	return delivery.DeployInputs{Instance: inputs.Instance, Release: inputs.Release, App: inputs.App,
 		Profile: inputs.Profile, Calls: inputs.Calls, Egress: inputs.Egress,
 		Expected: kernel.InstanceRevision(r.expected)}, 0
 }
@@ -92,7 +92,7 @@ type deployIdentities struct {
 	Compilation string `json:"compilation"`
 }
 
-func encodeDeploy(result orchestration.Deploy, previous string) ([]byte, error) {
+func encodeDeploy(result delivery.Deploy, previous string) ([]byte, error) {
 	revision, err := result.Instance.Revision()
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func short(identity string) string {
 	return prefix + ":" + digest
 }
 
-func deploySummary(result orchestration.Deploy) string {
+func deploySummary(result delivery.Deploy) string {
 	if !result.Changed {
 		return fmt.Sprintf("deploy: %s/%s runs its newest image %s", result.Instance.Application,
 			result.Instance.Environment, result.Tag)

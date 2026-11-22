@@ -70,10 +70,18 @@ func TestCheckLayers(t *testing.T) {
 		"cmd/swhurl-v2/main.go": "package main\n\nimport \"example.com/v2/kernel\"\n",
 		"newpkg/b.go":           "package newpkg\n",
 		"only/b_test.go":        "package only\n",
+		// observe may import recovery/rules (a PureDependencies edge); recovery/rules may not import observe back.
+		"observe/o.go":        "package observe\n\nimport \"example.com/v2/recovery/rules\"\n",
+		"recovery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
+		// The same holds for delivery's rules: observe reports them, and they never import observe.
+		"observe/d.go":        "package observe\n\nimport \"example.com/v2/delivery/rules\"\n",
+		"delivery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
 	})
 	expect(t, checkLayers(m),
+		"layers delivery/rules/r.go:3: delivery/rules (layer 0) imports observe (layer 0)",
 		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 3)",
-		"layers newpkg/b.go: package newpkg has no declared layer")
+		"layers newpkg/b.go: package newpkg has no declared layer",
+		"layers recovery/rules/r.go:3: recovery/rules (layer 0) imports observe (layer 0)")
 }
 
 func TestCheckPure(t *testing.T) {
@@ -118,6 +126,9 @@ func f(count int) int {
 		"secretcheck/a.go":     "package secretcheck\n",
 		"telemetry/a.go":       "package telemetry\n",
 		"workstreams/a.go":     "package workstreams\n",
+		// A capability's rules are held to the same rule: the clock is an argument there too.
+		"recovery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"delivery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 	})
 	expect(t, checkPure(m),
 		"pure kernel/a.go:5: imports os, which is not in PureImports",
@@ -125,7 +136,9 @@ func f(count int) int {
 		"pure kernel/a.go:16: calls fmt.Println",
 		// The clock is refused by call, so a supplied timestamp is still a pure computation.
 		"pure kernel/a.go:16: calls time.Now",
-		"pure kernel/b.go:3: assigns package variable count")
+		"pure kernel/b.go:3: assigns package variable count",
+		"pure recovery/rules/a.go:5: calls time.Now",
+		"pure delivery/rules/a.go:5: calls time.Now")
 }
 
 func TestCheckNoSubprocess(t *testing.T) {
@@ -160,6 +173,8 @@ func TestCheckPlaces(t *testing.T) {
 		"adapters/git/git.go": "package git\n",
 		"cmd/tool/main.go":    "package main\n",
 		"orchestration/o.go":  "package orchestration\n",
+		"recovery/r.go":       "package recovery\n",
+		"usecase/u.go":        "package usecase\n",
 		"undeclared/u.go":     "package undeclared\n",
 		"only/o_test.go":      "package only\n",
 		"model/a.go":          "package model\n",
@@ -172,16 +187,18 @@ func TestCheckPlaces(t *testing.T) {
 		"odd/o.go":            "package odd\n",
 	})
 	layers := map[string]int{"kernel": 0, "adapters/git": 1, "cmd/tool": 3, "orchestration": 2, "only": 3, "model": 0,
-		"listed": 1, "store": 1, "adapters/bad": 2, "cmd/lib": 2, "tools/x": 3, "cmd/pure": 0, "odd": 4}
-	expect(t, checkPlaces(m, layers, []string{"kernel", "listed", "cmd/pure"}),
+		"listed": 1, "store": 1, "adapters/bad": 2, "cmd/lib": 2, "tools/x": 3, "cmd/pure": 0, "odd": 4,
+		"recovery": 2, "usecase": 1}
+	expect(t, checkPlaces(m, layers, []string{"kernel", "listed", "cmd/pure"}, []string{"orchestration", "recovery", "usecase"}),
 		"places adapters/bad/b.go: adapters/bad is under adapters/ but is layer 2",
-		"places cmd/lib/lib.go: cmd/lib is layer 2 (use cases) but is not orchestration/",
+		"places cmd/lib/lib.go: cmd/lib is layer 2 (use cases) but is not listed in Orchestration",
 		"places cmd/pure/p.go: cmd/pure is under cmd/ but is layer 0",
 		"places listed/l.go: listed is listed in Pure but is layer 1",
 		"places model/a.go: model is layer 0, the pure model, but is not listed in Pure",
 		"places odd/o.go: odd has layer 4; the layers are 0 (pure model), 1 (adapters), 2 (use cases) and 3 (commands)",
 		"places store/s.go: store is layer 1 (adapters) but is not under adapters/",
-		"places tools/x/main.go: tools/x is layer 3 (commands) but is not a main package under cmd/")
+		"places tools/x/main.go: tools/x is layer 3 (commands) but is not a main package under cmd/",
+		"places usecase/u.go: usecase is layer 1 (adapters) but is not under adapters/")
 }
 
 // completeAdapter is an adapter that follows the new-adapter recipe, used by a command and its test.

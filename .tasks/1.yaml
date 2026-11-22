@@ -1,0 +1,32 @@
+id: 1
+title: "one archive verdict in recovery/rules: an archive counts only with its metadata beside it"
+state: done
+scope:
+  - v2/recovery/rules/archive.go
+  - v2/recovery/plan.go
+  - v2/recovery/rules/restore_test.go
+  - v2/recovery/restore_test.go
+  - v2/observe/archive_test.go
+  - v2/observe/backup_test.go
+  - v2/cmd/swhurl-v2/restore_test.go
+  - v2/cmd/swhurl-v2/status_test.go
+  - v2/archtest/api.txt
+checks:
+  - make check-v2
+  - cd v2 && go test -count=1 ./recovery/... ./observe/... ./cmd/swhurl-v2/... -run 'Archive|Restore|Status|Verify'
+  - cd v2 && go test ./archtest -run TestPublicAPI
+after: []
+reason: null
+notes:
+  - at: 2026-11-22T11:21:24.055Z
+    commit: 4cb85004843e
+    text: "Decision D1 (operator, option 1): one rule for 'is there a fresh archive?', owned by v2/recovery/rules: an archive counts only when its metadata object sits beside it. If the newest archive is half-uploaded, restore and app status fall back to the previous complete one; an archive named with --from without metadata is still refused as incomplete/archive_metadata_absent. Keep restore flags and printed output stable otherwise. Planner's pointers: newestArchive (v2/recovery/rules/archive.go) counts an object only when '<key minus archive suffix>.json' is in the listing (as images/backup/tool/archive.go does), still aged by S3 LastModified; make the rule suffix-aware so observe can reuse it for .archive.gz.age in task 2. Tests: newest without metadata falls back; named without metadata refused; zero LastModified still malformed. Fixtures listing a .db.age alone must list sqlite-<UTC>.json beside it. Regenerate api.txt with 'go test ./archtest -run TestPublicAPI -update'."
+  - at: 2026-11-22T11:28:36.467Z
+    commit: 12b9a3ba0e7f
+    text: "done: recovery/rules: newest archive counts only with <name>.json listed beside it (suffix-aware newestArchive, exported MetadataKey used by plan.go); half-uploaded newest falls back for restore and status; --from without metadata still incomplete/archive_metadata_absent. Fixtures list metadata; api.txt regenerated. Not verified live."
+  - at: 2026-11-22T11:28:36.467Z
+    commit: 12b9a3ba0e7f
+    text: "followup: docs/operations.md:317 (restore-sqlite) still says restore takes the newest archive by upload time and refuses it as incomplete when its metadata is missing; now the newest without listed metadata is skipped for the previous complete one, and only a FROM= archive is refused as incomplete. Same nuance may belong in docs/v2-status.md / workstreams if they describe the rule."
+  - at: 2026-11-22T11:30:16.276Z
+    commit: 12b9a3ba0e7f
+    text: branch dsa/01M81FTVTJFVT64PKQRFFAN892/task-1

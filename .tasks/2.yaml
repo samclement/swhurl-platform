@@ -1,0 +1,30 @@
+id: 2
+title: sqlite-backups and backups reuse recovery's verdict; delete observe's duplicate rule
+state: cancelled
+scope:
+  - v2/observe/platform_store.go
+  - v2/observe/platform_scope_test.go
+  - v2/cmd/swhurl-v2/verify_test.go
+  - v2/archtest/api.txt
+checks:
+  - make check-v2
+  - cd v2 && go test -count=1 ./observe/... -run 'Backups|SQLite|ScopeChecks'
+  - cd v2 && go test -count=1 ./cmd/swhurl-v2/... -run 'VerifyPlatform|BackupMaxAge'
+  - cd v2 && go test ./archtest -run TestPublicAPI
+  - "! grep -q backupSet v2/observe/platform_store.go"
+after:
+  - 1
+reason: re-created as a new task with v2/recovery/rules/** in scope (tk cannot widen scope)
+notes:
+  - at: 2026-11-22T11:21:24.434Z
+    commit: 4cb85004843e
+    text: "Decision D1 option 1: platform verification reuses recovery's archive verdict (task 1). Planner's pointers: platformDatabases and platformBackups in v2/observe/platform_store.go call recovery's rule instead of backupSet.newest/taken; delete backupSet and its 'second answer / decision D1' comment. Keep entry text, levels and their order, and credentials/listing-failure messages the tests assert. SQLite prefixes are namespace-confined so rules.InstanceArchive fits; MongoDB's clickstack-mongodb/ prefix is not, so use the unconfined entry point. Fixtures in platform_scope_test.go give archives no LastModified: they must state it, since the check now ages by S3 time, not the name's stamp."
+  - at: 2026-11-22T11:31:31.603Z
+    commit: 15078dc9dd19
+    text: "Question from worker: how does the MongoDB backups check get recovery's verdict, since rules only weighs .db.age and archive.go is outside scope? -> Option 1 (exported, unconfined, suffix-aware entry point in recovery/rules), per this task's note and D1's one rule; the task is re-created with v2/recovery/rules/** in scope because tk cannot widen scope."
+  - at: 2026-11-22T11:31:32.392Z
+    commit: 15078dc9dd19
+    text: "Blocker: recovery/rules fixes archiveSuffix=.db.age inside judgeArchive/SelectArchive, so MongoDB (.archive.gz.age) cannot reuse it. Approved fix (option 1): add an exported unconfined entry point in recovery/rules taking the suffix (internals newestArchive/metadataKey already take one); needs v2/recovery/rules/** in scope."
+  - at: 2026-11-22T11:31:32.541Z
+    commit: 15078dc9dd19
+    text: "released: needs v2/recovery/rules/** in scope for a suffix-aware unconfined entry point (MongoDB)"

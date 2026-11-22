@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // StatusInputs is one status request: the instance's records and the documents its compilation takes, the commit
@@ -20,7 +22,7 @@ type StatusInputs struct {
 	// RecordsRoot and SharedPaths are repository-relative, not temporary extraction paths.
 	RecordsRoot string
 	SharedPaths []string
-	Changes     *observe.Changes
+	Changes     *deliveryrules.Changes
 	Reader      kube.Reader
 	// Source names the evidence's source, and Now is the clock its time is read from: both are the caller's.
 	Source string
@@ -29,7 +31,7 @@ type StatusInputs struct {
 	MaxAge time.Duration
 	// Archive lists the instance's own prefix in the object store, given its namespace; nil when the caller does
 	// not read the archive, which the report then says.
-	Archive func(ctx context.Context, namespace string) (observe.ArchiveList, error)
+	Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)
 }
 
 // Status compares the cluster with what the records say should run: it compiles the instance, derives the target

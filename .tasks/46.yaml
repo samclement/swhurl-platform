@@ -1,6 +1,6 @@
 id: 46
 title: One provisioning workflow owns writing; delete delivery/write.go and orchestration's copies
-state: active
+state: done
 scope:
   - v2/provisioning/*.go
   - v2/orchestration/orchestration.go
@@ -31,3 +31,18 @@ notes:
   - at: 2026-11-22T18:19:38.976Z
     commit: 8aba040c99aa
     text: "One layer-2 provisioning workflow owns writing (documents/WithOffers/prune/instanceDocuments/recordFiles); delivery/write.go copy deleted. No docs edit here: task 55 removes the 'Copied delivery write decisions' row (operator accepted)."
+  - at: 2026-11-22T18:28:35.765Z
+    commit: 776752bc0ac9
+    text: "done: New layer-2 v2/provisioning owns writing an instance's folder and records (CompileInto, Complete, WriteCompiled, prune, offers/seed, Documents, InstanceDocuments, RecordFiles, RecordsRoot). Deleted delivery/write.go, orchestration/records.go and orchestration.go's copies; edges orchestration,delivery->provisioning. Offline only; no docs edited."
+  - at: 2026-11-22T18:28:35.765Z
+    commit: 776752bc0ac9
+    text: "followup: provisioning.Documents still duplicates provisioning/rules' private documents(); export it from rules (out of this scope) and delete the layer-2 copy."
+  - at: 2026-11-22T18:28:35.765Z
+    commit: 776752bc0ac9
+    text: "followup: Docs now false: iteration-2-plan.md capability map row (writers in orchestration), §36 slice-5 notes and current-state/v2-status mentions of delivery/write.go; v2-status 'Copied delivery write decisions' row is task 55's."
+  - at: 2026-11-22T18:28:35.765Z
+    commit: 776752bc0ac9
+    text: "followup: delivery/delivery.go still holds Refusal/reasonOf/unavailable copied from orchestration/usecase.go (fluxwait and deploy use them)."
+  - at: 2026-11-22T18:30:33.168Z
+    commit: fad11a6bc788
+    text: branch dsa/01M827RWX8CYTFG5T88E91TGY2/task-46

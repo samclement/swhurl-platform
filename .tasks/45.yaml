@@ -18,6 +18,7 @@ scope:
   - v2/pages/apps.go
   - v2/orchestration/console_rows.go
   - v2/cmd/swhurl-v2/console/static/console.css
+  - v2/cmd/swhurl-v2/console_test.go
   - v2/cmd/swhurl-v2/status.go
   - v2/cmd/swhurl-v2/status_test.go
   - v2/cmd/swhurl-v2/status_all_test.go
@@ -47,3 +48,6 @@ notes:
   - at: 2026-11-22T19:30:52.120Z
     commit: fbbed9383a3d
     text: "Report migration regression tests outside scope? -> Option 1: added v2/observe/batch_test.go and v2/observe/route_test.go. Update Version 5 assertions to the approved Version 6 contract; route_test must reflect that observe gathers evidence and apps owns the composed state. Preserve equivalent failing-state coverage through apps' entry point; do not merely delete coverage."
+  - at: 2026-11-22T19:34:53.598Z
+    commit: ce0367a7a3fc
+    text: "Approved CSS changes alter embedded asset hash -> Option 1: added v2/cmd/swhurl-v2/console_test.go to scope solely for TestAssetHash's pinned hash assertion. Derive expected hash from final approved assets; keep hash regression check and HTML goldens intact. Run the affected test and registered checks."

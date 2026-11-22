@@ -1,7 +1,7 @@
 # Go replacement (v2): progress, deferred work and the next gate
 
 Status: blocked
-Gate: review capability slices 1 (recovery) and 2 (delivery) on the `v2-recovery-slice` branch and merge them to `main`
+Gate: approve and deliver capability slice 3 (notifications): the incident, heartbeat and notify workflows
 Uncommitted: none
 
 **The goal is one Go platform implementation.** v2 becomes the platform's only implementation — kernel, compiler, CLI, console, checks and recovery, built from this repository — and `tools/swhurl` (Python) is retired. Bash stays for host glue. v2 already owns every instance and the live loop; Copier and the separate codegraph development aid are retained exceptions; the Go chart tests also call upstream PyYAML. Each retirement is its own approved slice; the console left by the [approved strangling](iteration-2-plan.md#11-the-console-port-strangled-from-inside-approved-3-november-2026).

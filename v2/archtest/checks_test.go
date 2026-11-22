@@ -73,8 +73,12 @@ func TestCheckLayers(t *testing.T) {
 		// observe may import recovery/rules (a PureDependencies edge); recovery/rules may not import observe back.
 		"observe/o.go":        "package observe\n\nimport \"example.com/v2/recovery/rules\"\n",
 		"recovery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
+		// The same holds for delivery's rules: observe reports them, and they never import observe.
+		"observe/d.go":        "package observe\n\nimport \"example.com/v2/delivery/rules\"\n",
+		"delivery/rules/r.go": "package rules\n\nimport \"example.com/v2/observe\"\n",
 	})
 	expect(t, checkLayers(m),
+		"layers delivery/rules/r.go:3: delivery/rules (layer 0) imports observe (layer 0)",
 		"layers kernel/a.go:3: kernel (layer 0) imports cmd/swhurl-v2 (layer 3)",
 		"layers newpkg/b.go: package newpkg has no declared layer",
 		"layers recovery/rules/r.go:3: recovery/rules (layer 0) imports observe (layer 0)")
@@ -124,6 +128,7 @@ func f(count int) int {
 		"workstreams/a.go":     "package workstreams\n",
 		// A capability's rules are held to the same rule: the clock is an argument there too.
 		"recovery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
+		"delivery/rules/a.go": "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 	})
 	expect(t, checkPure(m),
 		"pure kernel/a.go:5: imports os, which is not in PureImports",
@@ -132,7 +137,8 @@ func f(count int) int {
 		// The clock is refused by call, so a supplied timestamp is still a pure computation.
 		"pure kernel/a.go:16: calls time.Now",
 		"pure kernel/b.go:3: assigns package variable count",
-		"pure recovery/rules/a.go:5: calls time.Now")
+		"pure recovery/rules/a.go:5: calls time.Now",
+		"pure delivery/rules/a.go:5: calls time.Now")
 }
 
 func TestCheckNoSubprocess(t *testing.T) {

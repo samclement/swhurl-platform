@@ -665,6 +665,22 @@ datadestroy: type Kind string
 datadestroy: type Refusal struct {Message string}
 datadestroy: type Target struct {Kind Kind Namespace, Name string Text string}
 datadestroy: var ErrUsage = errors.New(Usage)
+delivery/rules: const Absent = "absent"
+delivery/rules: const Invalid Code = "invalid"
+delivery/rules: const NotRead = "not_read"
+delivery/rules: const Present = "present"
+delivery/rules: const ReasonNotAppliedRev = "revision_not_applied"
+delivery/rules: const ReasonNotSupplied = "revision_not_supplied"
+delivery/rules: const ReasonRevisionShape = "unrecognised_revision"
+delivery/rules: const ReasonUnitDown = "unit_unavailable"
+delivery/rules: const ReasonUnitGone = "unit_absent"
+delivery/rules: const Unavailable = "unavailable"
+delivery/rules: const Unsupported Code = "unsupported"
+delivery/rules: const WrongApplication Code = "wrong_application"
+delivery/rules: const WrongRelease Code = "wrong_release"
+delivery/rules: func (*Error) Error() string
+delivery/rules: type Code string
+delivery/rules: type Error struct {Code Code Field string Reason string}
 events: const ConsumerCollision = "consumer_collision"
 events: const InvalidSubscription = "invalid_subscription"
 events: const NotPublished = "not_published"

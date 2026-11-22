@@ -1,9 +1,10 @@
-package orchestration
+package apps
 
 import (
 	"context"
 	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -139,12 +140,13 @@ func TestCreateWritesTheRecordsAnImageStates(t *testing.T) {
 	}
 }
 
-// A reference the registry cannot read, a label without a declaration, and a revision the tag does not abbreviate are
-// all refused before anything is written.
+// A reference the registry cannot read, a label without a declaration, a revision the tag does not abbreviate and a
+// profile with no recipient to encrypt the seed to are all refused before anything is written.
 func TestCreateRefusesBeforeItWrites(t *testing.T) {
 	for _, tt := range []struct {
-		name, label, image string
-		reason             string
+		name, label string
+		change      func(*CreateInputs)
+		reason      string
 	}{
 		{name: "an image that states no declaration", label: `{}`, reason: "declaration"},
 		{name: "an image at label version 1", label: strings.Replace(createLabel(t, nil), `"schemaVersion":2`,
@@ -159,14 +161,13 @@ func TestCreateRefusesBeforeItWrites(t *testing.T) {
 			delete(d.Documents, "events")
 		}), reason: "documents.events"},
 		{name: "a reference outside the platform's tag contract", label: createLabel(t, nil),
-			image: createImage + ":latest", reason: "artifact.image"},
+			change: func(i *CreateInputs) { i.Image = createImage + ":latest" }, reason: "artifact.image"},
+		{name: "a profile that states no recipient", label: createLabel(t, nil), change: func(i *CreateInputs) {
+			i.Profile = regexp.MustCompile(`"recipient": "[^"]*"`).ReplaceAll(i.Profile, []byte(`"recipient": ""`))
+		}, reason: "the_profile_states_no_recipient"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			created, writer, _, err := create(t, tt.label, func(i *CreateInputs) {
-				if tt.image != "" {
-					i.Image = tt.image
-				}
-			})
+			created, writer, _, err := create(t, tt.label, tt.change)
 			if err == nil || !strings.Contains(err.Error(), tt.reason) {
 				t.Fatalf("error = %v, want it to name %q", err, tt.reason)
 			}

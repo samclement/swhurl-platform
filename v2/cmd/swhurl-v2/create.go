@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/apps"
 )
 
 // create states a new app's first instance from the image its repository publishes: the records it is, and nothing
@@ -72,7 +72,7 @@ func (c cli) create(r request) int {
 		fmt.Fprintln(c.diagnostic, "io: randomness: cannot read a seed")
 		return 1
 	}
-	result, err := orchestration.Create(context.Background(), orchestration.CreateInputs{
+	result, err := apps.Create(context.Background(), apps.CreateInputs{
 		Application: r.app, Team: r.team, Image: r.image, Profile: profile, RecordsRoot: root,
 		Exposure: r.exposure, Seed: seed}, c.registries, r.out, c.writer, c.encrypter)
 	if err != nil {
@@ -101,11 +101,11 @@ func (c cli) appAbsent(records, application string) int {
 	if len(entries) == 0 {
 		return 0
 	}
-	return c.failure(&orchestration.Refusal{Subject: "app", Reason: "the_app_already_has_records"})
+	return c.failure(&apps.Refusal{Subject: "app", Reason: "the_app_already_has_records"})
 }
 
 // encodeCreate is the report of one creation.
-func encodeCreate(result orchestration.Created) ([]byte, error) {
+func encodeCreate(result apps.Created) ([]byte, error) {
 	revision, err := result.Instance.Revision()
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func encodeCreate(result orchestration.Created) ([]byte, error) {
 }
 
 // createSummary is the one line the run's log carries: what was written, and what the operator runs next.
-func createSummary(result orchestration.Created) string {
+func createSummary(result apps.Created) string {
 	return fmt.Sprintf("create: %s/%s wrote %d file(s), release %s, instance %s; run make v2-render next",
 		result.Instance.Application, result.Instance.Environment, len(result.Written),
 		short(string(result.Release.ReleaseID)), short(string(result.Instance.Release)))

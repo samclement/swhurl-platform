@@ -476,8 +476,13 @@ adapters/sops: type DecryptError struct {Reason string}
 adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, error)}
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
+apps: func (*Refusal) Error() string
+apps: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
+apps: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
+apps: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
+apps: type Refusal struct {Subject, Reason string}
 apps: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 apptemplatetest: const AppLabel = "platform.swhurl.com/app"
 apptemplatetest: const Bad Level = "bad"
@@ -1439,7 +1444,6 @@ orchestration: func ConsoleStacks(tree map[string][]byte) (pages.StackCatalogue,
 orchestration: func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, reader kube.Reader, units [][]byte, compare func(from, to string) ([]string, bool, error), source string, now func() time.Time) (observe.Collection, error)
 orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
-orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
@@ -1481,8 +1485,6 @@ orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
 orchestration: type ConsoleRecords struct {Shared provisioningrules.Inputs Instances []provisioningrules.Inputs}
 orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
 orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
-orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
-orchestration: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
 orchestration: type DashboardLine struct {Changed bool Text string}
 orchestration: type DashboardOptions struct {FromRecords bool Records []RecordedInstance DryRun bool}
 orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data ClickStack clickstack.Opener}

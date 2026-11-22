@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // removalDocument is the versioned report `remove` writes: the files it wrote and deleted, and what it left to the
@@ -35,7 +35,7 @@ func (c cli) remove(r request) int {
 	if status != 0 {
 		return status
 	}
-	result, err := orchestration.Remove(inputs, r.out, c.writer)
+	result, err := apps.Remove(inputs, r.out, c.writer)
 	if err != nil {
 		return c.wrote(append(result.Written, result.Removed...), err)
 	}
@@ -53,33 +53,33 @@ func (c cli) remove(r request) int {
 
 // removeInputs assembles one removal: the places its own files are, the platform's two registrations, and whether the
 // app record goes with it.
-func (c cli) removeInputs(r request, one recordsEdit) (orchestration.RemovalInputs, int) {
+func (c cli) removeInputs(r request, one recordsEdit) (apps.RemovalInputs, int) {
 	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
-		return orchestration.RemovalInputs{}, status
+		return apps.RemovalInputs{}, status
 	}
 	decoded, err := kernel.DecodeProfile(profile)
 	if err != nil {
-		return orchestration.RemovalInputs{}, fail(c.diagnostic, err)
+		return apps.RemovalInputs{}, fail(c.diagnostic, err)
 	}
 	spec, err := kernel.DecodeInstance(one.instance)
 	if err != nil {
-		return orchestration.RemovalInputs{}, fail(c.diagnostic, err)
+		return apps.RemovalInputs{}, fail(c.diagnostic, err)
 	}
 	environments, err := appEnvironments(r.records, one.application)
 	if err != nil {
 		fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", filepath.Join(r.records, one.application))
-		return orchestration.RemovalInputs{}, 1
+		return apps.RemovalInputs{}, 1
 	}
 	records, appRecord := filepath.Dir(one.instancePath), ""
 	if appRecord, err = underOut(r.out, filepath.Join(r.records, one.application, appFile)); err != nil {
-		return orchestration.RemovalInputs{}, fail(c.diagnostic, err)
+		return apps.RemovalInputs{}, fail(c.diagnostic, err)
 	}
 	calls, status := c.read(r.callFile, "calls")
 	if status != 0 {
-		return orchestration.RemovalInputs{}, status
+		return apps.RemovalInputs{}, status
 	}
-	inputs := orchestration.RemovalInputs{Instance: one.instance, Release: one.release,
+	inputs := apps.RemovalInputs{Instance: one.instance, Release: one.release,
 		Calls: [][]byte{calls}, Records: records,
 		Compiled:        kernel.InstanceFolder(spec.Application, spec.Environment, decoded),
 		Unit:            kernel.UnitPath(spec.Application, spec.Environment, decoded),
@@ -87,23 +87,23 @@ func (c cli) removeInputs(r request, one recordsEdit) (orchestration.RemovalInpu
 		AppRecord:       appRecord,
 		LastEnvironment: len(environments) == 1}
 	if inputs.UnitRegistration, status = c.registration(r.out, "clusters/home/kustomization.yaml"); status != 0 {
-		return orchestration.RemovalInputs{}, status
+		return apps.RemovalInputs{}, status
 	}
 	if inputs.AuthRegistration, status = c.registration(r.out, "platform/auth/kustomization.yaml"); status != 0 {
-		return orchestration.RemovalInputs{}, status
+		return apps.RemovalInputs{}, status
 	}
 	return inputs, 0
 }
 
 // registration reads one kustomization a removal edits, relative to the destination. A tree without it holds no entry
 // either, so it is not read.
-func (c cli) registration(out, path string) (orchestration.Registration, int) {
+func (c cli) registration(out, path string) (apps.Registration, int) {
 	document, status := c.readPresent(filepath.Join(out, filepath.FromSlash(path)), "registration")
-	return orchestration.Registration{Path: path, Document: document}, status
+	return apps.Registration{Path: path, Document: document}, status
 }
 
 // encodeRemoval is the report of one removal.
-func encodeRemoval(result orchestration.Removal) ([]byte, error) {
+func encodeRemoval(result apps.Removal) ([]byte, error) {
 	return encodeDocument(removalDocument{Kind: "v2-remove", Version: 1, Application: result.Application,
 		Environment: result.Environment, Files: nonNilOutcomes(result.Written),
 		Removed: nonNilOutcomes(result.Removed), Notes: nonNil(result.Notes)})

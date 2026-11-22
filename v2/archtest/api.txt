@@ -479,6 +479,7 @@ adapters/sops: type Error struct {Reason string}
 apps: func (*Refusal) Error() string
 apps: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 apps: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
+apps: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 apps: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
@@ -488,6 +489,9 @@ apps: type Editable struct {InstanceInputs Change string Apply func(kernel.Insta
 apps: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
 apps: type InstanceInputs struct {provisioningrules.Inputs InstancePath string}
 apps: type Refusal struct {Subject, Reason string}
+apps: type Registration struct {Path string Document []byte}
+apps: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
+apps: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
 apps: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 apps: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 apps: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
@@ -1464,7 +1468,6 @@ orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
 orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
-orchestration: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
@@ -1516,11 +1519,8 @@ orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env s
 orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}
 orchestration: type RecordedInstance struct {Application, Environment string Release []byte}
 orchestration: type Refusal struct {Subject, Reason string}
-orchestration: type Registration struct {Path string Document []byte}
 orchestration: type RegistryInputs struct {Registry []byte RegistryPath string Apps, Instances [][]byte Profile []byte Change kernel.TeamChange Address string}
 orchestration: type RegistryOutcome struct {Team string Action kernel.TeamAction Channel string Written []files.Outcome}
-orchestration: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
-orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
 orchestration: type TeamScenarioInputs struct {Instances []provisioningrules.Inputs Environment string Executor kube.Executor}

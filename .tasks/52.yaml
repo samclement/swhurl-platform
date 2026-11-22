@@ -1,6 +1,6 @@
 id: 52
 title: Apps owns removal
-state: ready
+state: done
 scope:
   - v2/apps/remove*.go
   - v2/orchestration/remove.go
@@ -29,3 +29,9 @@ notes:
   - at: 2026-11-22T19:06:15.649Z
     commit: fad0b284e26e
     text: "From task 51: orchestration/remove_test.go also holds a temporary copy of the testdata(t, name) helper; when removal moves into apps, delete it and reuse apps' test helper."
+  - at: 2026-11-22T19:23:19.783Z
+    commit: 5ede2de24bc2
+    text: "done: Moved removal and its types/tests from orchestration to apps; CLI calls apps.Remove. Reused apps' decodePair and fixture helper, updated architecture API/checks and capability status. Added invalid-record and failed-registration-write tests, including CLI exit behavior. Targeted tests and make check-v2 pass; no live checks or cluster changes."
+  - at: 2026-11-22T19:25:40.176Z
+    commit: 5ede2de24bc2
+    text: branch dsa/01M82B3GTAB8S2KJ1KJ4X62GE1/task-52

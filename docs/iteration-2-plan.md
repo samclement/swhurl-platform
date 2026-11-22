@@ -322,8 +322,8 @@ An ownership map, not a directory list: a capability's directory earns a package
 | Capability | Owns | Code today (until its slice moves it) |
 | --- | --- | --- |
 | apps | App and environment records, instance lifecycle, the intent to run a selected release, and an instance's status | `apps/` creation, editing, SetTeam, removal, status and status-all; pure instance records and lifecycle rules remain in `kernel` |
-| delivery | Release identity and selection, staging-to-production promotion, deployment, the evidence that the requested revision landed, and a deployment's health | `delivery/` and `delivery/rules/` (including the deployment-health verdict, `health.go`); release selection in `kernel/select.go`; `observe/explain.go` presents delivery’s currentness as `unit.revision`, without its own revision parser |
-| provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation and declaration in `provisioning/rules`; its folder and record writers in `provisioning/`; the compiler and whole-tree rendering in `kernel`, egress allocation, `policy` |
+| delivery | Release identity and selection, staging-to-production promotion, deployment, the evidence that the requested revision landed, and a deployment's health | `delivery/` and `delivery/rules/` (including deployment health in `health.go` and image acceptance in `image.go`); release selection in `kernel/select.go`; `observe/explain.go` presents delivery’s currentness as `unit.revision`, without its own revision parser |
+| provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation, declaration and optional-document validation in `provisioning/rules`; its folder/record writers and encrypted seed construction in `provisioning/`; the compiler and whole-tree rendering in `kernel`, egress allocation, `policy` |
 | connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/` declaration-change workflow; `connectivity/rules` document readers and `connectivity/rules/{calls,events}` resolvers; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
@@ -339,8 +339,8 @@ What stays shared: the command (`cmd/swhurl-v2`) remains the one entry point, an
 
 Slice 4 retains the approved shared app vocabulary `kernel.AppLabel` and `kernel.StagingEnvironment`;
 `health/rules` reaches it through its named pure dependency. This is not permission to add a shared model to
-`kernel`. The remaining ownership violations and their resolving slices are explicit in
-[v2’s deferred list](v2-status.md#deferred-features), not made compliant by the import checks.
+`kernel`. [Deferred features](v2-status.md#deferred-features) remain explicit; passing import checks
+is not proof of business ownership compliance.
 
 A capability's layout, once its slice has moved it:
 
@@ -3186,10 +3186,10 @@ v2/cmd/swhurl-v2/       verify and verify_checkout wire health; flags, output an
 v2/delivery/rules/      health.go: the one deployment-health verdict (DeploymentHealthOf, ReleaseHealthOf,
                         RequestedImage) over the unit, HelmRelease, workloads and pods, from
                         notifications/rules/incident/health.go (layer 0)
-v2/provisioning/rules/  an instance's compilation and declaration (Inputs, Compile, Declare), from
-                        orchestration/orchestration.go (layer 0)
-v2/provisioning/        CompileInto, WriteCompiled, Documents, InstanceDocuments and RecordFiles (layer 2),
-                        replacing orchestration's writers and delivery/write.go
+v2/provisioning/rules/  compilation, declaration and optional-document validation (Inputs, Compile, Declare,
+                        Documents), from orchestration and the former root validator (layer 0)
+v2/provisioning/        CompileInto, WriteCompiled, InstanceDocuments, RecordFiles and EncryptedSeed (layer 2),
+                        replacing orchestration's writers, delivery/write.go and copied seed construction
 v2/connectivity/        ConnectionSettings and AllowSettings: declaration changes (layer 2)
 v2/connectivity/rules/  optional-document readers and calls/ and events/ resolvers (layer 0)
 v2/apps/                creation, editing, SetTeam, removal, status and status-all use cases (layer 2)
@@ -3234,8 +3234,31 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
   rollback semantics. All evidence is
   [offline](current-state.md#slice-5-complete-status-provisioning-connectivity-and-apps-lifecycle-offline-22-november-2026).
   **Next gate:** operator approval of the separate console capability slice and its offline acceptance.
-  Slice 5 is complete offline, not verified live; remaining helper duplication is recorded in the
-  [canonical deferred list](v2-status.md#deferred-features).
+  Slice 5 and its [ownership follow-ups](current-state.md#ownership-follow-ups-and-job-test-synchronization-offline-22-november-2026)
+  are complete offline, not verified live. The console slice remains unapproved.
+
+### Ownership follow-up contracts (approved 22 November 2026)
+
+- **Provisioning's pure validation:** `provisioning/rules.Documents` is the single optional-document validator
+  used by compilation, deploy and promote; the root `provisioning.Documents` duplicate is deleted, without a
+  forwarding shim. Absent documents retain empty connections/nil egress; valid documents for other instances
+  contribute no facts. Supplied malformed documents are refused even when no facts are needed. Calls are
+  validated before egress.
+- **Connectivity's declaration deltas:** ordered merging, deduplication and removals are private to
+  `connectivity`; `kernel.MergeDeclarations` is deleted. Kernel retains record transformations and document types.
+- **Provisioning's encrypted seed:** `provisioning.EncryptedSeed` constructs, encrypts and validates ciphertext
+  for apps' Create and orchestration's Mint. A missing recipient returns `provisioning.Refusal` directly
+  (`refused: sops: the_profile_states_no_recipient`), with unchanged text and CLI exits, before encryption or writes.
+  No plaintext or unchecked ciphertext is returned on failure; callers write the seed before the record stating
+  its key. Mint's wider workflow stays in orchestration; no wholesale Mint migration is approved.
+- **Delivery's pure image acceptance:** `delivery/rules.ImageMetadataOf` accepts a prevalidated `kernel.ImageTag`
+  and declaration/revision label strings, without registry access. Declaration validation precedes revision
+  validation; the tag suffix must abbreviate the full source revision. Missing evidence is a delivery-rule error
+  translated by Create and Deploy to their own refusal types; malformed evidence retains kernel errors.
+  Digest handling stays with callers and is unchanged.
+- **Local refusal ownership stays local:** capability refusal formatting and read-failure translation, including
+  delivery's `absentOrUnavailable`, are mechanical helpers, not copied business verdicts. They are intentionally
+  retained without a shared refusal framework. These follow-ups do not authorize the console capability slice.
 
 ### Workflow dependency policy (approved 22 November 2026)
 
@@ -3245,8 +3268,9 @@ The [ownership and dependency contract](#capability-map) and the existing `layer
 `WorkflowDependencies` contains `orchestration` → `health`, `apps`, `provisioning`; `delivery` → `provisioning`;
 and `apps` → `provisioning`. The first two orchestration edges keep `ConsoleChecks` and `ConsoleStatus`
 composition in a workflow rather than in the CLI or duplicate implementations; reconsider them when console
-moves. Orchestration also uses provisioning's records-root constant for seed minting. Apps and delivery reuse
-provisioning's record and instance-folder writers. The reverses and all unlisted peer imports remain forbidden.
+moves. Orchestration also uses provisioning's records-root constant and `EncryptedSeed` for seed minting;
+apps' Create uses the same seed construction. Apps and delivery reuse provisioning's record and instance-folder
+writers. The reverses and all unlisted peer imports remain forbidden.
 `PureDependencies` separately records the reviewed pure owners; all other layer restrictions stay unchanged.
 The policy requires one owner per business verdict; callers reuse its pure verdict before requesting its workflow.
 Commands must only wire dependencies, invoke use cases and map output, without business sequencing or decisions.
@@ -3254,5 +3278,5 @@ Commands must only wire dependencies, invoke use cases and map output, without b
 The registry check rejects non-workflow endpoints, self edges and cycles even when the declared edge is not
 imported. Regression fixtures accept a locally supplied named edge without changing global policy, reject its
 reverse and unlisted peers, and keep pure-to-effect and all other prohibited imports forbidden. These named edges
-do not prove business ownership compliance. The remaining
-known violations are in the [canonical deferred list](v2-status.md#deferred-features). Verification is offline, not a live-effect claim.
+do not prove business ownership compliance. Unmodelled features remain in the
+[canonical deferred list](v2-status.md#deferred-features). Verification is offline, not a live-effect claim.

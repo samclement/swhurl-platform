@@ -2,6 +2,46 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Ownership follow-ups and job-test synchronization, offline (22 November 2026)
+
+- **Change:** tasks 56–60 are done and merged in this task's base (`837a4b265f1a`). The
+  [§36 follow-up contracts](iteration-2-plan.md#ownership-follow-up-contracts-approved-22-november-2026)
+  record the shared owners: `provisioning/rules.Documents` replaces the root validator without a shim;
+  connectivity privately merges declaration lists, removing `kernel.MergeDeclarations`;
+  `provisioning.EncryptedSeed` serves Create and Mint without moving Mint's wider workflow; and
+  `delivery/rules.ImageMetadataOf` validates image evidence for Create and Deploy. Mechanical refusal
+  helpers remain local. Missing recipients now surface `provisioning.Refusal` directly, with unchanged
+  message/CLI exits, no encryption or writes, and seed-before-record ordering retained. Missing image
+  evidence maps to the caller's own refusal; malformed evidence retains kernel errors.
+- **Test synchronization:** task 59 changes only `orchestration/jobs_test.go`: persisted-record and audit
+  assertions wait for the fixture's first terminal audit event, after the final store save attempt, including
+  the failed-job audit path. No production ordering or best-effort persistence contract changed, and no
+  sleep or retry was added as the fix. Its baseline race repetitions did not reproduce the intermittent
+  failure; the change follows the observed finish ordering rather than claiming a reproduced race defect.
+- **Prior task evidence:** task notes record each ownership task's targeted Go/architecture suites and
+  `make check-v2` passing. Task 59 records 20 race-enabled repetitions of
+  `TestJobsRunOneJobPerTargetAndRecordItsLines`, `go test -race ./orchestration` and `make check-v2`
+  passing. A separate post-completion guardrail intermittently failed
+  `TestExecCancellationWhileWaitingForUpgrade` (`exec_test.go:408`, withheld upgrade not cancelled).
+  Its machine-leased recheck passed 50 repetitions in `./adapters/kube`, then `make check-v2` passed
+  (run `01M82G133SF5GQ7CRB5ZS6YJZF`). A pre-handler timeout is only an unproven explanation: no defect
+  is established and no extra task or code change is authorized. Revisit only if it recurs.
+- **Documentation:** task 61 replaces the capability/status registry row and removes the resolved helper
+  duplication deferral; the canonical status page stays within 250 lines. Tests live in provisioning's
+  [document cases](../v2/provisioning/rules/documents_test.go), [seed cases](../v2/provisioning/seed_test.go),
+  [connectivity cases](../v2/connectivity/connectivity_test.go), delivery's
+  [image cases](../v2/delivery/rules/image_test.go) and orchestration's
+  [job cases](../v2/orchestration/jobs_test.go), with Create/Deploy/Mint entry-point regressions.
+- **Task 61 verification:** `make check-repo`, `make check-v2`, `make check-docs` and `git diff --check`
+  passed on this documentation task tree under a machine lease (run `01M82HAD3FNGDGRE80C4GDRQ3D`).
+  Render comparisons checked 172 platform files and 27 fixture files, with zero differences; documentation
+  checks reported zero errors/warnings. Prior task results above are not claimed as post-merge verification.
+- **Not exercised:** no live cluster, deployment, bucket or browser behavior was exercised; nothing live
+  changed. Observation Version 6, composed apps status, healthy rollback/no-alert behavior, exit codes and
+  cluster-read counts are retained by the implementation tasks, not re-proved live here. Console composition
+  stays in `orchestration`; the console capability slice is **unapproved**. **Next gate:** operator approval
+  of its separate scope and offline acceptance criteria.
+
 ## Slice 5 complete: status, provisioning, connectivity and apps lifecycle, offline (22 November 2026)
 
 - **Change:** [§36](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)

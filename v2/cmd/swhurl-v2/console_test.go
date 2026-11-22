@@ -22,7 +22,7 @@ func TestAssetHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.assets != "93e3b193821e" {
+	if server.assets != "ce72a4deeff1" {
 		t.Fatalf("assets = %s", server.assets)
 	}
 }

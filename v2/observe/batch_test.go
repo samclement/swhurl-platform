@@ -101,7 +101,7 @@ func TestBulkCollectionEmptyEnvelopeAndIndividualReportVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if document.Kind != "v2-observations" || document.Version != 2 || document.Instances[0].Report.Kind != "v2-observation" ||
-		document.Instances[0].Report.Version != 5 || document.Instances[0].Application != "hello" ||
+		document.Instances[0].Report.Version != 6 || document.Instances[0].Application != "hello" ||
 		document.Instances[0].Report.Currentness.AppliedRevision != "main@sha1:"+commit ||
 		string(document.Instances[0].Inventory) != `{"team":"demo"}` ||
 		len(document.Removing) != 1 || document.Removing[0].Reason != observe.RemovedUnit {

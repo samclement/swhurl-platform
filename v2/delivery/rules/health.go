@@ -33,6 +33,8 @@ const (
 type DeploymentVerdict struct {
 	Health DeploymentHealth
 	Detail string
+	// RolledBack qualifies healthy: remediation restored the previous release, not the requested upgrade.
+	RolledBack bool
 }
 
 // DeploymentHealthOf judges a deployment by its release, then requires its Flux unit to be Ready: a healthy release
@@ -74,23 +76,23 @@ func deploymentHealth(d Deployment, unit bool) DeploymentVerdict {
 	release := d.Release
 	if release == nil {
 		if flag(field(d.Unit, "spec"), "suspend") {
-			return DeploymentVerdict{DeploymentUnjudged, "No release yet and deployment reconciliation is suspended"}
+			return DeploymentVerdict{Health: DeploymentUnjudged, Detail: "No release yet and deployment reconciliation is suspended"}
 		}
-		return DeploymentVerdict{DeploymentStalled, "HelmRelease has not been created"}
+		return DeploymentVerdict{Health: DeploymentStalled, Detail: "HelmRelease has not been created"}
 	}
 	if text(field(release, "metadata"), "deletionTimestamp") != "" {
-		return DeploymentVerdict{DeploymentUnjudged, "Uninstall is in progress"}
+		return DeploymentVerdict{Health: DeploymentUnjudged, Detail: "Uninstall is in progress"}
 	}
 	main := field(release, "spec", "values", "controllers", "main")
 	if has(main, "replicas") && number(main, "replicas") == 0 {
-		return DeploymentVerdict{DeploymentStopped, ""}
+		return DeploymentVerdict{Health: DeploymentStopped, Detail: ""}
 	}
 	workloads, pods := d.owned()
 	if detail, unready := replicaHealth(workloads, pods); unready {
-		return DeploymentVerdict{DeploymentUnhealthy, detail}
+		return DeploymentVerdict{Health: DeploymentUnhealthy, Detail: detail}
 	}
 	if flag(field(release, "spec"), "suspend") || flag(field(d.Unit, "spec"), "suspend") {
-		return DeploymentVerdict{DeploymentSuspended, "Healthy workload; deployment reconciliation is suspended"}
+		return DeploymentVerdict{Health: DeploymentSuspended, Detail: "Healthy workload; deployment reconciliation is suspended"}
 	}
 	return landedHealth(d.Unit, release, pods, unit)
 }
@@ -162,21 +164,21 @@ func waitingReasons(pods []map[string]any) []string {
 // generation, the requested digest running and, when asked, the unit Ready.
 func landedHealth(unitObject, release map[string]any, pods []map[string]any, unit bool) DeploymentVerdict {
 	if rolledBack(release) {
-		return DeploymentVerdict{DeploymentHealthy, "Previous working version is healthy after rollback; requested upgrade failed"}
+		return DeploymentVerdict{Health: DeploymentHealthy, Detail: "Previous working version is healthy after rollback; requested upgrade failed", RolledBack: true}
 	}
 	generation := number(field(release, "metadata"), "generation")
 	ready := condition(release, "Ready")
 	if text(ready, "status") != "True" || !has(ready, "observedGeneration") || number(ready, "observedGeneration") != generation {
-		return DeploymentVerdict{DeploymentStalled, "HelmRelease is not current/Ready (" + fallback(text(ready, "reason"), "Unknown") + ")"}
+		return DeploymentVerdict{Health: DeploymentStalled, Detail: "HelmRelease is not current/Ready (" + fallback(text(ready, "reason"), "Unknown") + ")"}
 	}
 	image := RequestedImage(release)
 	if strings.Contains(image, "@") && !imagesMatch(image, pods) && text(ready, "reason") != "RollbackSucceeded" {
-		return DeploymentVerdict{DeploymentStalled, "Running image differs from the requested digest"}
+		return DeploymentVerdict{Health: DeploymentStalled, Detail: "Running image differs from the requested digest"}
 	}
 	if unit && text(condition(unitObject, "Ready"), "status") != "True" {
-		return DeploymentVerdict{DeploymentStalled, "Flux unit is blocked or has not finished applying the request"}
+		return DeploymentVerdict{Health: DeploymentStalled, Detail: "Flux unit is blocked or has not finished applying the request"}
 	}
-	return DeploymentVerdict{DeploymentHealthy, "Workload is Ready and deployment is current"}
+	return DeploymentVerdict{Health: DeploymentHealthy, Detail: "Workload is Ready and deployment is current"}
 }
 
 // rolledBack is a Remediated=True RollbackSucceeded condition at the release's generation with nothing reconciling.

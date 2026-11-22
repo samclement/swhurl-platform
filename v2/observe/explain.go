@@ -153,11 +153,11 @@ type Report struct {
 	// Backup is the protection's own answer, which the verdict never uses.
 	Backup BackupReport
 	// Problems, Routes and Certificates are facts beside the findings: every container that is not ready and
-	// says why, the route the records expect and each certificate it needs. Only problems decide the state.
+	// says why, the route the records expect and each certificate it needs. These do not decide the instance state.
 	Problems     []Problem
 	Routes       []Route
 	Certificates []Certificate
-	// State is the instance's state as the console shows it, decided from this report by StateOf.
+	// State is the instance's state as the console shows it, assigned by the apps status use case; Explain leaves it unset.
 	State      State
 	Assessed   []string // findings this report established
 	Unassessed []string // findings it could not establish, and why is in the finding's reason
@@ -208,7 +208,6 @@ func Explain(target Target, evidence Evidence) (Report, error) {
 			report.Assessed = append(report.Assessed, finding.Field)
 		}
 	}
-	report.State = StateOf(report)
 	return report, nil
 }
 

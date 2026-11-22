@@ -35,10 +35,12 @@ func decoded(t *testing.T, raw string) map[string]any {
 // Each case changes the healthy deployment so that one rule decides, in ReleaseHealthOf's order. DeploymentHealthOf
 // agrees except where the unit is not Ready.
 func TestDeploymentHealth(t *testing.T) {
-	healthy := DeploymentVerdict{DeploymentHealthy, "Workload is Ready and deployment is current"}
-	missing := DeploymentVerdict{DeploymentUnhealthy, "Desired workload is missing or replica status is unavailable"}
-	rollback := DeploymentVerdict{DeploymentHealthy, "Previous working version is healthy after rollback; requested upgrade failed"}
-	stalled := func(detail string) DeploymentVerdict { return DeploymentVerdict{DeploymentStalled, detail} }
+	healthy := DeploymentVerdict{Health: DeploymentHealthy, Detail: "Workload is Ready and deployment is current"}
+	missing := DeploymentVerdict{Health: DeploymentUnhealthy, Detail: "Desired workload is missing or replica status is unavailable"}
+	rollback := DeploymentVerdict{Health: DeploymentHealthy, Detail: "Previous working version is healthy after rollback; requested upgrade failed", RolledBack: true}
+	stalled := func(detail string) DeploymentVerdict {
+		return DeploymentVerdict{Health: DeploymentStalled, Detail: detail}
+	}
 	notReady := stalled("HelmRelease is not current/Ready (UpgradeSucceeded)")
 	otherImage := stalled("Running image differs from the requested digest")
 	ready := func(d *Deployment) map[string]any { return condition(d.Release, "Ready") }
@@ -53,12 +55,12 @@ func TestDeploymentHealth(t *testing.T) {
 	}{
 		{"healthy", func(*Deployment) {}, healthy, nil},
 		{"no release, unit suspended", func(d *Deployment) { d.Release, field(d.Unit, "spec")["suspend"] = nil, true },
-			DeploymentVerdict{DeploymentUnjudged, "No release yet and deployment reconciliation is suspended"}, nil},
+			DeploymentVerdict{Health: DeploymentUnjudged, Detail: "No release yet and deployment reconciliation is suspended"}, nil},
 		{"no release", func(d *Deployment) { d.Release = nil }, stalled("HelmRelease has not been created"), nil},
 		{"uninstalling", func(d *Deployment) { field(d.Release, "metadata")["deletionTimestamp"] = "2026-11-22T00:00:00Z" },
-			DeploymentVerdict{DeploymentUnjudged, "Uninstall is in progress"}, nil},
+			DeploymentVerdict{Health: DeploymentUnjudged, Detail: "Uninstall is in progress"}, nil},
 		{"no replicas wanted", func(d *Deployment) { field(d.Release, "spec", "values", "controllers", "main")["replicas"] = 0.0 },
-			DeploymentVerdict{DeploymentStopped, ""}, nil},
+			DeploymentVerdict{Health: DeploymentStopped, Detail: ""}, nil},
 		{"workload elsewhere", func(d *Deployment) { field(d.Workloads[0], "metadata")["namespace"] = "app-prod" }, missing, nil},
 		{"another controller's workload", func(d *Deployment) {
 			field(d.Workloads[0], "metadata", "labels")["app.kubernetes.io/controller"] = "worker"
@@ -67,11 +69,11 @@ func TestDeploymentHealth(t *testing.T) {
 		{"replicas not ready", func(d *Deployment) {
 			field(d.Workloads[0], "status")["readyReplicas"] = 0.0
 			field(d.Pods[0], "status")["containerStatuses"] = decoded(t, `{"c":[{"name":"main","state":{"waiting":{"reason":"ImagePullBackOff"}}}]}`)["c"]
-		}, DeploymentVerdict{DeploymentUnhealthy, "Deployment/app 0/1 Ready; ImagePullBackOff"}, nil},
+		}, DeploymentVerdict{Health: DeploymentUnhealthy, Detail: "Deployment/app 0/1 Ready; ImagePullBackOff"}, nil},
 		{"release suspended", func(d *Deployment) { field(d.Release, "spec")["suspend"] = true },
-			DeploymentVerdict{DeploymentSuspended, "Healthy workload; deployment reconciliation is suspended"}, nil},
+			DeploymentVerdict{Health: DeploymentSuspended, Detail: "Healthy workload; deployment reconciliation is suspended"}, nil},
 		{"unit suspended", func(d *Deployment) { field(d.Unit, "spec")["suspend"] = true },
-			DeploymentVerdict{DeploymentSuspended, "Healthy workload; deployment reconciliation is suspended"}, nil},
+			DeploymentVerdict{Health: DeploymentSuspended, Detail: "Healthy workload; deployment reconciliation is suspended"}, nil},
 		{"rolled back, unit blocked", func(d *Deployment) {
 			setConditions(d, `[{"type":"Ready","status":"False"},{"type":"Remediated","status":"True","reason":"RollbackSucceeded","observedGeneration":2}]`)
 			field(d.Unit, "status")["conditions"] = []any{}

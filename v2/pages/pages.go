@@ -27,6 +27,10 @@ func (s State) Label() string {
 		return "Updating"
 	case "failing":
 		return "Failing"
+	case StateStalled:
+		return "Stalled"
+	case StateRolledBack:
+		return "Rolled back"
 	case "suspended":
 		return "Suspended"
 	case "stopped":
@@ -37,16 +41,21 @@ func (s State) Label() string {
 
 // The states an instance or unit can be in: the one vocabulary the console shows.
 const (
-	StateHealthy   = "healthy"
-	StateUpdating  = "updating"
-	StateFailing   = "failing"
-	StateSuspended = "suspended"
-	StateStopped   = "stopped"
-	StateUnknown   = "unknown"
+	StateHealthy    = "healthy"
+	StateUpdating   = "updating"
+	StateStalled    = "stalled"
+	StateRolledBack = "rolled-back"
+	StateFailing    = "failing"
+	StateSuspended  = "suspended"
+	StateStopped    = "stopped"
+	StateUnknown    = "unknown"
 )
 
 // StateOf is an instance's state as a report decided it: its name and its reason, underscored words made plain.
 func StateOf(name, reason string) State {
+	if name == "rolled back" {
+		name = StateRolledBack
+	}
 	return State{Key: name, Detail: strings.ReplaceAll(reason, "_", " ")}
 }
 

@@ -22,7 +22,7 @@ func EncodeReport(report Report) ([]byte, error) {
 func EncodeReviewedReport(report Report, reviewedDigest string) ([]byte, error) {
 	document := reportDocument{
 		Kind:        "v2-observation",
-		Version:     5,
+		Version:     6,
 		Promotion:   promotionReadiness(report, reviewedDigest),
 		Currentness: report.Currentness, Live: report.Live,
 		Source:       report.Source,

@@ -283,7 +283,7 @@ func TestExplainReportsTheIntendedReleaseRunning(t *testing.T) {
 			t.Errorf("%q is named as not covered", fact)
 		}
 	}
-	if report.State != (observe.State{Name: observe.StateHealthy}) {
+	if report.State != (observe.State{}) {
 		t.Errorf("state %+v", report.State)
 	}
 }
@@ -514,47 +514,46 @@ func TestRevisionFindingReportsDeliveryCurrentness(t *testing.T) {
 		currentnessState, currentnessReason              string
 		want                                             finding
 		verdict                                          observe.Verdict
-		state                                            observe.State
 	}{
 		{name: "applied without comparison", applied: "main@sha1:" + commit, noComparison: true,
 			currentnessState: "applied", currentnessReason: "revision_matches", want: finding{observe.Applied, ""},
-			verdict: observe.IsRunning, state: observe.State{Name: observe.StateHealthy}},
+			verdict: observe.IsRunning},
 		{name: "different without comparison stays updating", noComparison: true,
 			currentnessState: "unknown", currentnessReason: "comparison_not_supplied", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "complete empty comparison is unaffected", comparisonStatus: "complete", paths: []string{},
 			currentnessState: "unaffected", currentnessReason: "complete_comparison_unaffected", want: finding{observe.Unaffected, "complete_comparison_unaffected"},
-			verdict: observe.IsRunning, state: observe.State{Name: observe.StateHealthy}},
+			verdict: observe.IsRunning},
 		{name: "another instance is unaffected", comparisonStatus: "complete", paths: []string{"v2-records/another/staging/instance.json"},
 			currentnessState: "unaffected", currentnessReason: "complete_comparison_unaffected", want: finding{observe.Unaffected, "complete_comparison_unaffected"},
-			verdict: observe.IsRunning, state: observe.State{Name: observe.StateHealthy}},
+			verdict: observe.IsRunning},
 		{name: "relevant folder changed", comparisonStatus: "complete", paths: []string{"v2-records/hello/staging/instance.json"},
 			currentnessState: "pending", currentnessReason: "relevant_path_changed", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "relevant shared file changed", comparisonStatus: "complete", paths: []string{"v2/testdata/profile.json"},
 			currentnessState: "pending", currentnessReason: "relevant_path_changed", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "wrong endpoints grant no exemption", comparisonStatus: "complete", paths: []string{}, wrongEndpoints: true,
 			currentnessState: "unknown", currentnessReason: "comparison_endpoints_mismatch", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "incomplete comparison grants no exemption", comparisonStatus: "incomplete", paths: []string{},
 			currentnessState: "unknown", currentnessReason: "comparison_incomplete", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "unavailable comparison grants no exemption", comparisonStatus: "unavailable", paths: []string{},
 			currentnessState: "unknown", currentnessReason: "comparison_unavailable", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "unknown relevance grants no exemption", comparisonStatus: "complete", paths: []string{}, noScope: true,
 			currentnessState: "unknown", currentnessReason: "relevance_unknown", want: finding{observe.Different, ""},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", observe.Different}},
+			verdict: observe.IsNotRunning},
 		{name: "no applied revision", noApplied: true, noComparison: true,
 			currentnessState: "pending", currentnessReason: deliveryrules.ReasonNotAppliedRev, want: finding{observe.NotApplied, deliveryrules.ReasonNotAppliedRev},
-			verdict: observe.IsNotRunning, state: observe.State{observe.StateUpdating, "unit.revision", deliveryrules.ReasonNotAppliedRev}},
+			verdict: observe.IsNotRunning},
 		{name: "digest part is not an exact commit", applied: "main@sha1:deadbeef", noComparison: true,
 			currentnessState: "unknown", currentnessReason: deliveryrules.ReasonRevisionShape, want: finding{observe.NotAssessed, deliveryrules.ReasonRevisionShape},
-			verdict: observe.Unknown, state: observe.State{observe.StateUnknown, "unit.revision", deliveryrules.ReasonRevisionShape}},
+			verdict: observe.Unknown},
 		{name: "unrecognised revision is unassessed", applied: "not-a-revision", noComparison: true,
 			currentnessState: "unknown", currentnessReason: deliveryrules.ReasonRevisionShape, want: finding{observe.NotAssessed, deliveryrules.ReasonRevisionShape},
-			verdict: observe.Unknown, state: observe.State{observe.StateUnknown, "unit.revision", deliveryrules.ReasonRevisionShape}},
+			verdict: observe.Unknown},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			base := target()
@@ -582,8 +581,8 @@ func TestRevisionFindingReportsDeliveryCurrentness(t *testing.T) {
 				t.Fatalf("revision finding moved: %+v", report.Findings)
 			}
 			want := deliveryrules.Currentness{State: tt.currentnessState, Reason: tt.currentnessReason, AppliedRevision: applied}
-			if report.Currentness != want || report.State != tt.state {
-				t.Errorf("currentness %+v, state %+v; want %+v, %+v", report.Currentness, report.State, want, tt.state)
+			if report.Currentness != want {
+				t.Errorf("currentness %+v; want %+v", report.Currentness, want)
 			}
 		})
 	}

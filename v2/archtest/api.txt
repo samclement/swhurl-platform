@@ -751,7 +751,7 @@ delivery/rules: type Comparison struct {From string `json:"from"` To string `jso
 delivery/rules: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
 delivery/rules: type Deployment struct {Namespace, Name string Unit, Release map[string]any Workloads, Pods []map[string]any}
 delivery/rules: type DeploymentHealth string
-delivery/rules: type DeploymentVerdict struct {Health DeploymentHealth Detail string}
+delivery/rules: type DeploymentVerdict struct {Health DeploymentHealth Detail string RolledBack bool}
 delivery/rules: type Error struct {Code Code Field string Reason string}
 delivery/rules: type FluxProgress string
 delivery/rules: type FluxUnitState struct {Name string Progress FluxProgress Message string}
@@ -1350,6 +1350,8 @@ observe: const Running = "running"
 observe: const Settled = "settled"
 observe: const StateFailing = "failing"
 observe: const StateHealthy = "healthy"
+observe: const StateRolledBack = "rolled back"
+observe: const StateStalled = "stalled"
 observe: const StateStopped = "stopped"
 observe: const StateSuspended = "suspended"
 observe: const StateUnknown = "unknown"
@@ -1372,7 +1374,6 @@ observe: func InstanceOfUnit(name string) (application, environment string, ok b
 observe: func IsPositive(outcome string) bool
 observe: func NewestRun(items [][]byte) (string, bool, error)
 observe: func RouteTargetOf(ingress []byte) (RouteTarget, error)
-observe: func StateOf(report Report) State
 observe: func TargetOf(helmRelease []byte, unit Ref, revision string) (Target, error)
 observe: func UnitRef(unit []byte) (Ref, error)
 observe: type BackupEvidence struct {CronJob Read Pods List Run *Read Archive *rules.ArchiveList MaxAge time.Duration}
@@ -1540,6 +1541,8 @@ pages: const NewAppRecordKind = "new-app"
 pages: const OtherLayer = "Other"
 pages: const StateFailing = "failing"
 pages: const StateHealthy = "healthy"
+pages: const StateRolledBack = "rolled-back"
+pages: const StateStalled = "stalled"
 pages: const StateStopped = "stopped"
 pages: const StateSuspended = "suspended"
 pages: const StateUnknown = "unknown"

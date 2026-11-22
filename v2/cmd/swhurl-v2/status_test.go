@@ -128,11 +128,15 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 			if a.scaledTo != nil {
 				replicas = *a.scaledTo
 			}
+			ready := replicas
+			if a.crashing {
+				ready = 0
+			}
 			writeDocument(t, w, map[string]any{
 				"apiVersion": "apps/v1", "kind": "Deployment",
-				"metadata": map[string]any{"name": "demo-orders", "namespace": namespace, "generation": 4},
+				"metadata": map[string]any{"name": "demo-orders", "namespace": namespace, "generation": 4, "labels": map[string]any{"app.kubernetes.io/instance": "demo-orders", "app.kubernetes.io/controller": "main"}},
 				"spec":     map[string]any{"replicas": replicas},
-				"status": map[string]any{"observedGeneration": 4, "availableReplicas": replicas,
+				"status": map[string]any{"observedGeneration": 4, "availableReplicas": ready, "readyReplicas": ready,
 					"conditions": []any{map[string]any{"type": "Available", "status": "True"}}},
 			})
 		case "/api/v1/namespaces/" + namespace + "/pods":
@@ -256,7 +260,7 @@ func flux(apiVersion, kind, name, namespace string, status map[string]any) map[s
 func pod(namespace, image string) map[string]any {
 	return map[string]any{
 		"apiVersion": "v1", "kind": "Pod",
-		"metadata": map[string]any{"name": "demo-orders-abc", "namespace": namespace},
+		"metadata": map[string]any{"name": "demo-orders-abc", "namespace": namespace, "labels": map[string]any{"app.kubernetes.io/instance": "demo-orders", "app.kubernetes.io/controller": "main"}},
 		"spec":     map[string]any{"containers": []any{map[string]any{"name": "main", "image": image}}},
 		"status": map[string]any{"containerStatuses": []any{
 			map[string]any{"name": "main", "image": image, "imageID": "docker-pullable://" + image}}},
@@ -408,7 +412,7 @@ func TestStatusReportsTheRunningInstance(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	report := document(t, stdout)
-	if report["kind"] != "v2-observation" || report["version"] != float64(5) {
+	if report["kind"] != "v2-observation" || report["version"] != float64(6) {
 		t.Fatalf("the report envelope is %v/%v", report["kind"], report["version"])
 	}
 	if report["verdict"] != string(observe.IsRunning) || report["state"].(map[string]any)["name"] != observe.StateHealthy {
@@ -728,7 +732,7 @@ func TestStatusReadsTheRouteAndNamesAFailingContainer(t *testing.T) {
 		t.Fatalf("exit %d: %s", status, stderr)
 	}
 	for _, line := range []string{
-		"State      failing: containers " + observe.ReasonContainers,
+		"State      failing: deployment Deployment/demo-orders 0/1 Ready; CrashLoopBackOff",
 		"Route      https://demo-orders.homelab.swhurl.com",
 		"TLS        demo-orders-tls: ready",
 		"Problems   demo-orders-abc/main: CrashLoopBackOff back-off 5m0s restarting failed container=main",

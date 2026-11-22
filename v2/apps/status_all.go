@@ -126,5 +126,14 @@ func statusReport(ctx context.Context, inputs StatusInputs, target observe.Targe
 			evidence.Backup.Archive = &listed
 		}
 	}
-	return observe.Explain(target, evidence)
+	report, err := observe.Explain(target, evidence)
+	if err != nil {
+		return observe.Report{}, err
+	}
+	deployment, err := statusDeployment(target, evidence)
+	if err != nil {
+		return observe.Report{}, err
+	}
+	report.State = statusState(report, deployment)
+	return report, nil
 }

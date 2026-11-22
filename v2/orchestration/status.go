@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"errors"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"path/filepath"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 // StatusInputs is one status request: the instance's records and the documents its compilation takes, the commit
 // those records were read at, and where and when the evidence is read.
 type StatusInputs struct {
-	Inputs
+	provisioningrules.Inputs
 	// Revision is the commit the records were read at: the revision Flux should have applied.
 	Revision string
 	// RecordsRoot and SharedPaths are repository-relative, not temporary extraction paths.
@@ -58,8 +59,8 @@ type compiledInstance struct {
 
 // statusTarget compiles the instance and derives what should be running from the compiled documents, reading
 // nothing but the documents it was given.
-func statusTarget(inputs Inputs, revision string) (observe.Target, error) {
-	compiled, err := Compile(inputs)
+func statusTarget(inputs provisioningrules.Inputs, revision string) (observe.Target, error) {
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return observe.Target{}, err
 	}

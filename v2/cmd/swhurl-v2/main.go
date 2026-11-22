@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"io"
 	"net/http"
 	"os"
@@ -1353,7 +1354,7 @@ func (c cli) compile(r request) int {
 		result, err := orchestration.CompileInto(inputs, r.out, c.writer)
 		return c.wrote(result.Written, err)
 	}
-	compiled, err := orchestration.Compile(inputs)
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -1362,8 +1363,8 @@ func (c cli) compile(r request) int {
 
 // inputs reads the documents a compilation takes: the instance's records, the profile, and the two optional
 // documents. Which of them a use case needs is the kernel's to refuse, not this command's to remember.
-func (c cli) inputs(r request) (orchestration.Inputs, int) {
-	var inputs orchestration.Inputs
+func (c cli) inputs(r request) (provisioningrules.Inputs, int) {
+	var inputs provisioningrules.Inputs
 	for _, read := range []struct {
 		path   string
 		what   string
@@ -1381,7 +1382,7 @@ func (c cli) inputs(r request) (orchestration.Inputs, int) {
 		}
 		data, status := c.read(read.path, read.what)
 		if status != 0 {
-			return orchestration.Inputs{}, status
+			return provisioningrules.Inputs{}, status
 		}
 		*read.target = data
 	}

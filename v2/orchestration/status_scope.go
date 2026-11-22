@@ -4,12 +4,13 @@ import (
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // statusScopedTarget uses the same record and compiler vocabulary as writing and pruning. Shared
 // inputs conservatively count as relevant; no assumption that committed rendering is up to date is needed.
 func statusScopedTarget(inputs StatusInputs) (observe.Target, error) {
-	compiled, err := Compile(inputs.Inputs)
+	compiled, err := provisioningrules.Compile(inputs.Inputs)
 	if err != nil {
 		return observe.Target{}, err
 	}

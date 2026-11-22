@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"bytes"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -11,7 +12,7 @@ import (
 // record writes it back where the operator keeps it: which records root a tree uses is the caller's choice, not a
 // convention of this layer.
 type InstanceInputs struct {
-	Inputs
+	provisioningrules.Inputs
 	InstancePath string
 }
 

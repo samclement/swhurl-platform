@@ -1411,14 +1411,13 @@ orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepos
 orchestration: func AppTemplateTest(ctx context.Context, inputs AppTemplateTestInputs) ([]apptemplatetest.Line, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
-orchestration: func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
+orchestration: func CheckPolicy(inputs []provisioningrules.Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckRepo(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error)) (checkrepo.Report, error)
 orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.Decrypter, decoder manifests.Decoder, keyFile string) (secretcheck.Report, error)
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
-orchestration: func Compile(inputs Inputs) (kernel.Compilation, error)
-orchestration: func CompileInto(inputs Inputs, destination string, writer files.Writer) (Result, error)
+orchestration: func CompileInto(inputs provisioningrules.Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
@@ -1457,7 +1456,7 @@ orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
 orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
-orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error)
+orchestration: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
 orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
@@ -1479,7 +1478,7 @@ orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
 orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
-orchestration: type ConsoleRecords struct {Shared Inputs Instances []Inputs}
+orchestration: type ConsoleRecords struct {Shared provisioningrules.Inputs Instances []provisioningrules.Inputs}
 orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
 orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
 orchestration: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
@@ -1498,8 +1497,7 @@ orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bo
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type FluxRelease struct {Namespace string Name string}
-orchestration: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
-orchestration: type InstanceInputs struct {Inputs InstancePath string}
+orchestration: type InstanceInputs struct {provisioningrules.Inputs InstancePath string}
 orchestration: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
 orchestration: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
 orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
@@ -1522,10 +1520,10 @@ orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byt
 orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
-orchestration: type StatusInputs struct {Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
+orchestration: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
-orchestration: type TeamScenarioInputs struct {Instances []Inputs Environment string Executor kube.Executor}
+orchestration: type TeamScenarioInputs struct {Instances []provisioningrules.Inputs Environment string Executor kube.Executor}
 pages: const ConsoleAppsRoot = "v2-apps/instances"
 pages: const ConsoleAuthFolder = "platform/auth"
 pages: const ConsoleCallsFile = ConsoleRecordsRoot + "/calls.json"
@@ -1799,6 +1797,10 @@ producer: type Field struct {Name any Value any}
 producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
+provisioning/rules: func Compile(inputs Inputs) (kernel.Compilation, error)
+provisioning/rules: func Declare(inputs Inputs) (Declaration, error)
+provisioning/rules: type Declaration struct {Application, Environment string Declared kernel.Declared}
+provisioning/rules: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
 recovery/rules: const BackupAbsent = "absent"
 recovery/rules: const BackupCurrent = "current"
 recovery/rules: const BackupFailing = "failing"

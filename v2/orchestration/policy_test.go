@@ -3,6 +3,7 @@ package orchestration
 import (
 	"encoding/json"
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"slices"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestPolicyValidatesAllInputsBeforeRendering(t *testing.T) {
-	for _, inputs := range [][]Inputs{nil, {input(t, nil, nil), {Instance: []byte(`{}`)}}} {
+	for _, inputs := range [][]provisioningrules.Inputs{nil, {input(t, nil, nil), {Instance: []byte(`{}`)}}} {
 		renderer := &helmtest.Fake{}
 		report, err := CheckPolicy(inputs, "local-chart", renderer)
 		if report != nil || err == nil || len(renderer.Calls) != 0 {
@@ -20,7 +21,7 @@ func TestPolicyValidatesAllInputsBeforeRendering(t *testing.T) {
 }
 func TestSuccessfulRenderWithoutAppIsAPolicyFailure(t *testing.T) {
 	renderer := &helmtest.Fake{Output: []json.RawMessage{json.RawMessage(`{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"harmless"}}`)}}
-	report, err := CheckPolicy([]Inputs{input(t, nil, nil)}, "local-chart", renderer)
+	report, err := CheckPolicy([]provisioningrules.Inputs{input(t, nil, nil)}, "local-chart", renderer)
 	if err != nil || len(report) != 1 {
 		t.Fatalf("%v %v", report, err)
 	}
@@ -36,7 +37,7 @@ func TestSuccessfulRenderWithoutAppIsAPolicyFailure(t *testing.T) {
 
 func TestAdapterRefusalKeepsItsFixedReason(t *testing.T) {
 	renderer := &helmtest.Fake{Err: &helm.Error{Reason: "chart_mismatch"}}
-	results, err := CheckPolicy([]Inputs{input(t, nil, nil)}, "wrong-chart", renderer)
+	results, err := CheckPolicy([]provisioningrules.Inputs{input(t, nil, nil)}, "wrong-chart", renderer)
 	if err != nil || len(results) != 1 || results[0].RenderFailure != "refused_render: chart_mismatch" {
 		t.Fatal("adapter's safe reason was lost")
 	}

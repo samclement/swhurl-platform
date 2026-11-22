@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,7 @@ func (c cli) statusAll(r request) int {
 
 // allStatusInputs uses the existing record-folder enumeration and shared app reader, never live
 // candidates as an inventory. Shared bytes are read once for this pinned bundle.
-func (c cli) allStatusInputs(r request) ([]orchestration.Inputs, orchestration.Inputs, int) {
+func (c cli) allStatusInputs(r request) ([]provisioningrules.Inputs, provisioningrules.Inputs, int) {
 	shared, status := c.statusShared(r)
 	if status != 0 {
 		return nil, shared, status
@@ -63,7 +64,7 @@ func (c cli) allStatusInputs(r request) ([]orchestration.Inputs, orchestration.I
 		return nil, shared, 1
 	}
 	apps := map[string][]byte{}
-	instances := []orchestration.Inputs{}
+	instances := []provisioningrules.Inputs{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -86,8 +87,8 @@ func (c cli) allStatusInputs(r request) ([]orchestration.Inputs, orchestration.I
 	return instances, shared, 0
 }
 
-func (c cli) statusShared(r request) (orchestration.Inputs, int) {
-	inputs := orchestration.Inputs{}
+func (c cli) statusShared(r request) (provisioningrules.Inputs, int) {
+	inputs := provisioningrules.Inputs{}
 	for _, read := range []struct {
 		path, what string
 		target     *[]byte
@@ -109,7 +110,7 @@ func (c cli) statusShared(r request) (orchestration.Inputs, int) {
 	return inputs, c.statusSharedDocuments(inputs)
 }
 
-func (c cli) statusSharedDocuments(inputs orchestration.Inputs) int {
+func (c cli) statusSharedDocuments(inputs provisioningrules.Inputs) int {
 	if inputs.Calls != nil {
 		if _, err := kernel.ConnectionsOf(inputs.Calls, "", ""); err != nil {
 			return fail(c.diagnostic, err)

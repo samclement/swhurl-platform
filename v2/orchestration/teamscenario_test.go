@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"errors"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // scenarioInstance is one recorded instance that calls, publishes and subscribes as given.
-func scenarioInstance(t *testing.T, application, environment string, calls, publishes, subscriptions []string) Inputs {
+func scenarioInstance(t *testing.T, application, environment string, calls, publishes, subscriptions []string) provisioningrules.Inputs {
 	t.Helper()
 	inputs := statusVariant(t, application, environment, false, false)
 	release, err := kernel.DecodeRelease(inputs.Release)
@@ -44,8 +45,8 @@ func scenarioInstance(t *testing.T, application, environment string, calls, publ
 	return inputs
 }
 
-func scenarioInstances(t *testing.T) []Inputs {
-	return []Inputs{
+func scenarioInstances(t *testing.T) []provisioningrules.Inputs {
+	return []provisioningrules.Inputs{
 		scenarioInstance(t, "reports", "staging", []string{"orders"}, nil, nil),
 		scenarioInstance(t, "orders", "staging", nil, []string{"created"}, nil),
 		scenarioInstance(t, "notifier", "staging", nil, nil, []string{"orders.created"}),

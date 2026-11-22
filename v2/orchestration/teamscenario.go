@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"strconv"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
@@ -14,7 +15,7 @@ const clickhousePod, clickhouseContainer = "clickstack-clickhouse-clickhouse-0-0
 // TeamScenarioInputs is every recorded instance, the environment the scenario follows, and the exec port its
 // queries reach ClickHouse through.
 type TeamScenarioInputs struct {
-	Instances   []Inputs
+	Instances   []provisioningrules.Inputs
 	Environment string
 	Executor    kube.Executor
 }
@@ -25,13 +26,13 @@ type TeamScenarioInputs struct {
 func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error) {
 	apps := map[string]teamscenario.App{}
 	for _, instance := range inputs.Instances {
-		declared, err := declaredInstance(instance)
+		declared, err := provisioningrules.Declare(instance)
 		if err != nil {
 			return nil, err
 		}
-		if declared.environment == inputs.Environment {
-			d := declared.declaration
-			apps[declared.application] = teamscenario.App{Team: d.Team, Calls: d.Calls, Publishes: d.Publishes, Subscriptions: d.Subscriptions}
+		if declared.Environment == inputs.Environment {
+			d := declared.Declared
+			apps[declared.Application] = teamscenario.App{Team: d.Team, Calls: d.Calls, Publishes: d.Publishes, Subscriptions: d.Subscriptions}
 		}
 	}
 	chain, err := teamscenario.Choose(inputs.Environment, apps)

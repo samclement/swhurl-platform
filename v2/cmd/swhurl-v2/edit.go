@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -272,8 +273,8 @@ func (c cli) recordsEdit(out, root, application, environment string) (recordsEdi
 }
 
 // editInputs reads the documents a compilation of the edited record takes.
-func (c cli) editInputs(r request, one recordsEdit) (orchestration.Inputs, int) {
-	inputs := orchestration.Inputs{Instance: one.instance, Release: one.release, App: one.app,
+func (c cli) editInputs(r request, one recordsEdit) (provisioningrules.Inputs, int) {
+	inputs := provisioningrules.Inputs{Instance: one.instance, Release: one.release, App: one.app,
 		EventsSecret: one.secret, Offers: one.offers}
 	for _, read := range []struct {
 		path   string
@@ -289,7 +290,7 @@ func (c cli) editInputs(r request, one recordsEdit) (orchestration.Inputs, int) 
 		}
 		data, status := c.read(read.path, read.what)
 		if status != 0 {
-			return orchestration.Inputs{}, status
+			return provisioningrules.Inputs{}, status
 		}
 		*read.target = data
 	}

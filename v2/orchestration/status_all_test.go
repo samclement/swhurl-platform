@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"reflect"
 	"strings"
 	"testing"
@@ -105,7 +106,7 @@ func statusJSON(value any) []byte {
 	}
 	return data
 }
-func statusVariant(t *testing.T, application, environment string, database, exposed bool) Inputs {
+func statusVariant(t *testing.T, application, environment string, database, exposed bool) provisioningrules.Inputs {
 	t.Helper()
 	inputs := input(t, nil, nil)
 	release, err := kernel.DecodeRelease(inputs.Release)
@@ -163,7 +164,7 @@ func statusObject(ref observe.Ref, labels map[string]string) map[string]any {
 func (f *statusCluster) put(ref observe.Ref, document map[string]any) {
 	f.objects[ref] = observe.Read{Ref: ref, Status: observe.Present, Object: statusJSON(document)}
 }
-func addStatusInstance(t *testing.T, f *statusCluster, inputs Inputs) observe.Target {
+func addStatusInstance(t *testing.T, f *statusCluster, inputs provisioningrules.Inputs) observe.Target {
 	t.Helper()
 	target, err := statusTarget(inputs, revision)
 	if err != nil {
@@ -223,7 +224,7 @@ func cluster() *statusCluster { return &statusCluster{objects: map[observe.Ref]o
 
 func TestStatusAllAgreesWithSingleAndBatchesCoreReads(t *testing.T) {
 	f := cluster()
-	instances := []Inputs{statusVariant(t, "zulu", "staging", false, true), statusVariant(t, "alpha", "staging", false, false), statusVariant(t, "alpha", "prod", false, false)}
+	instances := []provisioningrules.Inputs{statusVariant(t, "zulu", "staging", false, true), statusVariant(t, "alpha", "staging", false, false), statusVariant(t, "alpha", "prod", false, false)}
 	targets := []observe.Target{}
 	for _, inputs := range instances {
 		targets = append(targets, addStatusInstance(t, f, inputs))
@@ -246,7 +247,7 @@ func TestStatusAllAgreesWithSingleAndBatchesCoreReads(t *testing.T) {
 		t.Fatalf("reads %v lists %v instances %d", f.reads, f.lists, len(bulk.Instances))
 	}
 	expected := []string{"alpha/prod", "alpha/staging", "zulu/staging"}
-	byIdentity := map[string]Inputs{"alpha/prod": instances[2], "alpha/staging": instances[1], "zulu/staging": instances[0]}
+	byIdentity := map[string]provisioningrules.Inputs{"alpha/prod": instances[2], "alpha/staging": instances[1], "zulu/staging": instances[0]}
 	for i, entry := range bulk.Instances {
 		key := entry.Application + "/" + entry.Environment
 		if key != expected[i] {
@@ -269,7 +270,7 @@ func TestStatusAllAgreesWithSingleAndBatchesCoreReads(t *testing.T) {
 func TestStatusAllFixedListsAndKnownUnlabeledBackupJobs(t *testing.T) {
 	for _, count := range []int{1, 3, 8} {
 		f := cluster()
-		instances := []Inputs{}
+		instances := []provisioningrules.Inputs{}
 		for i := 0; i < count; i++ {
 			app := "database-" + string(rune('a'+i))
 			inputs := statusVariant(t, app, "staging", true, false)
@@ -306,7 +307,7 @@ func TestStatusAllListFailuresAreNeverAbsence(t *testing.T) {
 		inputs := statusVariant(t, "hello", "staging", true, true)
 		addStatusInstance(t, f, inputs)
 		f.failedKind, f.failedReason = "Deployment", reason
-		result, err := StatusAll(t.Context(), observationInputs(f), []Inputs{inputs})
+		result, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{inputs})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -316,7 +317,7 @@ func TestStatusAllListFailuresAreNeverAbsence(t *testing.T) {
 		}
 		f.failedKind = "Pod"
 		f.reads = nil
-		result, err = StatusAll(t.Context(), observationInputs(f), []Inputs{inputs})
+		result, err = StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{inputs})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -355,7 +356,7 @@ func TestStatusAllBackupMissingOwnersAndFailedVersusAbsentJobs(t *testing.T) {
 				delete(f.objects, old)
 			}
 		}
-		result, err := StatusAll(t.Context(), observationInputs(f), []Inputs{inputs})
+		result, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{inputs})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,15 +386,15 @@ func TestStatusAllEmptyInvalidAndRefusedInputs(t *testing.T) {
 	}
 	bad := input(t, nil, nil)
 	bad.Instance = []byte(`{}`)
-	if _, err := StatusAll(t.Context(), observationInputs(f), []Inputs{bad}); err == nil || len(f.lists) != 0 {
+	if _, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{bad}); err == nil || len(f.lists) != 0 {
 		t.Fatalf("invalid input: %v", err)
 	}
 	good := input(t, nil, nil)
-	if _, err := StatusAll(t.Context(), observationInputs(f), []Inputs{good, good}); err == nil {
+	if _, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{good, good}); err == nil {
 		t.Fatal("duplicate instance accepted")
 	}
 	f.refuse = errors.New("refused: explicit test failure")
-	if _, err := StatusAll(t.Context(), observationInputs(f), []Inputs{good}); !errors.Is(err, f.refuse) {
+	if _, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{good}); !errors.Is(err, f.refuse) {
 		t.Fatalf("%v", err)
 	}
 }
@@ -407,7 +408,7 @@ func TestRevisionRelevanceUsesRecordWriterAndCompilerPaths(t *testing.T) {
 	_ = json.Unmarshal(f.objects[target.Unit].Object, &unit)
 	unit["status"].(map[string]any)["lastAppliedRevision"] = "main@sha1:" + old
 	f.put(target.Unit, unit)
-	compiled, err := Compile(inputs)
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +439,7 @@ func TestRevisionRelevanceUsesRecordWriterAndCompilerPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			bulk, err := StatusAll(t.Context(), options, []Inputs{inputs})
+			bulk, err := StatusAll(t.Context(), options, []provisioningrules.Inputs{inputs})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -459,7 +460,7 @@ func TestBulkCandidateIdentityAndOwnerFiltersAreNotInventory(t *testing.T) {
 	foreign.Namespace = "other-staging"
 	f.put(foreign, statusObject(foreign, map[string]string{"app.kubernetes.io/instance": "hello"}))
 	delete(f.objects, target.Workload)
-	result, err := StatusAll(t.Context(), observationInputs(f), []Inputs{inputs})
+	result, err := StatusAll(t.Context(), observationInputs(f), []provisioningrules.Inputs{inputs})
 	if err != nil {
 		t.Fatal(err)
 	}

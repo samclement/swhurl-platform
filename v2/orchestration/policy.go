@@ -3,6 +3,7 @@ package orchestration
 import (
 	"encoding/json"
 	"errors"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"slices"
 	"strings"
 
@@ -27,7 +28,7 @@ type policyCompilation struct {
 
 // CheckPolicy compiles/validates every input before rendering anything, then judges every instance even if
 // one render fails. It writes nothing and never acquires charts. The caller decides output and exit status.
-func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error) {
+func CheckPolicy(inputs []provisioningrules.Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error) {
 	prepared, err := policyCompilations(inputs, chart)
 	if err != nil {
 		return nil, err
@@ -47,7 +48,7 @@ func CheckPolicy(inputs []Inputs, chart string, renderer helm.Renderer) ([]Polic
 	}
 	return result, nil
 }
-func policyCompilations(inputs []Inputs, chart string) ([]policyCompilation, error) {
+func policyCompilations(inputs []provisioningrules.Inputs, chart string) ([]policyCompilation, error) {
 	if len(inputs) == 0 {
 		return nil, errors.New("invalid_policy_inputs: no_instances")
 	}
@@ -64,8 +65,8 @@ func policyCompilations(inputs []Inputs, chart string) ([]policyCompilation, err
 	})
 	return result, nil
 }
-func preparePolicy(inputs Inputs, chart string) (policyCompilation, error) {
-	compiled, err := Compile(inputs)
+func preparePolicy(inputs provisioningrules.Inputs, chart string) (policyCompilation, error) {
+	compiled, err := provisioningrules.Compile(inputs)
 	if err != nil {
 		return policyCompilation{}, err
 	}

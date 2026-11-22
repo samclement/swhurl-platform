@@ -1,6 +1,7 @@
 package orchestration_test
 
 import (
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"os"
 	"strings"
 	"testing"
@@ -21,9 +22,9 @@ func testdata(t *testing.T, name string) []byte {
 }
 
 // instanceInputs is one instance's documents as an edit reads them from the tree.
-func instanceInputs(t *testing.T, instance, release string) orchestration.Inputs {
+func instanceInputs(t *testing.T, instance, release string) provisioningrules.Inputs {
 	t.Helper()
-	return orchestration.Inputs{Instance: testdata(t, instance), Release: testdata(t, release),
+	return provisioningrules.Inputs{Instance: testdata(t, instance), Release: testdata(t, release),
 		App: testdata(t, "app.json"), Profile: testdata(t, "profile.json")}
 }
 
@@ -177,7 +178,7 @@ func TestSetTeamReachesEveryEnvironment(t *testing.T) {
 func TestEditRefusesRecordsThatDisagree(t *testing.T) {
 	writer := filestest.New()
 	one := orchestration.Editable{
-		InstanceInputs: orchestration.InstanceInputs{Inputs: orchestration.Inputs{Instance: testdata(t, "staging.json"),
+		InstanceInputs: orchestration.InstanceInputs{Inputs: provisioningrules.Inputs{Instance: testdata(t, "staging.json"),
 			Release: testdata(t, "r41.json"), App: testdata(t, "app.json"), Profile: testdata(t, "profile.json")},
 			InstancePath: "v2-records/demo-orders/staging/instance.json"},
 		Change: "replicas", Apply: applyFor(kernel.WithReplicas, 3)}

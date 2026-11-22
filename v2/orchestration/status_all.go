@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"slices"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ type statusInstance struct {
 
 // StatusAll compiles pinned instances before reading anything live, batches each necessary list once,
 // then uses precisely the single-status evaluator. Only the newest known backup Job is read per database.
-func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (observe.Collection, error) {
+func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error) {
 	if inputs.Changes != nil {
 		if err := inputs.Changes.Validate(); err != nil {
 			return observe.Collection{}, err
@@ -54,7 +55,7 @@ func StatusAll(ctx context.Context, inputs StatusInputs, instances []Inputs) (ob
 	return result, nil
 }
 
-func statusInstances(inputs StatusInputs, instances []Inputs) ([]statusInstance, error) {
+func statusInstances(inputs StatusInputs, instances []provisioningrules.Inputs) ([]statusInstance, error) {
 	result := make([]statusInstance, 0, len(instances))
 	seen := map[string]bool{}
 	for _, instance := range instances {
@@ -64,17 +65,17 @@ func statusInstances(inputs StatusInputs, instances []Inputs) ([]statusInstance,
 		if err != nil {
 			return nil, err
 		}
-		declared, err := declaredInstance(instance)
+		declared, err := provisioningrules.Declare(instance)
 		if err != nil {
 			return nil, err
 		}
-		identity := declared.application + "/" + declared.environment
+		identity := declared.Application + "/" + declared.Environment
 		if seen[identity] {
 			return nil, &observe.Error{Field: "instances", Reason: "duplicate_identity"}
 		}
 		seen[identity] = true
-		declared.target = target
-		result = append(result, declared)
+		result = append(result, statusInstance{application: declared.Application, environment: declared.Environment,
+			target: target, declaration: declared.Declared})
 	}
 	slices.SortFunc(result, func(a, b statusInstance) int {
 		if order := strings.Compare(a.application, b.application); order != 0 {
@@ -83,34 +84,6 @@ func statusInstances(inputs StatusInputs, instances []Inputs) ([]statusInstance,
 		return strings.Compare(a.environment, b.environment)
 	})
 	return result, nil
-}
-
-// declaredInstance is one instance's identity and the declaration its records state: the compiler's own facts and
-// the two committed resolution documents, never a read of the cluster.
-func declaredInstance(instance Inputs) (statusInstance, error) {
-	spec, err := kernel.DecodeInstance(instance.Instance)
-	if err != nil {
-		return statusInstance{}, err
-	}
-	profile, err := kernel.DecodeProfile(instance.Profile)
-	if err != nil {
-		return statusInstance{}, err
-	}
-	release, err := kernel.DecodeRelease(instance.Release)
-	if err != nil {
-		return statusInstance{}, err
-	}
-	app := kernel.AppSpec{}
-	if instance.App != nil {
-		if app, err = kernel.DecodeApp(instance.App); err != nil {
-			return statusInstance{}, err
-		}
-	}
-	declaration, err := kernel.Declare(spec, release, app, profile, instance.Calls, instance.Egress)
-	if err != nil {
-		return statusInstance{}, err
-	}
-	return statusInstance{application: spec.Application, environment: spec.Environment, declaration: declaration}, nil
 }
 
 func readCandidates(ctx context.Context, inputs StatusInputs, targets []observe.Target) (observe.Candidates, error) {

@@ -1,6 +1,6 @@
 id: 29
 title: Record slice 3 in the plan, status, evidence and registry
-state: ready
+state: cancelled
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -20,7 +20,7 @@ checks:
   - "! grep -rqE '\\\\]\\\\((\\\\.\\\\./)?v2/(notify|incident|heartbeat|orchestration/notify|orchestration/notifications)' docs GLOSSARY.md"
 after:
   - 28
-reason: null
+reason: wait on task 31, which replaces task 28
 notes:
   - at: 2026-11-22T14:01:41.213Z
     commit: e56e85ef47fd

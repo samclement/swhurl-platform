@@ -1,0 +1,49 @@
+id: 31
+title: Move the notifier, checker and heartbeat use cases to v2/notifications
+state: ready
+scope:
+  - v2/notifications/notify.go
+  - v2/notifications/notify_test.go
+  - v2/notifications/check.go
+  - v2/notifications/check_test.go
+  - v2/notifications/heartbeat.go
+  - v2/notifications/heartbeat_test.go
+  - v2/orchestration/notify.go
+  - v2/orchestration/notify_test.go
+  - v2/orchestration/notifications_check.go
+  - v2/orchestration/notifications_check_test.go
+  - v2/orchestration/notifications_heartbeat.go
+  - v2/orchestration/notifications_heartbeat_test.go
+  - v2/orchestration/platform_scope.go
+  - v2/cmd/swhurl-v2/notify.go
+  - v2/cmd/swhurl-v2/notify_test.go
+  - v2/cmd/swhurl-v2/notify_kube_test.go
+  - v2/cmd/swhurl-v2/notifications_check.go
+  - v2/cmd/swhurl-v2/notifications_heartbeat.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - v2/archtest/api.txt
+  - v2/notifications/**
+  - v2/adapters/ntfy/**
+  - v2/adapters/notifysvc/**
+checks:
+  - make check-v2
+  - cd v2 && go test ./notifications/... ./orchestration/... ./cmd/swhurl-v2/... -count=1
+  - cd v2 && go test ./archtest -run 'TestPublicAPI|TestLayers|TestPlaces|TestPure|TestOrchestration'
+  - "! test -e v2/orchestration/notify.go"
+  - "! test -e v2/orchestration/notify_test.go"
+  - "! test -e v2/orchestration/notifications_check.go"
+  - "! test -e v2/orchestration/notifications_heartbeat.go"
+  - "! grep -rqE 'orchestration\\\\.(Notifier|NotifyCluster|NotifyConnect|Accepted|Delivered|CheckerPorts|CheckOptions|CheckReport|CheckerDelivery|CheckNotifications|HeartbeatPorts|HeartbeatOptions|HeartbeatOutcome|NotificationsHeartbeat)' v2 --include=*.go"
+  - grep -qi 'copied from' v2/orchestration/platform_scope.go
+  - grep -qi 'copied from' v2/notifications/heartbeat.go
+after:
+  - 30
+reason: null
+notes:
+  - at: 2026-11-22T14:21:05.748Z
+    commit: cc03b5b9039d
+    text: |-
+      Replaces task 28 (wait on task 30, which replaces task 27). Notes carried over:
+      Replaces task 23 (correct quoted checks; dependency replaces 22). Notes carried over:
+      Slice 2 (delivery), plan block 3. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: `git mv v2/orchestration/notify.go v2/notifications/notify.go`, `notifications_check.go` to `check.go`, `notifications_heartbeat.go` to `heartbeat.go`, and the three test files beside them; change `package orchestration` to `package notifications` / `orchestration_test` to `notifications_test`. `check_test.go`'s read must become `rules/incident/testdata/snapshot.json` (it sits in `v2/notifications` now, not `v2/orchestration`). Commands change imports and `orchestration.` → `notifications.` only: `v2/cmd/swhurl-v2/notify.go` (`NotifyCluster`, `NotifyConnect`, `Notifier`, `NewNotifier`, `Accepted`), `notify_test.go:113,115`, `notify_kube_test.go:100,102,189`, `notifications_check.go:51,52,64,67,79`, `notifications_heartbeat.go:74,78,110,113,117,122,126`. Decision 1A of slice 2 applies to two lost helpers: move `channelAddresses` and `errNoRoutesKey` with `notify.go`, then add copies to `v2/orchestration/platform_scope.go` (they are used there at `:271,326`) with a comment naming `notifications/notify.go` and "copies merge at slice 5"; and copy `ntfyNamespace`, `ntfySecret`, `ntfyPlatformKey` from `orchestration/dashboards.go:56-58` into `v2/notifications/heartbeat.go` (used at `:138,142`) with the same kind of comment. archtest: add `"notifications": 2` to `Layers` and append `"notifications"` to `Orchestration`; add a `TestCheckLayers` fixture such as `"notifications/n.go": import "example.com/v2/orchestration"` expecting `layers notifications/n.go:3: notifications (layer 2) imports orchestration (layer 2)`. `api.txt`: remove the exported lines for the moved orchestration symbols and add the same names under `notifications:`; `publicAPI` sorts bytewise, so `notifications/rules/...` blocks come before `notifications:` and `notifications:` before the remaining `notify`-prefixed keys. Flags, JSON logs, exit codes and cluster effects must not change; the moved pure packages and command tests pass with only package/import names changed. `incident/health.go`'s deployment-health rule moves as-is; folding any overlap into delivery's readiness is slice 4's work, not this move.

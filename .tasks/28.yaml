@@ -1,6 +1,6 @@
 id: 28
 title: Move the notifier, checker and heartbeat use cases to v2/notifications
-state: ready
+state: cancelled
 scope:
   - v2/notifications/notify.go
   - v2/notifications/notify_test.go
@@ -39,7 +39,7 @@ checks:
   - grep -qi 'copied from' v2/notifications/heartbeat.go
 after:
   - 27
-reason: null
+reason: wait on task 30, which replaces task 27
 notes:
   - at: 2026-11-22T14:01:40.651Z
     commit: e56e85ef47fd

@@ -30,3 +30,6 @@ notes:
   - at: 2026-11-22T18:19:40.017Z
     commit: 8aba040c99aa
     text: "Fold in: plan slice-2 'until slice 5' wording -> provisioning writers moved; remove resolved deferred rows (copied write decisions, status deployment health); record status's one composed state (rolled back/stalled), connectivity and apps lifecycle owners, console slice as next gate. Do not claim post-merge or live checks."
+  - at: 2026-11-22T18:30:47.494Z
+    commit: f2fac03fb879
+    text: "Carry task 46 followup: docs now false after provisioning owns writing: iteration-2-plan.md capability-map row (writers in orchestration), the slice-5 notes, and current-state/v2-status mentions of delivery/write.go (deleted). v2/provisioning (layer 2) owns CompileInto/WriteCompiled/Documents/InstanceDocuments/RecordFiles; edges orchestration,delivery->provisioning. Known leftovers (operator follow-ups, do not claim resolved): provisioning.Documents duplicates provisioning/rules' private documents(); delivery/delivery.go keeps Refusal/reasonOf/unavailable copied from orchestration/usecase.go."

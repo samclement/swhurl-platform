@@ -1,6 +1,6 @@
 id: 26
 title: Move the heartbeat rules to notifications/rules/heartbeat
-state: ready
+state: done
 scope:
   - v2/heartbeat/**
   - v2/notifications/rules/heartbeat/**
@@ -29,3 +29,12 @@ notes:
     text: |-
       Replaces task 21 (correct quoted checks; dependency replaces 20). Notes carried over:
       Slice 2 (delivery), plan block 1. Decision (conductor, operator approved running slice 3 on the planner's recommendations, 2026-11-22): Q1 subpackages: incident, heartbeat and notify move unchanged as notifications/rules/{incident,heartbeat,notify} (package names unchanged); v2/notifications is the one layer-2 use-case package. Per slice 2's decision 1A, a small helper two use-case packages need is copied with a comment naming its origin; use-case packages don't import each other. Commands keep flags, output and effects; delete old copies, no shims. You may regenerate api.txt with 'go test ./archtest -run TestPublicAPI$ -update' (only that test, so budgets.json is untouched). make check-docs is not a check (fails on an uncommitted tree). If a file outside scope must change, release the task saying which file. Planner's pointers: `v2/heartbeat` is already layer 0 (`v2/archtest/rules_test.go:81,155`). `git mv` every file, `testdata/` included, to `v2/notifications/rules/heartbeat/`; package name stays `heartbeat`, so imports change only. Update `v2/orchestration/notifications_heartbeat.go:10`, `v2/orchestration/notifications_heartbeat_test.go:16`, and `v2/cmd/swhurl-v2/notifications_heartbeat.go:17`; the cmd test does not import `heartbeat`. archtest: remove `"heartbeat": 0` from `Layers` and `"heartbeat"` from `Pure`, add `"notifications/rules/heartbeat": 0` and `"notifications/rules/heartbeat"`; in `TestCheckPure` (`v2/archtest/checks_test.go:117`) move the fixture to `notifications/rules/heartbeat/a.go`. In `api.txt` move the 19 `heartbeat:` lines (`:738-756`) to `notifications/rules/heartbeat:`, which sorts before the new `notifications/rules/incident` block. The use-case workflow stays in `orchestration` until task 3; only the pure package moves here. Testdata relative reads (`testdata/state-v1.json` etc.) keep working because the directory moves with the package.
+  - at: 2026-11-22T14:13:28.463Z
+    commit: be36a8727a66
+    text: "done: Moved v2/heartbeat unchanged to v2/notifications/rules/heartbeat with git mv; updated importers, in-package tests, archtest Layers/Pure and its TestCheckPure fixture, regenerated api.txt, fixed the fixture README link. Passed make check-v2, targeted Go tests, TestPublicAPI and the four file/grep checks. Docs links to old paths left for a docs change."
+  - at: 2026-11-22T14:13:28.463Z
+    commit: be36a8727a66
+    text: "followup: Docs still link to the old paths v2/heartbeat/testdata/README.md and v2/heartbeat/heartbeat.go: docs/iteration-2-plan.md:1601, docs/current-state.md:1618, docs/operations.md:246"
+  - at: 2026-11-22T14:14:53.460Z
+    commit: be36a8727a66
+    text: branch dsa/01M81SGZSKRPFWZVZPQED8X0K1/task-26

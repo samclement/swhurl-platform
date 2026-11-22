@@ -1,6 +1,6 @@
 id: 13
 title: Record slice 2 in the plan, status, evidence and registry
-state: ready
+state: cancelled
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -20,7 +20,7 @@ after:
   - 9
   - 10
   - 12
-reason: null
+reason: re-created to wait on task 14, which replaces task 9
 notes:
   - at: 2026-11-22T12:07:52.693Z
     commit: 7f70a48d5699

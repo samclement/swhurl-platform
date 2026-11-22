@@ -1,6 +1,6 @@
 id: 9
 title: Deploy moves into v2/delivery
-state: ready
+state: cancelled
 scope:
   - v2/delivery/deploy.go
   - v2/delivery/deploy_test.go
@@ -20,8 +20,17 @@ checks:
   - "! grep -rq 'orchestration.DeployImage\\|orchestration.DeployInputs\\|orchestration.Deploy{' v2"
 after:
   - 7
-reason: null
+reason: re-created with v2/orchestration/create.go in scope (tk cannot widen scope)
 notes:
   - at: 2026-11-22T12:07:51.307Z
     commit: 7f70a48d5699
     text: "Slice 2 (delivery), plan block 3. Decisions (operator, 2026-11-22): 1A copy the write plumbing promote/deploy share into v2/delivery/write.go, each copy naming its origin, and record 'two copies until slice 5' in the plan; 2A move only SelectPromotion, kernel.SelectRelease stays (deferred to apps/provisioning); 3A move Currentness/Changes and PromotionReadiness to delivery/rules now, observation document keeps Version 5 and the same JSON. Task 7 also records in the plan's deferred list that observe/explain.go's 'unit applied this revision' rule duplicates the currentness rule. Commands keep flags, output and effects; delete the old copies, no shims. make check-docs is not a check (fails on an uncommitted tree). Planner's pointers: `DeployImage`/`DeployInputs`/`Deploy` keep their names and fields (`orchestration/deploy.go:68`); `cmd/swhurl-v2/deploy.go:40-136` and `deploy_records.go:108-110` only swap the import and `orchestration.`→`delivery.`. `instanceDocuments` already lives in `v2/delivery/write.go` after task 1 — delete the `orchestration/deploy.go:181` copy rather than moving it, and do not add a second `fixture` helper (task 1's `v2/delivery/fixtures_test.go`). Move the deploy-only test helpers (`declarationLabel`, `newDigest`/`newCommit`) with the test. Both document kinds, the `--records` bulk report and every outcome word (`changed`/`unchanged`/`refused`/`failed`) stay as they are."
+  - at: 2026-11-22T12:24:27.015Z
+    commit: 22e3aa8dac5a
+    text: "Question from worker: where do create's declarationOf/revisionOf live once orchestration/deploy.go is deleted? -> Option 1: move them verbatim into orchestration/create.go, delivery/deploy.go keeps its own copy naming its origin (decision 1A); task re-created with v2/orchestration/create.go in scope because tk cannot widen scope."
+  - at: 2026-11-22T12:24:28.596Z
+    commit: 22e3aa8dac5a
+    text: "Option 1 approved (decision 1A): move declarationOf/revisionOf verbatim from orchestration/deploy.go into orchestration/create.go (their only other user), and keep delivery/deploy.go's own copy naming its origin. deploy_test.go's helpers are used by no other orchestration test, so deleting it is safe. No edits were made in this attempt."
+  - at: 2026-11-22T12:24:28.901Z
+    commit: 22e3aa8dac5a
+    text: "released: needs v2/orchestration/create.go in scope: declarationOf/revisionOf move there when orchestration/deploy.go is deleted"

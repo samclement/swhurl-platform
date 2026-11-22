@@ -24,3 +24,6 @@ notes:
   - at: 2026-11-22T16:53:51.451Z
     commit: 38e75d59d737
     text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Console and connectivity stay in orchestration (legitimate composition; the named orchestration->health edge is the accepted compromise). Move only status/status-all use cases into apps; console calls them. No behaviour change."
+  - at: 2026-11-22T17:06:06.240Z
+    commit: a873f7e4a60c
+    text: "Task 40 put the deployment-health verdict in delivery/rules. Should status adopt it here? -> No: this task has no behaviour change; status keeps its current health judgement. Adopting the verdict is an operator follow-up decision."

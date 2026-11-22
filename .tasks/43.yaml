@@ -20,3 +20,6 @@ notes:
   - at: 2026-11-22T16:53:52.075Z
     commit: 38e75d59d737
     text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Record slice 5 = status capability. Correct the restore deferred row's owner to recovery and mark it resolved. delivery/write.go copied write decisions stay deferred to a later provisioning slice (out of slice 5). Console stays in orchestration. make check-docs not registered (fails on uncommitted docs by design); operator runs it post-merge."
+  - at: 2026-11-22T17:06:06.695Z
+    commit: a873f7e4a60c
+    text: "Carry task 40 followup: docs/iteration-2-plan.md capability map names delivery/rules as owner of the deployment-health verdict (incident imports it; status does not yet - open operator decision, do not claim status uses it)."

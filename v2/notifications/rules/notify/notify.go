@@ -28,6 +28,16 @@ const (
 	RateCount, RateSeconds                = 30, 3600 // messages an app instance may send, per this many seconds
 )
 
+// The platform notification destination is read from this Secret; the URL itself is never a constant here.
+const (
+	// PlatformSecretNamespace is the namespace holding the platform destination.
+	PlatformSecretNamespace = "console"
+	// PlatformSecretName is the Secret holding the platform destination.
+	PlatformSecretName = "notification-ntfy"
+	// PlatformURLKey is the Secret key whose value is the platform ntfy topic URL.
+	PlatformURLKey = "NTFY_PLATFORM_URL"
+)
+
 // The reasons a refusal of the service's own effects gives (status 503).
 const (
 	CannotReview  = "cannot check the token with Kubernetes"

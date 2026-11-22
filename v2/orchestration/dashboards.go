@@ -9,6 +9,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/dashboards"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -53,9 +54,6 @@ const (
 	clickstackInputs = "clickstack-runtime-inputs"
 	adminEmailKey    = "CLICKSTACK_ADMIN_EMAIL"
 	mongoURIKey      = "connectionString.standard"
-	ntfyNamespace    = "console"
-	ntfySecret       = "notification-ntfy"
-	ntfyPlatformKey  = "NTFY_PLATFORM_URL"
 	notifyNamespace  = "notify"
 	notifyAlerts     = "notify-alerts"
 	notifyAlertsKey  = "secret"
@@ -163,7 +161,7 @@ func (p *dashboardPass) open(ctx context.Context) (clickstack.API, []dashboards.
 	if err != nil {
 		return nil, nil, bootstrapFirst(err)
 	}
-	address, err := secretText(ctx, p.ports.Data, ntfyNamespace, ntfySecret, ntfyPlatformKey)
+	address, err := secretText(ctx, p.ports.Data, notify.PlatformSecretNamespace, notify.PlatformSecretName, notify.PlatformURLKey)
 	if err != nil {
 		return nil, nil, err
 	}

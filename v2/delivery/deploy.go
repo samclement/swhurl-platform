@@ -1,4 +1,4 @@
-package orchestration
+package delivery
 
 import (
 	"context"
@@ -56,8 +56,8 @@ func newDeployRequest(inputs DeployInputs) (deployRequest, error) {
 	if request.profile, err = kernel.DecodeProfile(inputs.Profile); err != nil {
 		return deployRequest{}, err
 	}
-	request.connections, request.egress, err = documents(inputs.compilation(),
-		request.instance.Application, request.instance.Environment)
+	request.connections, request.egress, err = documents(inputs.Calls, inputs.Egress, request.instance.Application,
+		request.instance.Environment)
 	return request, err
 }
 
@@ -144,7 +144,7 @@ func (r deployRequest) candidate(tag kernel.ImageTag, published registry.Image) 
 }
 
 // revisionOf reads the commit an image states it was built from. A tag alone never supplies it: the platform's tag
-// carries an abbreviation, and the release states a full commit.
+// carries an abbreviation, and the release states a full commit. (Copied from orchestration/create.go.)
 func revisionOf(tag kernel.ImageTag, published registry.Image) (string, error) {
 	revision := published.Labels[kernel.RevisionLabel]
 	if revision == "" {
@@ -159,46 +159,12 @@ func (r deployRequest) compile(selected kernel.InstanceSpec,
 	return kernel.CompileWith(selected, release, r.app, r.profile, r.connections, r.egress)
 }
 
-// compilation turns the delivery's inputs into the compilation use case's own, so the two decode the same
-// documents the same way.
-func (d DeployInputs) compilation() Inputs {
-	return Inputs{Instance: d.Instance, Release: d.Release, App: d.App, Profile: d.Profile, Calls: d.Calls, Egress: d.Egress}
-}
-
 // declarationOf reads the image's declaration label. An image without one is refused rather than guessed:
-// the platform cannot apply facts the build did not state.
+// the platform cannot apply facts the build did not state. (Copied from orchestration/create.go.)
 func declarationOf(published registry.Image) (kernel.Declaration, error) {
 	value, found := published.Labels[kernel.DeclarationLabel]
 	if !found || value == "" {
 		return kernel.Declaration{}, &Refusal{"declaration", "absent"}
 	}
 	return kernel.DecodeDeclaration([]byte(value))
-}
-
-// instanceDocuments is what a delivery or a promotion writes: the release first, then the instance that selects it,
-// then the compiled files, each with the documents the release's image states. A failure leaves at worst a release
-// nothing selects.
-func instanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error) {
-	releaseDocument, err := kernel.EncodeRelease(release)
-	if err != nil {
-		return nil, err
-	}
-	instanceDocument, err := kernel.EncodeInstance(spec)
-	if err != nil {
-		return nil, err
-	}
-	folder := recordsRoot + "/" + spec.Application + "/" + spec.Environment
-	records, err := WithOffers([]kernel.File{
-		{Path: folder + "/release.json", Document: releaseDocument},
-		{Path: folder + "/instance.json", Document: instanceDocument},
-	}, offers)
-	if err != nil {
-		return nil, err
-	}
-	compiledDocuments, err := WithOffers(compiled.Files, offers)
-	if err != nil {
-		return nil, err
-	}
-	return append(records, compiledDocuments...), nil
 }

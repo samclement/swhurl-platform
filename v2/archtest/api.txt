@@ -683,8 +683,11 @@ delivery/rules: func SelectPromotion(staging, target kernel.InstanceSpec, curren
 delivery/rules: type Code string
 delivery/rules: type Error struct {Code Code Field string Reason string}
 delivery: func (*Refusal) Error() string
+delivery: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 delivery: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
 delivery: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
+delivery: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
+delivery: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 delivery: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 delivery: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 delivery: type Refusal struct {Subject, Reason string}
@@ -1398,7 +1401,6 @@ orchestration: func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, re
 orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
 orchestration: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
-orchestration: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
@@ -1462,8 +1464,6 @@ orchestration: type DashboardOptions struct {FromRecords bool Records []Recorded
 orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data ClickStack clickstack.Opener}
 orchestration: type DashboardReport struct {Lines []DashboardLine}
 orchestration: type Delivered struct {Entry notify.Entry Err error Retry bool}
-orchestration: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
-orchestration: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 orchestration: type DestroyInputs struct {Reader kube.Reader Writer kube.Writer Secrets kube.SecretNamer Target datadestroy.Target DryRun bool Now func() time.Time Sleep func(time.Duration)}
 orchestration: type DestroyOutcome struct {Volume string Made []datadestroy.Change}
 orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}

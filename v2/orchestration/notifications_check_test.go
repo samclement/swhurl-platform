@@ -16,7 +16,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/incident"
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )

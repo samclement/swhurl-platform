@@ -1077,74 +1077,74 @@ notifications/rules/incident: type Entry struct {}
 notifications/rules/incident: type Object = map[string]any
 notifications/rules/incident: type Snapshot struct {Units []Object `json:"units"` Releases []Object `json:"releases"` Workloads []Object `json:"workloads"` Pods []Object `json:"pods"` Events []Object `json:"events"`}
 notifications/rules/incident: type State struct {}
-notify: const AddressKey = "address"
-notify: const AlertSecret = "notify-alerts"
-notify: const AlertSecretKey = "secret"
-notify: const Audience = "notify"
-notify: const CannotReview = "cannot check the token with Kubernetes"
-notify: const CannotRoute = "cannot read the team routes"
-notify: const CannotSave = "cannot save to the outbox"
-notify: const ChannelRetry = 7200
-notify: const Checker = "system:serviceaccount:console:notification-check"
-notify: const FieldManager = "notify"
-notify: const History = 7200
-notify: const MaxBody = 16_384
-notify: const MaxKey = 300
-notify: const MaxMessage = 3_500
-notify: const MaxOutboxBytes = 700_000
-notify: const MaxPending = 500
-notify: const MaxTitle = 250
-notify: const Namespace = "notify"
-notify: const NoAlertSecret = "the alert webhook secret is not set up"
-notify: const OutboxKey = "state.json"
-notify: const OutboxName = "notify-outbox"
-notify: const RateCount = 30
-notify: const RateSeconds = 3600
-notify: const RoutesKey = "routes.json"
-notify: const RoutesName = "notification-routes"
-notify: const TeamLabel = "platform.swhurl.com/team"
-notify: const TransportLabel = "platform.swhurl.com/notify-transport"
-notify: func (*RateLimit) Take(instance Instance, now float64) error
-notify: func (*Refusal) Error() string
-notify: func (*State) Accept(request Request, channels []string, now float64) ([]string, error)
-notify: func (*State) Expire(now float64)
-notify: func (*State) Requeue(entries []Entry)
-notify: func (*State) Settle(entry Entry, sent bool, now float64) (retry bool)
-notify: func (*State) Take() (Entry, bool)
-notify: func (Alert) Request(expected string) (Request, error)
-notify: func (Alert) Signed() error
-notify: func (Entry) Publication() Publication
-notify: func (Instance) Namespace() string
-notify: func (Publication) Document(topic string) ([]byte, error)
-notify: func (Routes) Channels(team string, hasTeam bool) []string
-notify: func (Sender) IsApp() bool
-notify: func (State) Encode() (string, error)
-notify: func Bearer(header string) (string, error)
-notify: func ChannelOf(secretName string) (string, bool)
-notify: func CheckBody(body []byte) error
-notify: func DecodeAlert(body []byte) (Alert, error)
-notify: func DecodeMessage(body []byte, sender Sender, randomKey string) (Request, error)
-notify: func DecodeRoutes(raw string) (Routes, error)
-notify: func DecodeState(raw string) (State, error)
-notify: func Identity(authenticated bool, audiences []string, username string) (string, error)
-notify: func Named(app, env string) (Instance, bool)
-notify: func OfNamespace(namespace string) (Instance, bool)
-notify: func SenderOf(who string) (Sender, error)
-notify: func TeamOf(namespace []byte) (string, bool, error)
-notify: func Unavailable(reason string) *Refusal
-notify: type Alert struct {}
-notify: type Entry struct {Title string `json:"title"` Message string `json:"message"` Priority int `json:"priority"` Tags []string `json:"tags,omitempty"` Click string `json:"click,omitempty"` Key string `json:"key"` Channel string `json:"channel"` Queued float64 `json:"queued"` App string `json:"app"` Env string `json:"env"` History *float64 `json:"history,omitempty"`}
-notify: type Instance struct {App, Env string}
-notify: type Notice struct {Title, Message string High bool Link string}
-notify: type Publication struct {Title string `json:"title"` Message string `json:"message"` Priority int `json:"priority"` Tags []string `json:"tags"` Click string `json:"click,omitempty"`}
-notify: type RateLimit struct {}
-notify: type Refusal struct {Status int Reason string}
-notify: type Request struct {Instance Key string Notice Notice}
-notify: type Routes struct {Teams map[string][]string `json:"teams"`}
-notify: type Sender struct {Instance}
-notify: type State struct {Seen map[string]float64 Pending []Entry}
-notify: var ErrInvalidOutbox = errors.New("the outbox is invalid; refusing to reset delivery history")
-notify: var ErrOutboxTooLarge = errors.New("the outbox exceeds its bounded size")
+notifications/rules/notify: const AddressKey = "address"
+notifications/rules/notify: const AlertSecret = "notify-alerts"
+notifications/rules/notify: const AlertSecretKey = "secret"
+notifications/rules/notify: const Audience = "notify"
+notifications/rules/notify: const CannotReview = "cannot check the token with Kubernetes"
+notifications/rules/notify: const CannotRoute = "cannot read the team routes"
+notifications/rules/notify: const CannotSave = "cannot save to the outbox"
+notifications/rules/notify: const ChannelRetry = 7200
+notifications/rules/notify: const Checker = "system:serviceaccount:console:notification-check"
+notifications/rules/notify: const FieldManager = "notify"
+notifications/rules/notify: const History = 7200
+notifications/rules/notify: const MaxBody = 16_384
+notifications/rules/notify: const MaxKey = 300
+notifications/rules/notify: const MaxMessage = 3_500
+notifications/rules/notify: const MaxOutboxBytes = 700_000
+notifications/rules/notify: const MaxPending = 500
+notifications/rules/notify: const MaxTitle = 250
+notifications/rules/notify: const Namespace = "notify"
+notifications/rules/notify: const NoAlertSecret = "the alert webhook secret is not set up"
+notifications/rules/notify: const OutboxKey = "state.json"
+notifications/rules/notify: const OutboxName = "notify-outbox"
+notifications/rules/notify: const RateCount = 30
+notifications/rules/notify: const RateSeconds = 3600
+notifications/rules/notify: const RoutesKey = "routes.json"
+notifications/rules/notify: const RoutesName = "notification-routes"
+notifications/rules/notify: const TeamLabel = "platform.swhurl.com/team"
+notifications/rules/notify: const TransportLabel = "platform.swhurl.com/notify-transport"
+notifications/rules/notify: func (*RateLimit) Take(instance Instance, now float64) error
+notifications/rules/notify: func (*Refusal) Error() string
+notifications/rules/notify: func (*State) Accept(request Request, channels []string, now float64) ([]string, error)
+notifications/rules/notify: func (*State) Expire(now float64)
+notifications/rules/notify: func (*State) Requeue(entries []Entry)
+notifications/rules/notify: func (*State) Settle(entry Entry, sent bool, now float64) (retry bool)
+notifications/rules/notify: func (*State) Take() (Entry, bool)
+notifications/rules/notify: func (Alert) Request(expected string) (Request, error)
+notifications/rules/notify: func (Alert) Signed() error
+notifications/rules/notify: func (Entry) Publication() Publication
+notifications/rules/notify: func (Instance) Namespace() string
+notifications/rules/notify: func (Publication) Document(topic string) ([]byte, error)
+notifications/rules/notify: func (Routes) Channels(team string, hasTeam bool) []string
+notifications/rules/notify: func (Sender) IsApp() bool
+notifications/rules/notify: func (State) Encode() (string, error)
+notifications/rules/notify: func Bearer(header string) (string, error)
+notifications/rules/notify: func ChannelOf(secretName string) (string, bool)
+notifications/rules/notify: func CheckBody(body []byte) error
+notifications/rules/notify: func DecodeAlert(body []byte) (Alert, error)
+notifications/rules/notify: func DecodeMessage(body []byte, sender Sender, randomKey string) (Request, error)
+notifications/rules/notify: func DecodeRoutes(raw string) (Routes, error)
+notifications/rules/notify: func DecodeState(raw string) (State, error)
+notifications/rules/notify: func Identity(authenticated bool, audiences []string, username string) (string, error)
+notifications/rules/notify: func Named(app, env string) (Instance, bool)
+notifications/rules/notify: func OfNamespace(namespace string) (Instance, bool)
+notifications/rules/notify: func SenderOf(who string) (Sender, error)
+notifications/rules/notify: func TeamOf(namespace []byte) (string, bool, error)
+notifications/rules/notify: func Unavailable(reason string) *Refusal
+notifications/rules/notify: type Alert struct {}
+notifications/rules/notify: type Entry struct {Title string `json:"title"` Message string `json:"message"` Priority int `json:"priority"` Tags []string `json:"tags,omitempty"` Click string `json:"click,omitempty"` Key string `json:"key"` Channel string `json:"channel"` Queued float64 `json:"queued"` App string `json:"app"` Env string `json:"env"` History *float64 `json:"history,omitempty"`}
+notifications/rules/notify: type Instance struct {App, Env string}
+notifications/rules/notify: type Notice struct {Title, Message string High bool Link string}
+notifications/rules/notify: type Publication struct {Title string `json:"title"` Message string `json:"message"` Priority int `json:"priority"` Tags []string `json:"tags"` Click string `json:"click,omitempty"`}
+notifications/rules/notify: type RateLimit struct {}
+notifications/rules/notify: type Refusal struct {Status int Reason string}
+notifications/rules/notify: type Request struct {Instance Key string Notice Notice}
+notifications/rules/notify: type Routes struct {Teams map[string][]string `json:"teams"`}
+notifications/rules/notify: type Sender struct {Instance}
+notifications/rules/notify: type State struct {Seen map[string]float64 Pending []Entry}
+notifications/rules/notify: var ErrInvalidOutbox = errors.New("the outbox is invalid; refusing to reset delivery history")
+notifications/rules/notify: var ErrOutboxTooLarge = errors.New("the outbox exceeds its bounded size")
 observe: const Absent = "absent"
 observe: const AppLabel = "platform.swhurl.com/app"
 observe: const Applied = "applied"

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 const secret = "webhook-secret"

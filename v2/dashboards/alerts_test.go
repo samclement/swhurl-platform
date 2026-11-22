@@ -177,7 +177,7 @@ func TestTheWebhooksAreThePythonJobsAndTheNotifyServiceReadsThem(t *testing.T) {
 	if strings.Contains(hooks[0].Body, "{{/if}}}") {
 		t.Fatal("Handlebars reads {{/if}}} as a triple-brace close")
 	}
-	raw, err := os.ReadFile("../notify/testdata/clickstack-alerts.json")
+	raw, err := os.ReadFile("../notifications/rules/notify/testdata/clickstack-alerts.json")
 	if err != nil {
 		t.Fatal(err)
 	}

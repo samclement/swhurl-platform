@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // routes is the routes document as platform/notify/routes.json and the Python tests write it.

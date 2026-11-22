@@ -7,7 +7,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy/ntfytest"
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // errRefused stands in for a failure the publisher would report instead of sending.

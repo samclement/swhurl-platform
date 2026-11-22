@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // Scenario is what the contract runs against both implementations: an address whose server accepts a publication,

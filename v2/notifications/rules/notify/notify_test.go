@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // The retired Python service's tests (9766d4c5:tests/test_notify_service.py) supplied these cases: each keeps its

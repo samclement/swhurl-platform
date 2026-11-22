@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // checkerMessage is the checker's body as a request; high makes it a failure's.

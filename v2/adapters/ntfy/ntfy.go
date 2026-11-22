@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 )
 
 // The two kinds of failure: a publication this adapter refuses to send, and one the server did not accept.

@@ -1,6 +1,6 @@
 id: 38
 title: "Docs: record health slice, architecture compromise and deferred ownership corrections"
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -26,3 +26,12 @@ notes:
   - at: 2026-11-22T16:27:34.449Z
     commit: f29df56fbb3c
     text: "Task 37 completion followup: document delivery-owned revision currentness; conservative Updating remains without comparison/relevance proof per Opus review and existing plan contract. Unrecognized short digest now follows delivery unrecognised_revision rather than old duplicate parser treating it as known Different; record this explicitly. Version 5/JSON/error formats unchanged; targeted suite and check-v2 passed on worker branch."
+  - at: 2026-11-22T16:36:17.263Z
+    commit: 6ab29860775c
+    text: "done: Integrated health slice 4 docs: ownership, sole orchestration->health edge, deferred violations, delivery-owned currentness (conservative Updating; short digests unrecognised), and slice-5 approval gate. Registered checks pass; docs-only, no live verification. Broader check-docs is blocked by out-of-scope workload-identity dirty-scope metadata."
+  - at: 2026-11-22T16:36:17.263Z
+    commit: 6ab29860775c
+    text: "followup: Broader make check-docs has one remaining error: docs/workload-identity-status.md says Uncommitted:none while its broad registry scope includes these documentation edits. Resolve that workstream's registry/status ownership separately; no guardrail was weakened, no out-of-scope page changed, and no conductor post-merge check is required by this task."
+  - at: 2026-11-22T16:37:59.140Z
+    commit: 6ab29860775c
+    text: branch dsa/01M821BP8M94KK9WKNT8WCSRFP/task-38

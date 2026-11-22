@@ -176,7 +176,13 @@ func addStatusInstance(t *testing.T, f *statusCluster, inputs provisioningrules.
 		document := statusObject(ref, owner)
 		document["spec"] = map[string]any{"suspend": false}
 		document["status"] = map[string]any{"lastAppliedRevision": "main@sha1:" + revision, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 1}}}
+		if ref == target.Release {
+			document["spec"] = map[string]any{"values": map[string]any{"controllers": map[string]any{"main": map[string]any{
+				"replicas": target.Replicas, "containers": map[string]any{"main": map[string]any{"image": map[string]any{"repository": "ghcr.io/test/app", "digest": target.Digest}}},
+			}}}}
+		}
 		if ref == target.Workload {
+			document["spec"] = map[string]any{"replicas": target.Replicas}
 			document["metadata"].(map[string]any)["labels"] = workloadLabels
 			document["status"] = map[string]any{"observedGeneration": 1, "availableReplicas": 1, "readyReplicas": 1, "conditions": []any{map[string]any{"type": "Available", "status": "True"}}}
 		}
@@ -236,6 +242,7 @@ func TestStatusAllAgreesWithSingleAndBatchesCoreReads(t *testing.T) {
 	_ = json.Unmarshal(f.objects[ref].Object, &crashing)
 	crashing["status"] = map[string]any{"containerStatuses": []any{map[string]any{"name": "main", "ready": false, "state": map[string]any{"waiting": map[string]any{"reason": "CrashLoopBackOff"}}}}}
 	f.put(ref, crashing)
+	unreadyStatusWorkload(f, targets[2])
 	foreign := statusVariant(t, "foreign", "prod", false, true)
 	addStatusInstance(t, f, foreign)
 	options := observationInputs(f)

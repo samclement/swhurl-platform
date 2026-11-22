@@ -332,7 +332,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 
 Two ownership contracts matter more than the directory names:
 
-- **Delivery owns "did this release land?"** Health may report that verdict and notifications may act on it; neither may re-derive it. A healthy rollback leaves the route available while the requested deployment remains failed, and that distinction must have one implementation: `delivery/rules.DeploymentHealthOf`, which incident imports. Status still judges an instance with `observe.StateOf`; whether it adopts delivery's verdict is an open operator decision ([deferred list](v2-status.md#deferred-features)), not a second approved owner.
+- **Delivery owns "did this release land?"** Health may report that verdict and notifications may act on it; neither may re-derive it. A healthy rollback leaves the route available while the requested deployment remains failed, and that distinction must have one implementation: `delivery/rules.DeploymentHealthOf`, which incident imports. Apps status composes this shared verdict with delivery's revision currentness into one state; `observe.Explain` supplies facts and findings, not a second health judgement.
 - **Recovery owns "can we restore this database?"** It decides what makes an archive eligible and what evidence constitutes a successful restore. Health may surface the archive's age and the last restore result by reporting recovery's verdict, never by judging archives itself.
 
 What stays shared: the command (`cmd/swhurl-v2`) remains the one entry point, and the external-system adapters stay together under `adapters/` (`kube`, `git`, `s3`, ...): each has one reason to change and several capabilities use it. Do not recreate `kernel` as a shared model package: a pure type shared between capabilities lives with the capability that owns its meaning, and other pure packages import it through a named exception (`PureDependencies` in `archtest`). Workflow packages may import one another only through explicit, named, directional entries in `WorkflowDependencies`; both endpoints must be declared layer-2 packages in `Orchestration`, and self edges and cycles are forbidden. The registered edges are `orchestration` → `health` and `orchestration` → `apps`, so `ConsoleChecks` and `ConsoleStatus` keep console composition while invoking health’s collector and apps’ status; reconsider them when console moves. Recovery takes apps’ status as a port the command wires, not an edge. There is no blanket permission for peer imports. Prefer reusing the owner's pure verdict through `PureDependencies`; request a workflow edge only when the caller needs the owner's sequencing and effects. A small mechanical helper both need (such as formatting a refusal or translating a read failure) may be local to each rather than shared through a third package; a business verdict is never copied to avoid a dependency rule.
@@ -3196,23 +3196,31 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
 
 - **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus`) and connectivity stay in `orchestration`;
   so do creation, editing and removal, whose writers `delivery/write.go` still copies decisions from (moves with
-  provisioning's writers). Status keeps its own health judgement, `observe.StateOf`.
+  provisioning's writers). Status uses delivery’s shared health verdict; `observe.StateOf` is deleted.
 - **Checks.** `provisioning/rules` is layer 0 and in `Pure` with a `kernel` edge; `notifications/rules/incident`
   gains a `delivery/rules` edge; `apps` is layer 2 and in `Orchestration`; `WorkflowDependencies` gains
   `orchestration` → `apps` and a fixture refuses `recovery` → `apps`. API snapshots record the moves.
 - **Acceptance.** Incident's legacy goldens are unchanged and a table test covers every deployment-health branch;
-  `status`, `status-all` and `restore` keep their flags, documents and errors (`Declare` now reports a malformed
+  `status`, `status-all` and `restore` keep their flags and errors; status documents advance to Version 6 (`Declare` now reports a malformed
   release before a malformed profile when both are); `make check-v2` passes. The navigation test: an incident's
   `stalled` fault points to `delivery/rules`, a status failure to `apps`, a restore refusal to `recovery`.
 - **Decisions, 22 November 2026.** The operator's principle: a capability owns its decisions and sequencing, a
   pure rules package holds a verdict shared across capabilities, and a visible pure edge is preferred over a
   workflow edge. Deployment health sits beside the landed-release data it judges, in `delivery/rules`, not a new
   `apps/rules`. Compilation moved to pure `provisioning/rules` first, breaking the `apps` ↔ `orchestration` cycle
-  status's move would have made. Restore's sequencing is recovery's, taking apps' status as a port. Status does not
-  adopt delivery's verdict, since that changes its behaviour; that is the operator's decision. All evidence is
+  status's move would have made. Restore's sequencing is recovery's, taking apps' status as a port. Status adopts delivery's verdict (approved 22 November 2026): apps composes it with delivery's revision
+  currentness in one status state. `DeploymentVerdict.RolledBack` qualifies `healthy` without changing incident's
+  no-alert behaviour. Status labels it `rolled back`, not `updating`; a stuck/retrying release or blocked unit is
+  `stalled`, while an active rollout is `updating`. Unreadable/unattempted facts remain `unknown`; known unready
+  workloads are `failing` even when suspended. Deleting releases are unjudged (`unknown`). `observe.Explain` keeps
+  findings, currentness and live facts, but no longer assigns state. Observation documents are **Version 6**;
+  console labels and CSS handle both new states. Flags, exit codes and API read counts are unchanged. Offline
+  [single/bulk regression cases](../v2/apps/status_state_test.go) cover these differences and prove an unaffected
+  revision cannot waive unhealthy facts; [delivery's cases](../v2/delivery/rules/health_test.go) preserve incident's
+  rollback semantics. All evidence is
   [offline](current-state.md#slice-5-begins-provisioning-rules-apps-status-and-restore-sequencing-offline-22-november-2026).
-  **Next gate:** approval of the rest of slice 5 (provisioning's writers, connectivity, apps' creation, editing
-  and removal, console) and the status decision.
+  **Next gate:** console ownership and the rest of slice 5's offline acceptance; status adoption is implemented
+  offline, not accepted live.
 
 ### Workflow dependency policy (approved 22 November 2026)
 

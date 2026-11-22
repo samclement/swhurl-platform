@@ -129,7 +129,8 @@ dialog .toolbar { justify-content: flex-end; margin: 0; }
 .mark { display: inline-block; width: 1.15em; text-align: center; font-weight: 600; }
 .mark.healthy { color: var(--ok); } .mark.healthy::before { content: "✓"; }
 .mark.updating { color: var(--text); } .mark.updating::before { content: "↻"; display: inline-block; animation: turn 1.6s linear infinite; }
-.mark.failing { color: var(--critical); } .mark.failing::before { content: "✕"; }
+.mark.stalled, .mark.failing { color: var(--critical); } .mark.stalled::before, .mark.failing::before { content: "✕"; }
+.mark.rolled-back { color: var(--attention); } .mark.rolled-back::before { content: "↶"; }
 .mark.suspended { color: var(--attention); } .mark.suspended::before { content: "‖"; }
 .mark.warn { color: var(--attention); } .mark.warn::before { content: "!"; }
 .mark.unknown { color: var(--attention); } .mark.unknown::before { content: "?"; }
@@ -141,10 +142,10 @@ dialog .toolbar { justify-content: flex-end; margin: 0; }
 @media (prefers-reduced-motion: reduce) { .mark.updating::before { animation: none; } }
 .status { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; }
 .status:not(.healthy) { padding: 0 8px 0 4px; border-radius: 10px; font-weight: 600; font-size: var(--size-detail); }
-.status.failing { color: var(--critical); background: color-mix(in oklch, var(--critical) 13%, var(--panel)); }
-.status.suspended, .status.unknown { color: var(--attention); background: color-mix(in oklch, var(--attention) 15%, var(--panel)); }
+.status.stalled, .status.failing { color: var(--critical); background: color-mix(in oklch, var(--critical) 13%, var(--panel)); }
+.status.rolled-back, .status.suspended, .status.unknown { color: var(--attention); background: color-mix(in oklch, var(--attention) 15%, var(--panel)); }
 .status.updating, .status.stopped { color: var(--text); background: var(--sunk); border: 1px solid var(--line); }
-.state.unknown, .state.suspended { color: var(--attention); } .state.stopped { color: var(--muted); } .state.failing { color: var(--critical); }
+.state.rolled-back, .state.unknown, .state.suspended { color: var(--attention); } .state.stopped { color: var(--muted); } .state.stalled, .state.failing { color: var(--critical); }
 .verdict { font-size: var(--size-section); margin: 0 0 var(--gap-1); }
 .verdict .status { font-size: inherit; }
 .tally { margin: 0 0 var(--gap-3); }

@@ -104,7 +104,7 @@ func TestRoutesAndCertificates(t *testing.T) {
 			if tls.Name != "hello-tls" || tls.Outcome != tt.tls || tls.Reason != tt.tlsWhy {
 				t.Errorf("certificate %+v", tls)
 			}
-			if report.State.Name != observe.StateHealthy {
+			if report.State != (observe.State{}) {
 				t.Errorf("the route changed the state: %+v", report.State)
 			}
 		})
@@ -190,8 +190,7 @@ func TestEncodeReportCarriesTheStatusFacts(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Version != 5 || document.State.Name != observe.StateFailing || document.State.Field != "containers" ||
-		document.State.Reason != observe.ReasonContainers {
+	if document.Version != 6 || document.State.Name != "" || document.State.Field != "" || document.State.Reason != "" {
 		t.Fatalf("version %d, state %+v", document.Version, document.State)
 	}
 	if len(document.Problems) != 1 || document.Problems[0]["reason"] != "ImagePullBackOff" || document.Problems[0]["container"] != "main" ||

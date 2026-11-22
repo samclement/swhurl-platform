@@ -37,7 +37,7 @@ func statusInputs(t *testing.T, reader *kubetest.Fake) StatusInputs {
 }
 
 // The use case reads what the compiled records name — the unit, the release, the workload and the instance's own
-// pods — and turns every answer into the report, its state included: an absent release is unknown, never healthy,
+// pods — and turns every answer into the report, its state included: an unreadable workload is unknown, never healthy,
 // and a refused read is evidence, not an error.
 func TestStatusReadsWhatTheRecordsName(t *testing.T) {
 	unit := observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system", Name: "app-demo-orders-prod"}
@@ -63,7 +63,7 @@ func TestStatusReadsWhatTheRecordsName(t *testing.T) {
 	if report.Source != "fake" || report.ObservedAt != "2026-11-03T10:00:00Z" || report.Target.Revision != revision {
 		t.Fatalf("source %q at %q, revision %q", report.Source, report.ObservedAt, report.Target.Revision)
 	}
-	if report.State != (observe.State{Name: observe.StateUnknown, Field: "release", Reason: observe.ReasonNotFound}) {
+	if report.State != (observe.State{Name: observe.StateUnknown, Field: "workload", Reason: observe.ReasonForbidden}) {
 		t.Fatalf("state %+v, findings %+v", report.State, report.Findings)
 	}
 }

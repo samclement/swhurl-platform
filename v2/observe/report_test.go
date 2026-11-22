@@ -32,7 +32,7 @@ func TestEncodeReportIsStableAndComplete(t *testing.T) {
 	if err := json.Unmarshal(first, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["kind"] != "v2-observation" || document["version"] != float64(5) {
+	if document["kind"] != "v2-observation" || document["version"] != float64(6) {
 		t.Fatalf("envelope: %v %v", document["kind"], document["version"])
 	}
 	if document["verdict"] != string(observe.IsRunning) || document["source"] != report.Source {
@@ -78,6 +78,7 @@ func TestEncodeReportKeepsEmptyLists(t *testing.T) {
 // for a page, the reviewed one for a submission.
 func TestReportEncodesGoPromotionDecision(t *testing.T) {
 	report := explain(t, healthy(t))
+	report.State = observe.State{Name: observe.StateHealthy}
 	for _, test := range []struct{ reviewed, reason string }{
 		{report.Target.Digest, "ready"},
 		{"sha256:" + strings.Repeat("a", 64), "reviewed_digest_changed"},
@@ -95,7 +96,7 @@ func TestReportEncodesGoPromotionDecision(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := deliveryrules.PromotionDecision{Ready: test.reason == "ready", Reason: test.reason}
-		if document.Version != 5 || document.Promotion != want {
+		if document.Version != 6 || document.Promotion != want {
 			t.Fatalf("%q: %+v", test.reviewed, document)
 		}
 	}
@@ -136,39 +137,16 @@ func unaffectedReport(t *testing.T, evidence observe.Evidence) observe.Report {
 	return report
 }
 
-func TestUnaffectedNeverWaivesUnhealthyEvidence(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		evidence observe.Evidence
-		want     string
-	}{
-		{"healthy", healthy(t), observe.StateHealthy},
-		{"failed", withRead(healthy(t), present(target().Release, []byte(`{"metadata":{"generation":2},"status":{"conditions":[{"type":"Ready","status":"False","reason":"InstallFailed","observedGeneration":2}]}}`))), observe.StateFailing},
-		{"suspended", withRead(healthy(t), present(target().Release, fluxDocument(t, flux{generation: 2, suspended: true}))), observe.StateSuspended},
-		{"different image", withPods(healthy(t), podList(t, target(), podDocument(t, pod{started: true, image: "docker.io/test/app@sha256:" + strings.Repeat("a", 64)}))), observe.StateUpdating},
-		{"unreadable workload", withRead(healthy(t), observe.Read{Ref: target().Workload, Status: observe.Unavailable, Reason: observe.ReasonForbidden}), observe.StateUnknown},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			report := unaffectedReport(t, test.evidence)
-			if report.State.Name != test.want || report.Currentness.State != "unaffected" || report.Findings[1].Outcome != observe.Unaffected {
-				t.Fatalf("%+v %+v", report.State, report.Currentness)
-			}
-			if report.Currentness.AppliedRevision != "main@sha1:"+other {
-				t.Fatalf("lost literal: %+v", report.Currentness)
-			}
-		})
-	}
-}
-
 func TestPromotionReadinessUsesReviewedSelectedAndRunningDigest(t *testing.T) {
 	report := unaffectedReport(t, healthy(t))
+	report.State = observe.State{Name: observe.StateHealthy}
 	if got := promotion(t, report, digest); !got.Ready {
 		t.Fatalf("%+v", got)
 	}
 	if got := promotion(t, report, "sha256:"+strings.Repeat("a", 64)); got.Ready || got.Reason != "reviewed_digest_changed" {
 		t.Fatalf("%+v", got)
 	}
-	for _, state := range []string{observe.StateUnknown, observe.StateFailing, observe.StateSuspended, observe.StateUpdating, observe.StateStopped} {
+	for _, state := range []string{observe.StateUnknown, observe.StateFailing, observe.StateSuspended, observe.StateUpdating, observe.StateStopped, observe.StateStalled, observe.StateRolledBack} {
 		unready := report
 		unready.State.Name = state
 		if got := promotion(t, unready, digest); got.Ready {
@@ -198,6 +176,7 @@ func TestExplainRefusesInvalidProofInsteadOfTreatingItAsUnavailable(t *testing.T
 
 func TestPromotionReadinessNeedsTheReviewedDigestRunning(t *testing.T) {
 	report := unaffectedReport(t, healthy(t))
+	report.State = observe.State{Name: observe.StateHealthy}
 	report.Live.Running.Digests = []string{"sha256:" + strings.Repeat("a", 64)}
 	if decision := promotion(t, report, digest); decision.Ready || decision.Reason != "reviewed_digest_not_running" {
 		t.Fatalf("%+v", decision)

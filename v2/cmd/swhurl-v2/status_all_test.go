@@ -174,6 +174,7 @@ func (a *bulkStatusAPI) add(namespace string) {
 	release := flux("helm.toolkit.fluxcd.io/v2", "HelmRelease", "demo-orders", namespace, nil)
 	unit["metadata"].(map[string]any)["labels"], release["metadata"].(map[string]any)["labels"] = owner, owner
 	deployment := map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "demo-orders", "namespace": namespace, "generation": 1, "labels": labels},
+		"spec":   map[string]any{"replicas": 1},
 		"status": map[string]any{"observedGeneration": 1, "availableReplicas": 1, "readyReplicas": 1, "conditions": []any{map[string]any{"type": "Available", "status": "True"}}}}
 	main := pod(namespace, "ghcr.io/test/app@"+compiledDigest)
 	main["metadata"].(map[string]any)["labels"] = labels

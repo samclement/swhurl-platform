@@ -13,10 +13,50 @@ import (
 	"github.com/samclement/swhurl-platform/v2/teamscenario"
 )
 
+// statusVariant is the prod fixture's records renamed to application and environment; the team scenario builds
+// its instances from it.
+func statusVariant(t *testing.T, application, environment string) provisioningrules.Inputs {
+	t.Helper()
+	inputs := input(t, nil, nil)
+	release, err := kernel.DecodeRelease(inputs.Release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release.Application, release.ReleaseID = application, ""
+	id, err := release.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	release.ReleaseID = id
+	inputs.Release, err = kernel.EncodeRelease(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := kernel.DecodeInstance(inputs.Instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.Application, spec.Environment, spec.Release = application, environment, id
+	inputs.Instance, err = kernel.EncodeInstance(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := kernel.DecodeApp(inputs.App)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Application, app.AppID = application, ""
+	inputs.App, err = kernel.EncodeApp(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return inputs
+}
+
 // scenarioInstance is one recorded instance that calls, publishes and subscribes as given.
 func scenarioInstance(t *testing.T, application, environment string, calls, publishes, subscriptions []string) provisioningrules.Inputs {
 	t.Helper()
-	inputs := statusVariant(t, application, environment, false, false)
+	inputs := statusVariant(t, application, environment)
 	release, err := kernel.DecodeRelease(inputs.Release)
 	if err != nil {
 		t.Fatal(err)

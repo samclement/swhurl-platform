@@ -35,3 +35,6 @@ notes:
   - at: 2026-11-22T14:21:06.582Z
     commit: cc03b5b9039d
     text: "From task 27: docs/iteration-2-plan.md:1367, docs/current-state.md:2035-2036,2099-2100,2144 and GLOSSARY.md:13 still point at v2/notify."
+  - at: 2026-11-22T14:33:19.413Z
+    commit: e0c6888cb5fd
+    text: "From task 31: stale links to ../v2/orchestration/notify.go (docs/services.md) and ../v2/orchestration/notify_test.go (docs/iteration-2-plan.md, docs/current-state.md); docs/v2-status.md and docs/workstreams.md need the slice-3 row (check-docs says 'v2/... changed without docs/v2-status.md'). All in your scope."

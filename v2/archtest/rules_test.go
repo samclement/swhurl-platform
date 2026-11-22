@@ -137,7 +137,8 @@ var Layers = map[string]int{
 	"provisioning": 2, "provisioning/rules": 0,
 
 	// The apps capability: its status use cases, comparing the cluster with an instance's records, and creation
-	// and editing, which write an app's records through provisioning.
+	// and editing, which write an app's records through provisioning, and removal, which deletes the instance's
+	// files after updating its registrations.
 	"apps": 2,
 
 	// The connectivity capability: its declaration-change use case (what a connect, disconnect or allow writes), its

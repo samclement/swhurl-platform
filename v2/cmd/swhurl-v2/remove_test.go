@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
 )
 
@@ -133,5 +134,18 @@ func TestRemoveCLIRefusesAConnectedInstance(t *testing.T) {
 	}
 	if len(writer.Contents) != 3 {
 		t.Errorf("a refused removal left %d files, want the three it was handed", len(writer.Contents))
+	}
+}
+
+// A registration I/O failure is an operational failure, not a refusal or a completed removal.
+func TestRemoveCLIStopsOnRegistrationWriteFailure(t *testing.T) {
+	out, writer := removalTree(t, emptyResolution)
+	writer.Fail = &files.Error{Code: files.IO, Path: "clusters/home/kustomization.yaml", Reason: "write_failed"}
+	status, report, diagnostic := removalRun(t, out, writer)
+	if status != 1 || !strings.Contains(diagnostic, "write_failed") || report.Kind != "" {
+		t.Fatalf("remove exited %d, report=%+v: %s", status, report, diagnostic)
+	}
+	if writer.Writes != 1 || writer.Removals != 0 {
+		t.Fatalf("removal continued after a failed write: writes=%d removals=%d", writer.Writes, writer.Removals)
 	}
 }

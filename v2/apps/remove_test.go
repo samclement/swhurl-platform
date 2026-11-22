@@ -1,12 +1,11 @@
-package orchestration_test
+package apps
 
 import (
-	"os"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 const removalRevision = "8ae21b491dcbbe7306bc56073460fff24d61a7f2"
@@ -19,19 +18,19 @@ func resolution(t *testing.T, pairs, subscriptions string) []byte {
 }
 
 // registration is a platform kustomization that lists the instance's files.
-func registration(path, entry string) orchestration.Registration {
-	return orchestration.Registration{Path: path, Document: []byte("resources:\n  - infra.yaml\n  - " + entry + "\n")}
+func registration(path, entry string) Registration {
+	return Registration{Path: path, Document: []byte("resources:\n  - infra.yaml\n  - " + entry + "\n")}
 }
 
-func removal(t *testing.T, calls []byte) orchestration.RemovalInputs {
+func removal(t *testing.T, calls []byte) RemovalInputs {
 	t.Helper()
-	return orchestration.RemovalInputs{
+	return RemovalInputs{
 		Instance: testdata(t, "staging.json"), Release: testdata(t, "r42.json"), Calls: [][]byte{calls},
 		Records: "v2-records/demo-orders/staging", Compiled: "v2-apps/instances/demo-orders/staging",
 		Unit: "clusters/home/app-demo-orders-staging.json", AppRecord: "v2-records/demo-orders/app.json",
 		LastEnvironment: true, AuthFile: "platform/auth/demo-orders-staging.json",
 		UnitRegistration: registration("clusters/home/kustomization.yaml", "app-demo-orders-staging.json"),
-		AuthRegistration: orchestration.Registration{Path: "platform/auth/kustomization.yaml",
+		AuthRegistration: Registration{Path: "platform/auth/kustomization.yaml",
 			Document: []byte(`{"apiVersion":"kustomize.config.k8s.io/v1beta1","kind":"Kustomization",` +
 				`"resources":["swhurl-auth-demo-orders-prod.json","swhurl-auth-demo-orders-staging.json"]}`)}}
 }
@@ -45,7 +44,7 @@ func TestRemoveDeletesWhatItNames(t *testing.T) {
 	writer.Contents["v2-apps/instances/demo-orders/staging/namespace.json"] = []byte("{}")
 	writer.Contents["clusters/home/app-demo-orders-staging.json"] = []byte("{}")
 	writer.Contents["platform/auth/demo-orders-staging.json"] = []byte("{}")
-	result, err := orchestration.Remove(removal(t, resolution(t, "", "")), t.TempDir(), writer)
+	result, err := Remove(removal(t, resolution(t, "", "")), t.TempDir(), writer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,14 +74,14 @@ func TestRemoveDeletesWhatItNames(t *testing.T) {
 func TestRemoveRefusesAConnectedInstance(t *testing.T) {
 	writer := filestest.New()
 	pair := `{"caller":"demo-shop","callee":"demo-orders","environment":"staging","port":8080}`
-	if _, err := orchestration.Remove(removal(t, resolution(t, pair, "")), t.TempDir(), writer); err == nil ||
+	if _, err := Remove(removal(t, resolution(t, pair, "")), t.TempDir(), writer); err == nil ||
 		!strings.Contains(err.Error(), "called_by demo-shop") {
 		t.Fatalf("a called instance was removed: %v", err)
 	}
 	subscription := `{"subscriber":"demo-notifier","publisher":"demo-orders","event":"created","environment":"staging",` +
 		`"stream":"staging-demo-orders","consumer":"demo-notifier_created","subject":"staging.demo-orders.created",` +
 		`"object":"demo-orders-created"}`
-	if _, err := orchestration.Remove(removal(t, resolution(t, "", subscription)), t.TempDir(), writer); err == nil ||
+	if _, err := Remove(removal(t, resolution(t, "", subscription)), t.TempDir(), writer); err == nil ||
 		!strings.Contains(err.Error(), "subscribed_by demo-notifier") {
 		t.Fatalf("a published-to instance was removed: %v", err)
 	}
@@ -97,7 +96,7 @@ func TestRemoveKeepsTheAppRecordWhileAnEnvironmentRemains(t *testing.T) {
 	writer.Contents["v2-records/demo-orders/app.json"] = []byte("{}")
 	inputs := removal(t, resolution(t, "", ""))
 	inputs.LastEnvironment = false
-	if _, err := orchestration.Remove(inputs, t.TempDir(), writer); err != nil {
+	if _, err := Remove(inputs, t.TempDir(), writer); err != nil {
 		t.Fatal(err)
 	}
 	if _, kept := writer.Contents["v2-records/demo-orders/app.json"]; !kept {
@@ -110,7 +109,7 @@ func TestRemoveRefusesADoubledRegistration(t *testing.T) {
 	writer := filestest.New()
 	inputs := removal(t, resolution(t, "", ""))
 	inputs.UnitRegistration.Document = []byte("resources:\n  - app-demo-orders-staging.json\n  - app-demo-orders-staging.json\n")
-	if _, err := orchestration.Remove(inputs, t.TempDir(), writer); err == nil {
+	if _, err := Remove(inputs, t.TempDir(), writer); err == nil {
 		t.Fatal("a doubled registration was accepted")
 	}
 	if writer.Removals != 0 {
@@ -118,12 +117,47 @@ func TestRemoveRefusesADoubledRegistration(t *testing.T) {
 	}
 }
 
-// testdata is one of the module's raw fixtures.
-func testdata(t *testing.T, name string) []byte {
-	t.Helper()
-	data, err := os.ReadFile("../testdata/" + name)
-	if err != nil {
-		t.Fatal(err)
+// Invalid records must be refused before registrations or instance files change.
+func TestRemoveRefusesInvalidRecords(t *testing.T) {
+	for _, name := range []string{"instance", "release", "different apps"} {
+		t.Run(name, func(t *testing.T) {
+			inputs := removal(t, resolution(t, "", ""))
+			switch name {
+			case "instance":
+				inputs.Instance = []byte("{")
+			case "release":
+				inputs.Release = []byte("{")
+			case "different apps":
+				inputs.Release = []byte(strings.ReplaceAll(string(inputs.Release), "demo-orders", "demo-other"))
+			}
+			writer := filestest.New()
+			_, err := Remove(inputs, t.TempDir(), writer)
+			if err == nil {
+				t.Fatal("invalid records were accepted")
+			}
+			if name == "different apps" {
+				var refusal *Refusal
+				if !errors.As(err, &refusal) || refusal.Subject != "records" ||
+					refusal.Reason != "the_instance_and_its_release_name_different_apps" {
+					t.Fatalf("mismatched records returned %v", err)
+				}
+			}
+			if writer.Writes != 0 || writer.Removals != 0 {
+				t.Fatal("invalid records changed files")
+			}
+		})
 	}
-	return data
+}
+
+// Registrations must be written successfully before the first file is deleted.
+func TestRemoveStopsWhenRegistrationWriteFails(t *testing.T) {
+	writer := filestest.New()
+	writer.Fail = errors.New("registration write failed")
+	result, err := Remove(removal(t, resolution(t, "", "")), t.TempDir(), writer)
+	if !errors.Is(err, writer.Fail) {
+		t.Fatalf("remove returned %v, want %v", err, writer.Fail)
+	}
+	if writer.Writes != 1 || writer.Removals != 0 || len(result.Removed) != 0 || len(result.Notes) != 0 {
+		t.Fatalf("a failed registration write continued removal: writer=%+v result=%+v", writer, result)
+	}
 }

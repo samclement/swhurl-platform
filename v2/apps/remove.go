@@ -1,4 +1,4 @@
-package orchestration
+package apps
 
 import (
 	"path"
@@ -154,21 +154,4 @@ func removalNotes(release kernel.ReleaseBundle) []string {
 		notes = append(notes, "a retained volume outlives the instance: remove it only when its data is wanted gone")
 	}
 	return notes
-}
-
-// decodePair reads the two records a change needs: the instance and the release whose kind decides some of them.
-func decodePair(instance, release []byte) (kernel.InstanceSpec, kernel.ReleaseBundle, error) {
-	spec, err := kernel.DecodeInstance(instance)
-	if err != nil {
-		return kernel.InstanceSpec{}, kernel.ReleaseBundle{}, err
-	}
-	decoded, err := kernel.DecodeRelease(release)
-	if err != nil {
-		return kernel.InstanceSpec{}, kernel.ReleaseBundle{}, err
-	}
-	if decoded.Application != spec.Application {
-		return kernel.InstanceSpec{}, kernel.ReleaseBundle{}, &Refusal{Subject: "records",
-			Reason: "the_instance_and_its_release_name_different_apps"}
-	}
-	return spec, decoded, nil
 }

@@ -147,6 +147,7 @@ func TestHealthWorkflowDependency(t *testing.T) {
 // The console's composition may call apps' status; the reverse edge and apps' peers gain no permission, and
 // apps reaches provisioning's compilation as a pure package, not through orchestration. Apps' create writes its
 // records through provisioning; edit and SetTeam re-render through it, and provisioning does not reach back.
+// Removal uses connectivity's pure relationship verdicts and the file adapter, not a peer workflow.
 // Recovery's restore is given apps' status by the command, so recovery importing apps is refused.
 func TestAppsWorkflowDependency(t *testing.T) {
 	m := fixture(t, map[string]string{
@@ -159,6 +160,8 @@ func TestAppsWorkflowDependency(t *testing.T) {
 		"provisioning/rules/up.go":    "package rules\n\nimport \"example.com/v2/apps\"\n",
 		"apps/create.go":              "package apps\n\nimport \"example.com/v2/provisioning\"\n",
 		"apps/edit.go":                "package apps\n\nimport \"example.com/v2/provisioning\"\n",
+		"apps/remove.go":              "package apps\n\nimport (\n\"example.com/v2/connectivity/rules\"\n\"example.com/v2/adapters/files\"\n)\n",
+		"cmd/swhurl-v2/remove.go":     "package main\n\nimport \"example.com/v2/apps\"\n",
 		"provisioning/back.go":        "package provisioning\n\nimport \"example.com/v2/apps\"\n",
 		"cmd/swhurl-v2/status_all.go": "package main\n\nimport \"example.com/v2/apps\"\n",
 	})

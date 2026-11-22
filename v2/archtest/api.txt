@@ -825,6 +825,11 @@ health/rules: var PlatformQuotas = observe.Ref{APIVersion: "v1", Kind: "Resource
 health/rules: var PlatformStreams = observe.Ref{APIVersion: "jetstream.nats.io/v1beta2", Kind: "Stream"}
 health/rules: var PlatformTraefik = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
 health/rules: var PlatformUnits = observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
+health: func Platform(ctx context.Context, inputs PlatformInputs) (healthrules.PlatformReport, error)
+health: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (healthrules.PlatformReport, error)
+health: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []healthrules.CompiledInstance}
+health: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat healthrules.HeartbeatEvidence}
+health: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 kernel: const AddTeam TeamAction = "add"
 kernel: const AppLabel = "platform.swhurl.com/app"
 kernel: const AppRecordName = "app.json"
@@ -1435,8 +1440,6 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
-orchestration: func Platform(ctx context.Context, inputs PlatformInputs) (healthrules.PlatformReport, error)
-orchestration: func PlatformAll(ctx context.Context, inputs PlatformAllInputs) (healthrules.PlatformReport, error)
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
@@ -1466,7 +1469,6 @@ orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.I
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
 orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
-orchestration: type Checkout struct {Profile, Teams, Allocation []byte FluxSettings []byte Apps, Releases map[string][]byte Compiled []healthrules.CompiledInstance}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
 orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
@@ -1500,8 +1502,6 @@ orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.Sec
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Named struct {Name, Value string}
-orchestration: type PlatformAllInputs struct {PlatformInputs GitHub github.Reader GitHubToken string Data kube.Data Issuer kube.Issuer Executor kube.Executor Registries func(image string) (registry.Reader, error) Objects func(bucket string) (s3.Reader, error) Checkout Checkout ConsoleTag string MaxAge time.Duration Heartbeat healthrules.HeartbeatEvidence}
-orchestration: type PlatformInputs struct {Reader kube.Reader Source string Now func() time.Time}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
 orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}

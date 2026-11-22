@@ -145,12 +145,15 @@ func TestHealthWorkflowDependency(t *testing.T) {
 }
 
 // The console's composition may call apps' status; the reverse edge and apps' peers gain no permission, and
-// apps reaches provisioning's compilation as a pure package, not through orchestration.
+// apps reaches provisioning's compilation as a pure package, not through orchestration. Recovery's restore is
+// given apps' status by the command, so recovery importing apps is refused.
 func TestAppsWorkflowDependency(t *testing.T) {
 	m := fixture(t, map[string]string{
 		"orchestration/console.go":    "package orchestration\n\nimport \"example.com/v2/apps\"\n",
 		"apps/reverse.go":             "package apps\n\nimport \"example.com/v2/orchestration\"\n",
 		"apps/peer.go":                "package apps\n\nimport \"example.com/v2/delivery\"\n",
+		"recovery/observe.go":         "package recovery\n\nimport \"example.com/v2/apps\"\n",
+		"cmd/swhurl-v2/restore.go":    "package main\n\nimport (\n\"example.com/v2/apps\"\n\"example.com/v2/recovery\"\n)\n",
 		"apps/down.go":                "package apps\n\nimport (\n\"example.com/v2/provisioning/rules\"\n\"example.com/v2/adapters/kube\"\n)\n",
 		"provisioning/rules/up.go":    "package rules\n\nimport \"example.com/v2/apps\"\n",
 		"cmd/swhurl-v2/status_all.go": "package main\n\nimport \"example.com/v2/apps\"\n",
@@ -158,7 +161,8 @@ func TestAppsWorkflowDependency(t *testing.T) {
 	expect(t, checkLayers(m, WorkflowDependencies),
 		"layers apps/peer.go:3: apps (layer 2) imports delivery (layer 2)",
 		"layers apps/reverse.go:3: apps (layer 2) imports orchestration (layer 2)",
-		"layers provisioning/rules/up.go:3: provisioning/rules (layer 0) imports apps (layer 2)")
+		"layers provisioning/rules/up.go:3: provisioning/rules (layer 0) imports apps (layer 2)",
+		"layers recovery/observe.go:3: recovery (layer 2) imports apps (layer 2)")
 	if !slices.Contains(lines(checkLayers(m, nil)), "layers orchestration/console.go:3: orchestration (layer 2) imports apps (layer 2)") {
 		t.Fatal("the console edge must require explicit permission")
 	}

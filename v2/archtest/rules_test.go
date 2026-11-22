@@ -168,7 +168,8 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
 // must be declared use-case packages; self edges and cycles are forbidden. The console's composition stays in
 // orchestration: ConsoleChecks invokes health's collector and ConsoleStatus apps' status of every instance;
-// reconsider these edges in the console slice.
+// reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
+// so it needs no edge.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps"},
 }

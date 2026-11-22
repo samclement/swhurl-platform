@@ -1869,10 +1869,12 @@ recovery: const StepDone = "done"
 recovery: const StepFailed = "failed"
 recovery: const StepNotRead = "not_read"
 recovery: func (*Refusal) Error() string
-recovery: func Plan(ctx context.Context, inputs PlanInputs) (rules.RestorePlan, error)
+recovery: func (Prepared) Confirm(spec kernel.InstanceSpec, confirm string) error
+recovery: func Prepare(ctx context.Context, inputs PrepareInputs) (Prepared, error)
 recovery: func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error)
 recovery: type Cluster struct {Reader kube.Reader Writer kube.Writer}
-recovery: type PlanInputs struct {Archives s3.Reader Query rules.ArchiveQuery Namespace, Application string From string MaxAge time.Duration Now time.Time}
+recovery: type PrepareInputs struct {Observe func(context.Context) (observe.Report, error) Archives func(namespace string) (s3.Reader, rules.ArchiveQuery, error) From string MaxAge time.Duration Now func() time.Time}
+recovery: type Prepared struct {Report observe.Report Plan rules.RestorePlan}
 recovery: type Refusal struct {Subject, Reason string}
 recovery: type RestoreApp struct {Replicas int32 Suspended bool Available bool State string}
 recovery: type RestoreInputs struct {Instance, Release, Profile, Egress []byte Plan rules.RestorePlan Target observe.Target AgeIdentity, ReadURL string Cluster Cluster Sleep func(time.Duration) Now func() time.Time}

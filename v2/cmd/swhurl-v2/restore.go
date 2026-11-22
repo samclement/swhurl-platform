@@ -13,8 +13,10 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 	"github.com/samclement/swhurl-platform/v2/recovery"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
@@ -51,13 +53,9 @@ func (c cli) restore(r request) int {
 	if status != 0 {
 		return status
 	}
-	report, status := c.observeLive(r, inputs, maxAge)
+	prepared, status := c.prepareRestore(r, inputs, maxAge)
 	if status != 0 {
 		return status
-	}
-	target := report.Target
-	if report.Backup.State == rules.BackupNotApplicable {
-		return fail(c.diagnostic, errors.New("unsupported: instance: it keeps no database to restore"))
 	}
 	spec, status := c.instance(r.instance)
 	if status != 0 {
@@ -67,40 +65,63 @@ func (c cli) restore(r request) int {
 	if status != 0 {
 		return status
 	}
-	plan, status := c.restorePlan(r, target, maxAge)
-	if status != 0 {
-		return status
-	}
-	// The plan's own read is the archive's evidence, so the observation block states the same fact the plan
-	// was decided from rather than a separate one.
-	report.Backup.Archive = plan.Archive
 	if r.confirm == "" {
-		document, err := encodeRestore(target, spec, release, report, plan, nil, r.maxAge)
+		document, err := encodeRestore(spec, release, prepared, nil, r.maxAge)
 		if err != nil {
 			return fail(c.diagnostic, err)
 		}
-		fmt.Fprintln(c.diagnostic, restoreSummary(plan))
+		fmt.Fprintln(c.diagnostic, restoreSummary(prepared.Plan))
 		return emit(c.out, c.diagnostic, document)
 	}
-	return c.performRestore(r, target, spec, release, report, plan)
+	return c.performRestore(r, spec, release, prepared)
 }
 
-// performRestore is the half that changes the cluster: it confirms the request, reads the two credentials,
-// runs the use case, and reports what it did. A refusal changed nothing and is an exit 2; a failure part-way
-// is written as the document and is an exit 1.
-func (c cli) performRestore(r request, target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan rules.RestorePlan) int {
-	if want := spec.Application + "/" + spec.Environment; r.confirm != want {
-		return fail(c.diagnostic, fmt.Errorf("invalid: confirm: expected %s", want))
+// prepareRestore asks recovery for what a restore is decided from: the observation is apps' status over the
+// connection status takes, and the archives are the instance's own prefix read with the operator's credentials.
+func (c cli) prepareRestore(r request, inputs provisioningrules.Inputs, maxAge time.Duration) (recovery.Prepared, int) {
+	request, status := c.liveStatusInputs(r, inputs.Profile, maxAge)
+	if status != 0 {
+		return recovery.Prepared{}, status
 	}
-	if !plan.Ready() {
-		return fail(c.diagnostic, fmt.Errorf("refused: restore.plan: %s", plan.State))
+	request.Inputs = inputs
+	// The observation keeps a read's own bound; the plan's reads have the rest of the two.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*readTimeout)
+	defer cancel()
+	prepared, err := recovery.Prepare(ctx, recovery.PrepareInputs{
+		Observe: func(ctx context.Context) (observe.Report, error) {
+			ctx, cancel := context.WithTimeout(ctx, readTimeout)
+			defer cancel()
+			return apps.Status(ctx, request)
+		},
+		Archives: func(namespace string) (s3.Reader, rules.ArchiveQuery, error) {
+			query, err := archiveQueryOf(inputs.Profile, namespace)
+			if err != nil {
+				return nil, rules.ArchiveQuery{}, err
+			}
+			reader, err := c.archives(query.Bucket, r.region)
+			return reader, query, err
+		},
+		From: r.from, MaxAge: maxAge, Now: func() time.Time { return time.Now().UTC() },
+	})
+	if err != nil {
+		return recovery.Prepared{}, fail(c.diagnostic, err)
+	}
+	return prepared, 0
+}
+
+// performRestore is the half that changes the cluster: recovery admits the request, this command reads the two
+// credentials, the use case runs, and this command reports what it did. A refusal changed nothing and is an exit
+// 2; a failure part-way is written as the document and is an exit 1.
+func (c cli) performRestore(r request, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
+	prepared recovery.Prepared) int {
+	if err := prepared.Confirm(spec, r.confirm); err != nil {
+		return fail(c.diagnostic, err)
 	}
 	identity, status := c.ageIdentity(r)
 	if status != 0 {
 		return status
 	}
-	readURL, status := c.presignedRead(r, target, plan)
+	readURL, status := c.presignedRead(r, prepared.Report.Target, prepared.Plan)
 	if status != 0 {
 		return status
 	}
@@ -108,7 +129,7 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 	if status != 0 {
 		return status
 	}
-	inputs, status := c.restoreInputs(r, spec, target, plan, identity, readURL, cluster)
+	inputs, status := c.restoreInputs(r, prepared, identity, readURL, cluster)
 	if status != 0 {
 		return status
 	}
@@ -127,15 +148,15 @@ func (c cli) performRestore(r request, target observe.Target, spec kernel.Instan
 		if errors.As(err, &refusal) || len(outcome.Steps) == 0 {
 			return fail(c.diagnostic, err)
 		}
-		return c.reportRestore(target, spec, release, report, plan, &outcome, 1)
+		return c.reportRestore(spec, release, prepared, &outcome, 1)
 	}
-	return c.reportRestore(target, spec, release, report, plan, &outcome, 0)
+	return c.reportRestore(spec, release, prepared, &outcome, 0)
 }
 
 // reportRestore writes the document and the one human line, and returns the status.
-func (c cli) reportRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan rules.RestorePlan, outcome *recovery.RestoreOutcome, status int) int {
-	document, err := encodeRestore(target, spec, release, report, plan, outcome, "")
+func (c cli) reportRestore(spec kernel.InstanceSpec, release kernel.ReleaseBundle, prepared recovery.Prepared,
+	outcome *recovery.RestoreOutcome, status int) int {
+	document, err := encodeRestore(spec, release, prepared, outcome, "")
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -145,8 +166,8 @@ func (c cli) reportRestore(target observe.Target, spec kernel.InstanceSpec, rele
 
 // restoreInputs is what the use case takes: the three documents, the plan, the two credentials, the target
 // and the cluster.
-func (c cli) restoreInputs(r request, spec kernel.InstanceSpec, target observe.Target, plan rules.RestorePlan,
-	identity, readURL string, cluster recovery.Cluster) (recovery.RestoreInputs, int) {
+func (c cli) restoreInputs(r request, prepared recovery.Prepared, identity, readURL string,
+	cluster recovery.Cluster) (recovery.RestoreInputs, int) {
 	instance, status := c.read(r.instance, "instance")
 	if status != 0 {
 		return recovery.RestoreInputs{}, status
@@ -167,7 +188,7 @@ func (c cli) restoreInputs(r request, spec kernel.InstanceSpec, target observe.T
 		}
 	}
 	return recovery.RestoreInputs{Instance: instance, Release: release, Profile: profile, Egress: egress,
-		Plan: plan, Target: target, AgeIdentity: identity, ReadURL: readURL, Cluster: cluster,
+		Plan: prepared.Plan, Target: prepared.Report.Target, AgeIdentity: identity, ReadURL: readURL, Cluster: cluster,
 		Sleep: time.Sleep, Now: time.Now}, 0
 }
 
@@ -263,23 +284,6 @@ func (c cli) archiveOf(r request, target observe.Target) (s3.Reader, rules.Archi
 		return nil, rules.ArchiveQuery{}, fail(c.diagnostic, err)
 	}
 	return reader, query, 0
-}
-
-// restorePlan asks recovery for the plan: the instance's own prefix, the reader the operator's credentials make,
-// and the archive the operator named.
-func (c cli) restorePlan(r request, target observe.Target, maxAge time.Duration) (rules.RestorePlan, int) {
-	reader, query, status := c.archiveOf(r, target)
-	if status != 0 {
-		return rules.RestorePlan{}, status
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
-	defer cancel()
-	plan, err := recovery.Plan(ctx, recovery.PlanInputs{Archives: reader, Query: query, Namespace: target.Namespace,
-		Application: target.Release.Name, From: r.from, MaxAge: maxAge, Now: time.Now().UTC()})
-	if err != nil {
-		return rules.RestorePlan{}, fail(c.diagnostic, err)
-	}
-	return plan, 0
 }
 
 // restoreDocument is the plan's shape: the instance's facts, the archive and its metadata, the observation it
@@ -381,8 +385,9 @@ type restoreStep struct {
 
 // encodeRestore is the document: the plan, and the run when there was one (nil for a plan-only invocation).
 // maxAge is the --max-age the operator stated, empty for the default, which the plan's step repeats.
-func encodeRestore(target observe.Target, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	report observe.Report, plan rules.RestorePlan, outcome *recovery.RestoreOutcome, maxAge string) ([]byte, error) {
+func encodeRestore(spec kernel.InstanceSpec, release kernel.ReleaseBundle, prepared recovery.Prepared,
+	outcome *recovery.RestoreOutcome, maxAge string) ([]byte, error) {
+	observed, plan := prepared.Report, prepared.Plan
 	claim := spec.Storage.ClaimName
 	if claim == "" {
 		// An instance that creates its own volume has no claim name in its record: the pinned chart names
@@ -392,12 +397,12 @@ func encodeRestore(target observe.Target, spec kernel.InstanceSpec, release kern
 	document := restoreDocument{
 		Kind: "v2-restore", Version: 2, GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Instance: restoreInstanceDocument{Application: spec.Application, Environment: spec.Environment,
-			Namespace: target.Namespace, Claim: claim, Mount: kernel.DataMount,
+			Namespace: observed.Target.Namespace, Claim: claim, Mount: kernel.DataMount,
 			DatabasePath: kernel.DatabasePath, UID: release.Runtime.UID},
 		Plan: restorePlanDocument{State: plan.State, Reason: plan.Reason,
 			MaxAgeSeconds: int64(plan.Archive.MaxAge / time.Second)},
-		Observation: restoreObserved{Verdict: string(report.Verdict), Backup: report.Backup.State,
-			Archive: report.Backup.Archive.State},
+		Observation: restoreObserved{Verdict: string(observed.Verdict), Backup: observed.Backup.State,
+			Archive: observed.Backup.Archive.State},
 		Action: restorePlannedAction(),
 		Note:   restoreNote,
 		Verification: []string{

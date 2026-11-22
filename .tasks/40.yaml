@@ -10,7 +10,7 @@ scope:
   - v2/archtest/api.txt
   - docs/v2-status.md
 checks:
-  - cd v2 && go test ./apps/... ./delivery/... ./notifications/... ./archtest/... -count=1
+  - cd v2 && go test ./delivery/... ./notifications/... ./archtest/... -count=1
   - make check-v2
   - "! test -e v2/notifications/rules/incident/health.go"
 after: []
@@ -19,3 +19,9 @@ notes:
   - at: 2026-11-22T16:53:51.156Z
     commit: 38e75d59d737
     text: "Operator-approved principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold verdicts shared across capabilities; prefer cheap visible pure->pure edges over cross-capability use-case edges. No live checks; conductor runs no post-merge checks. Owner rule: place the deployment-health verdict beside the data it judges: delivery/rules if derived from delivery's landed-release state (next to that verdict), apps/rules only if inputs are apps' own documents. One verdict; incident and apps/status import it. Record which owner you chose and why in a note."
+  - at: 2026-11-22T17:03:00.389Z
+    commit: "111710431e28"
+    text: "Owner: delivery/rules (health.go: DeploymentHealthOf, ReleaseHealthOf, RequestedImage). Its inputs are delivery's landed-release state (Flux unit, HelmRelease, owned workloads/pods), none of apps' own documents, so apps/rules was not created. Inputs stay decoded JSON maps (incident's Snapshot shape) to keep the 138 legacy goldens byte-identical; incident maps verdicts to its persisted fault strings. Status (observe.StateOf) does not import it: it judges observe Findings against the records, and switching would change status behaviour."
+  - at: 2026-11-22T17:04:05.127Z
+    commit: 93f9b489a54b
+    text: Check 1 references ./apps/... but the verdict landed in delivery/rules (allowed by the owner rule) and v2/apps does not exist -> conductor dropped ./apps/... from check 1 (conductor's error in the original check); no empty package.

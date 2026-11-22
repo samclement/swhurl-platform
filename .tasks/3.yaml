@@ -1,0 +1,20 @@
+id: 3
+title: record D1 as decided (metadata rule for both) and the behaviour change it makes
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/v2-status.md
+  - docs/current-state.md
+  - docs/operations.md
+  - docs/workstreams.md
+checks:
+  - "! grep -rq 'D1 open' docs/"
+  - "! grep -q 'takes the newest archive by upload time' docs/operations.md"
+after:
+  - 1
+  - 2
+reason: null
+notes:
+  - at: 2026-11-22T11:21:24.768Z
+    commit: 4cb85004843e
+    text: "Record D1 as decided (operator chose option 1): one rule, an archive counts only with its metadata; restore and app status fall back to the previous complete archive; a --from archive without metadata is still refused; platform verification reuses recovery's verdict. Planner's pointers: iteration-2-plan.md §36 row 1 loses 'D1 open' and the 'Open decision (D1)' paragraph becomes the dated decision; operations.md's restore text describes what is; current-state.md's 'D1 ... is open' becomes a dated entry naming the checks that ran (nothing live changed); v2-status.md Gate/Uncommitted lines and row 96, and the Go-replacement row in workstreams.md, no longer name D1 as the next gate. Note: make check-docs is not a check here because it fails while the tree is uncommitted; run it if useful but don't treat that failure as yours."

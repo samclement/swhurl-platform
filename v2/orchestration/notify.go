@@ -8,7 +8,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/ntfy"
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 

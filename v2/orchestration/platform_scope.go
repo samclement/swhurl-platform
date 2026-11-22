@@ -15,7 +15,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/s3"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/notify"
+	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/recovery/rules"
 )

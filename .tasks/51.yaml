@@ -1,6 +1,6 @@
 id: 51
 title: Apps owns editing and SetTeam
-state: active
+state: done
 scope:
   - v2/apps/edit*.go
   - v2/orchestration/edit.go
@@ -32,3 +32,12 @@ notes:
   - at: 2026-11-22T19:06:15.163Z
     commit: fad0b284e26e
     text: "remove_test.go uses testdata helper from edit_test.go? -> Option 1: conductor added v2/orchestration/remove_test.go to scope; move the 8-line testdata helper unchanged to its bottom, no other change."
+  - at: 2026-11-22T19:11:00.289Z
+    commit: 1fbef00bbce2
+    text: "done: Moved Edit and SetTeam, their inputs/results and tests into apps; CLI calls Apps directly. Updated API and dependency tests and v2-status. Added write-failure and no-instance refusal coverage. Focused tests and make check-v2 pass. No live verification."
+  - at: 2026-11-22T19:11:00.289Z
+    commit: 1fbef00bbce2
+    text: "followup: Unchanged orchestration TestJobsRunOneJobPerTargetAndRecordItsLines failed once observing a running record after success, then passed on rerun and make check-v2; investigate its asynchronous store synchronization separately."
+  - at: 2026-11-22T19:14:15.083Z
+    commit: e733d4b9a73c
+    text: branch dsa/01M82AAMFJS4GN26RMZ2G8367A/task-51

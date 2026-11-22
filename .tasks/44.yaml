@@ -1,6 +1,6 @@
 id: 44
 title: "Provisioning rules: move instance compilation (Inputs, Compile, documents, declaredInstance as Declare) out of orchestration into pure provisioning/rules"
-state: ready
+state: done
 scope:
   - v2/provisioning/rules/**
   - v2/orchestration/**
@@ -19,3 +19,12 @@ notes:
   - at: 2026-11-22T17:09:40.553Z
     commit: dcc9bcc69a5f
     text: "Operator chose option 1 to break the apps<->orchestration cycle found in task 41: move compilation (Inputs, Compile, documents(), declaredInstance exported as Declare) into a new pure package v2/provisioning/rules (layer 0) that both orchestration and apps import, registered in archtest. Pure move, no behaviour change; callers in orchestration and cmd updated. Do not move status use cases (task 41 does that afterwards) and do not touch delivery/write.go (later provisioning slice). No live checks."
+  - at: 2026-11-22T17:17:43.590Z
+    commit: b0debf3b4fa5
+    text: "done: New pure v2/provisioning/rules (layer 0, Pure, PureDeps kernel): Inputs, Compile, Declare->Declaration{Application,Environment,Declared}, unexported documents/decode; Compile tests moved. Orchestration+cmd import it; api.txt, archtest, v2-status updated. Declare now decodes release before profile (shared decode). No live checks; check-docs flags Uncommitted header until commit."
+  - at: 2026-11-22T17:17:43.590Z
+    commit: b0debf3b4fa5
+    text: "followup: delivery/write.go still copies provisioning/rules' documents() (optional-document validation); the deferred 'Copied delivery write decisions' row covers removing it in the provisioning slice"
+  - at: 2026-11-22T17:19:37.071Z
+    commit: b0debf3b4fa5
+    text: branch dsa/01M823S5W8MYRRWRDAP5C5C113/task-44

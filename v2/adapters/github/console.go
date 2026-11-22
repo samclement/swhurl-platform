@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samclement/swhurl-platform/v2/observe"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 )
 
 // Console is the read-only GitHub port the console's pages need: one repository at a pinned commit, the paths a
@@ -204,7 +204,7 @@ func appFilePath(path string) string {
 }
 
 func (a *API) AppFile(ctx context.Context, repository, token, file string) ([]byte, bool, error) {
-	if !observe.GitHubRepository(repository) || file == "" || strings.Contains(file, "..") {
+	if !healthrules.GitHubRepository(repository) || file == "" || strings.Contains(file, "..") {
 		return nil, false, &Error{"invalid app file reference"}
 	}
 	body, status, err := a.getAppFile(ctx, repository, token, file)
@@ -223,7 +223,7 @@ func (a *API) AppFile(ctx context.Context, repository, token, file string) ([]by
 // PublicFile reads one file at a commit of a public repository: a template's copier.yml is the platform's input,
 // and the template is public, so this read carries no credential at all.
 func (a *API) PublicFile(ctx context.Context, repository, revision, file string) ([]byte, bool, error) {
-	if !observe.GitHubRepository(repository) || !commitID(revision) || file == "" || strings.Contains(file, "..") {
+	if !healthrules.GitHubRepository(repository) || !commitID(revision) || file == "" || strings.Contains(file, "..") {
 		return nil, false, &Error{"invalid public file reference"}
 	}
 	address := "https://api.github.com/repos/" + repository + "/contents/" + appFilePath(file) + "?ref=" + url.QueryEscape(revision)

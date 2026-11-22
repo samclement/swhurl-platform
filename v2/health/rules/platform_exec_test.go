@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"encoding/base64"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 const ingestionFixture = "fixture-team-ingestion-key-0001"
@@ -144,20 +146,20 @@ func TestMongoVolumeRetentionCases(t *testing.T) {
 		doc    string
 		level  CheckLevel
 	}{
-		{"retain", Present, `{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}`, CheckOK},
-		{"delete", Present, `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`, CheckBad},
-		{"missing", Absent, "", CheckBad}, {"failed", Unavailable, uriFixture, CheckBad},
-		{"missing spec", Present, `{}`, CheckBad}, {"malformed", Present, ingestionFixture, CheckBad},
+		{"retain", observe.Present, `{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}`, CheckOK},
+		{"delete", observe.Present, `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`, CheckBad},
+		{"missing", observe.Absent, "", CheckBad}, {"failed", observe.Unavailable, uriFixture, CheckBad},
+		{"missing spec", observe.Present, `{}`, CheckBad}, {"malformed", observe.Present, ingestionFixture, CheckBad},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			entry := retainedMongoVolume(Read{Status: test.status, Object: []byte(test.doc)})
+			entry := retainedMongoVolume(observe.Read{Status: test.status, Object: []byte(test.doc)})
 			if entry.Level != test.level {
 				t.Fatalf("%+v", entry)
 			}
 		})
 	}
-	claim := Read{Status: Present, Object: []byte(`{"spec":{"volumeName":"pv-1"}}`)}
-	if MongoVolumeName(claim) != "pv-1" || MongoVolumeName(Read{Status: Unavailable, Object: claim.Object}) != "" {
+	claim := observe.Read{Status: observe.Present, Object: []byte(`{"spec":{"volumeName":"pv-1"}}`)}
+	if MongoVolumeName(claim) != "pv-1" || MongoVolumeName(observe.Read{Status: observe.Unavailable, Object: claim.Object}) != "" {
 		t.Fatal("claim absence/failure lost")
 	}
 }
@@ -168,7 +170,7 @@ func TestReadyClickStackPodSelection(t *testing.T) {
 	}
 	ready := `[{"type":"Ready","status":"True"}]`
 	app := `[{"name":"app","ready":true}]`
-	pods := List{Status: Present, Items: [][]byte{
+	pods := observe.List{Status: observe.Present, Items: [][]byte{
 		pod("z-ready", "Running", ready, app, ""), pod("b-ready", "Running", ready, app, ""),
 		pod("a-terminating", "Running", ready, app, `,"deletionTimestamp":"2026-11-06T00:00:00Z"`),
 		pod("a-unready", "Running", `[]`, app, ""), pod("a-no-app", "Running", ready, `[]`, ""), pod("a-pending", "Pending", ready, app, ""),
@@ -176,11 +178,11 @@ func TestReadyClickStackPodSelection(t *testing.T) {
 	if ClickStackPod(pods) != "b-ready" {
 		t.Fatal("wrong ready pod")
 	}
-	pods.Status = Unavailable
+	pods.Status = observe.Unavailable
 	if ClickStackPod(pods) != "" {
 		t.Fatal("failed list selected pod")
 	}
-	dep := Read{Status: Present, Object: []byte(`{"spec":{"selector":{"matchLabels":{"z":"2","a":"1"}}}}`)}
+	dep := observe.Read{Status: observe.Present, Object: []byte(`{"spec":{"selector":{"matchLabels":{"z":"2","a":"1"}}}}`)}
 	if ClickStackSelector(dep) != "a=1,z=2" {
 		t.Fatal("selector not installed/deterministic")
 	}

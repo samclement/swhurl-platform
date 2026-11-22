@@ -8,6 +8,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/clickstack"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/dashboards"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/notifications/rules/notify"
 	"github.com/samclement/swhurl-platform/v2/observe"
@@ -134,7 +135,7 @@ func appsOfCluster(ctx context.Context, reader kube.Reader) ([]dashboards.App, e
 	if err := present(releases, err); err != nil {
 		return nil, err
 	}
-	namespaces, err := reader.List(ctx, observe.Ref{APIVersion: "v1", Kind: "Namespace"}, observe.AppLabel)
+	namespaces, err := reader.List(ctx, observe.Ref{APIVersion: "v1", Kind: "Namespace"}, kernel.AppLabel)
 	if err := present(namespaces, err); err != nil {
 		return nil, err
 	}
@@ -471,7 +472,7 @@ func clickstackAppPod(ctx context.Context, reader kube.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	selector := observe.ClickStackSelector(deployment)
+	selector := healthrules.ClickStackSelector(deployment)
 	if selector == "" {
 		return "", errors.New("cannot read the ClickStack app Deployment's selector")
 	}
@@ -479,7 +480,7 @@ func clickstackAppPod(ctx context.Context, reader kube.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if pod := observe.ClickStackPod(pods); pod != "" {
+	if pod := healthrules.ClickStackPod(pods); pod != "" {
 		return pod, nil
 	}
 	return "", errors.New("no ready ClickStack app pod")

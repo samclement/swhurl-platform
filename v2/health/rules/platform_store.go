@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The checks of what the platform keeps: the notification routes and channels, the backups in the object store, and
 // the console's image and job record.
@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/recovery/rules"
+	"github.com/samclement/swhurl-platform/v2/observe"
+	recoveryrules "github.com/samclement/swhurl-platform/v2/recovery/rules"
 )
 
 // ChannelEvidence is what the channels check reads: the routes Git renders from the team registry, the routes and
@@ -96,13 +97,13 @@ func unroutedTeams(owners map[string][]string, routes map[string][]string) []Pla
 // MongoBackupEvidence is what the MongoDB backup check reads: the backup CronJob, whose BACKUP_S3_URI says where its
 // backups are, and what the object store listed there.
 type MongoBackupEvidence struct {
-	Job     Read
-	Listing rules.ArchiveList
+	Job     observe.Read
+	Listing recoveryrules.ArchiveList
 }
 
 // BackupJobLocation is where the backup CronJob publishes: its first container's BACKUP_S3_URI, as a bucket and a
 // prefix; false when the job states none of the form s3://<bucket>/<prefix>/.
-func BackupJobLocation(job Read) (rules.ArchiveQuery, bool) {
+func BackupJobLocation(job observe.Read) (recoveryrules.ArchiveQuery, bool) {
 	var document struct {
 		Spec struct {
 			JobTemplate struct {
@@ -118,15 +119,15 @@ func BackupJobLocation(job Read) (rules.ArchiveQuery, bool) {
 			} `json:"jobTemplate"`
 		} `json:"spec"`
 	}
-	if job.Status != Present || json.Unmarshal(job.Object, &document) != nil || len(document.Spec.JobTemplate.Spec.Template.Spec.Containers) == 0 {
-		return rules.ArchiveQuery{}, false
+	if job.Status != observe.Present || json.Unmarshal(job.Object, &document) != nil || len(document.Spec.JobTemplate.Spec.Template.Spec.Containers) == 0 {
+		return recoveryrules.ArchiveQuery{}, false
 	}
 	for _, variable := range document.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env {
 		if variable.Name == "BACKUP_S3_URI" {
-			return rules.BackupLocation(variable.Value)
+			return recoveryrules.BackupLocation(variable.Value)
 		}
 	}
-	return rules.ArchiveQuery{}, false
+	return recoveryrules.ArchiveQuery{}, false
 }
 
 // backupCheck is how one kind of backup's entry reads: its label, what is backed up, what takes a backup, and the
@@ -143,20 +144,20 @@ func platformBackups(e MongoBackupEvidence, credentials bool, maxAge time.Durati
 		return []PlatformEntry{bad(what + " states no BACKUP_S3_URI of the form s3://<bucket>/<prefix>/, so its backups are unchecked")}
 	}
 	check := backupCheck{what: "MongoDB", run: "make backup-mongodb", jobs: PlatformMongoBackup.Namespace}
-	return []PlatformEntry{check.entry(location, e.Listing, credentials, func(listed rules.ArchiveList) (rules.ArchiveReport, error) {
-		return rules.NewestArchive(listed, ".archive.gz.age", maxAge, now)
+	return []PlatformEntry{check.entry(location, e.Listing, credentials, func(listed recoveryrules.ArchiveList) (recoveryrules.ArchiveReport, error) {
+		return recoveryrules.NewestArchive(listed, ".archive.gz.age", maxAge, now)
 	})}
 }
 
 // entry is recovery's verdict on the newest complete backup the listing of the location holds.
-func (c backupCheck) entry(location rules.ArchiveQuery, listing rules.ArchiveList, credentials bool,
-	judge func(rules.ArchiveList) (rules.ArchiveReport, error)) PlatformEntry {
+func (c backupCheck) entry(location recoveryrules.ArchiveQuery, listing recoveryrules.ArchiveList, credentials bool,
+	judge func(recoveryrules.ArchiveList) (recoveryrules.ArchiveReport, error)) PlatformEntry {
 	uri := "s3://" + location.Bucket + "/" + location.Prefix
 	switch {
 	case !credentials:
 		return bad(fmt.Sprintf("%scannot list backups in %s: AWS credentials not supplied (make verify-platform exports "+
 			"them with aws configure export-credentials)", c.label, uri))
-	case listing.Status != Present:
+	case listing.Status != observe.Present:
 		return bad(fmt.Sprintf("%scannot list backups in %s: %s", c.label, uri, listedReason(listing)))
 	}
 	listing.Query = location
@@ -164,9 +165,9 @@ func (c backupCheck) entry(location rules.ArchiveQuery, listing rules.ArchiveLis
 	switch {
 	case err != nil:
 		return bad(fmt.Sprintf("%scannot judge the %s backups in %s (%v)", c.label, c.what, uri, err))
-	case report.Reason == rules.ReasonNoArchive:
+	case report.Reason == recoveryrules.ReasonNoArchive:
 		return bad(fmt.Sprintf("%sno %s backup in %s (run: %s)", c.label, c.what, uri, c.run))
-	case report.State != rules.BackupCurrent:
+	case report.State != recoveryrules.BackupCurrent:
 		return bad(fmt.Sprintf("%snewest %s backup in %s is %.0f h old; check: kubectl -n %s get jobs -l "+
 			"platform.swhurl.com/backup=true", c.label, c.what, uri, report.Age.Hours(), c.jobs))
 	}
@@ -179,14 +180,14 @@ type DatabaseEvidence struct {
 	// Problem says why the records or the profile do not say which databases are backed up, or where.
 	Problem string
 	// Location is the profile's backup location, one prefix per namespace below it.
-	Location  rules.ArchiveQuery
+	Location  recoveryrules.ArchiveQuery
 	Databases []DatabaseBackup
 }
 
 // DatabaseBackup is one database instance's namespace and its listing.
 type DatabaseBackup struct {
 	Namespace string
-	Listing   rules.ArchiveList
+	Listing   recoveryrules.ArchiveList
 }
 
 func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duration, now time.Time) []PlatformEntry {
@@ -199,9 +200,9 @@ func platformDatabases(e DatabaseEvidence, credentials bool, maxAge time.Duratio
 	entries := make([]PlatformEntry, 0, len(e.Databases))
 	for _, database := range e.Databases {
 		check := backupCheck{label: database.Namespace + ": ", what: "SQLite", run: "make backup-sqlite", jobs: database.Namespace}
-		location := rules.ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
-		entries = append(entries, check.entry(location, database.Listing, credentials, func(listed rules.ArchiveList) (rules.ArchiveReport, error) {
-			return rules.InstanceArchive(listed, database.Namespace, maxAge, now)
+		location := recoveryrules.ArchiveQuery{Bucket: e.Location.Bucket, Prefix: e.Location.Prefix + database.Namespace + "/"}
+		entries = append(entries, check.entry(location, database.Listing, credentials, func(listed recoveryrules.ArchiveList) (recoveryrules.ArchiveReport, error) {
+			return recoveryrules.InstanceArchive(listed, database.Namespace, maxAge, now)
 		}))
 	}
 	return entries
@@ -221,9 +222,9 @@ const consoleUnit = "(make reconcile UNIT=platform-console)"
 
 // platformConsole is whether the console image is built from this checkout's tooling, compared by content tag, and
 // whether the console keeps its jobs across a restart.
-func platformConsole(release Read, e ConsoleEvidence) []PlatformEntry {
+func platformConsole(release observe.Read, e ConsoleEvidence) []PlatformEntry {
 	tag := ""
-	if release.Status == Present {
+	if release.Status == observe.Present {
 		tag = platformConsoleTag(release.Object)
 	}
 	if tag == "" {
@@ -261,9 +262,9 @@ func consoleImage(running, checkout string) PlatformEntry {
 }
 
 // listedReason is why a listing was not read: its own reason, or that it never was.
-func listedReason(listing rules.ArchiveList) string {
+func listedReason(listing recoveryrules.ArchiveList) string {
 	if listing.Reason == "" {
-		return NotRead
+		return observe.NotRead
 	}
 	return listing.Reason
 }

@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The platform checks that only read the cluster: the Flux units, Traefik's HTTPS redirect, the Flux alerts, the
 // notify service and the console's two CronJobs. This file states the objects they need and judges what was read;
@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // Level is one entry's verdict: ok passes, warn passes but asks for attention, bad fails the run.
@@ -58,14 +60,14 @@ func (r PlatformReport) Passed() bool {
 // The objects the checks read. The units, alerts and providers are whole namespace collections: the root units carry
 // no label to select them by.
 var (
-	PlatformUnits         = Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
-	PlatformAlerts        = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
-	PlatformProviders     = Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
-	PlatformTraefik       = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
-	PlatformNotify        = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
-	PlatformConsole       = Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
-	PlatformDashboards    = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
-	PlatformNotifications = Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
+	PlatformUnits         = observe.Ref{APIVersion: "kustomize.toolkit.fluxcd.io/v1", Kind: "Kustomization", Namespace: "flux-system"}
+	PlatformAlerts        = observe.Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Alert", Namespace: "flux-system"}
+	PlatformProviders     = observe.Ref{APIVersion: "notification.toolkit.fluxcd.io/v1beta3", Kind: "Provider", Namespace: "flux-system"}
+	PlatformTraefik       = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "kube-system", Name: "traefik"}
+	PlatformNotify        = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "notify", Name: "notify"}
+	PlatformConsole       = observe.Ref{APIVersion: "helm.toolkit.fluxcd.io/v2", Kind: "HelmRelease", Namespace: "console", Name: "console"}
+	PlatformDashboards    = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-dashboards"}
+	PlatformNotifications = observe.Ref{APIVersion: "batch/v1", Kind: "CronJob", Namespace: "console", Name: "console-notifications"}
 )
 
 // platformAlertNames are the Flux alerts platform/alerts/alerts.yaml declares.
@@ -76,8 +78,8 @@ const platformFresh = 5 * time.Minute
 
 // PlatformEvidence is what the caller read for the checks, and the time it read it at.
 type PlatformEvidence struct {
-	Units, Alerts, Providers                            List
-	Traefik, Notify, Console, Dashboards, Notifications Read
+	Units, Alerts, Providers                            observe.List
+	Traefik, Notify, Console, Dashboards, Notifications observe.Read
 	Now                                                 time.Time
 }
 
@@ -108,8 +110,8 @@ type platformUnit struct {
 	} `json:"status"`
 }
 
-func platformUnits(list List) []PlatformEntry {
-	if list.Status != Present {
+func platformUnits(list observe.List) []PlatformEntry {
+	if list.Status != observe.Present {
 		return []PlatformEntry{bad("cannot read Flux kustomizations (kubectl -n flux-system get kustomizations)")}
 	}
 	if len(list.Items) == 0 {
@@ -149,7 +151,7 @@ func platformUnitEntry(u platformUnit) PlatformEntry {
 // platformRedirect is the argument k3s's Traefik chart renders for ports.web.redirections.entryPoint.
 const platformRedirect = "entryPoints.web.http.redirections.entryPoint.scheme=https"
 
-func platformIngress(read Read) []PlatformEntry {
+func platformIngress(read observe.Read) []PlatformEntry {
 	if problem, failed := platformUnread(read, "Traefik (kube-system/traefik)", "its HTTP redirect is unknown"); failed {
 		return []PlatformEntry{problem}
 	}
@@ -177,11 +179,11 @@ func platformIngress(read Read) []PlatformEntry {
 }
 
 // platformUnread is the failed check for an object that was not read: unavailable says why, absent says it is missing.
-func platformUnread(read Read, what, consequence string) (PlatformEntry, bool) {
+func platformUnread(read observe.Read, what, consequence string) (PlatformEntry, bool) {
 	switch read.Status {
-	case Present:
+	case observe.Present:
 		return PlatformEntry{}, false
-	case Absent:
+	case observe.Absent:
 		return bad(fmt.Sprintf("%s is missing, so %s", what, consequence)), true
 	}
 	return bad(fmt.Sprintf("cannot read %s (%s), so %s", what, read.Reason, consequence)), true
@@ -198,8 +200,8 @@ type platformAlert struct {
 	} `json:"spec"`
 }
 
-func platformAlerts(found, providers List) []PlatformEntry {
-	if found.Status != Present || providers.Status != Present {
+func platformAlerts(found, providers observe.List) []PlatformEntry {
+	if found.Status != observe.Present || providers.Status != observe.Present {
 		return []PlatformEntry{bad("cannot read Flux alerts and providers (make reconcile UNIT=platform-alerts)")}
 	}
 	named := map[string]platformAlert{}
@@ -236,7 +238,7 @@ func platformAlertEntry(name string, named map[string]platformAlert, providers m
 
 const platformNotifyLost = "teams get no copies of their apps' messages (make reconcile UNIT=platform-notify)"
 
-func platformNotifyService(deployment, console Read) []PlatformEntry {
+func platformNotifyService(deployment, console observe.Read) []PlatformEntry {
 	if problem, failed := platformUnread(deployment, "the notify service (notify/notify)", platformNotifyLost); failed {
 		return []PlatformEntry{problem}
 	}
@@ -350,7 +352,7 @@ type platformCronJob struct {
 	what, consequence, unknown, suspended, stale, recent string
 }
 
-func (c platformCronJob) entry(read Read, now time.Time) []PlatformEntry {
+func (c platformCronJob) entry(read observe.Read, now time.Time) []PlatformEntry {
 	if problem, failed := platformUnread(read, c.what, c.consequence); failed {
 		return []PlatformEntry{problem}
 	}
@@ -365,7 +367,7 @@ func (c platformCronJob) entry(read Read, now time.Time) []PlatformEntry {
 	return []PlatformEntry{bad(c.unknown)}
 }
 
-func platformDashboards(read Read, now time.Time) []PlatformEntry {
+func platformDashboards(read observe.Read, now time.Time) []PlatformEntry {
 	return platformCronJob{
 		what:        "dashboard sync status (console/console-dashboards)",
 		consequence: "app dashboards and alerts may not follow Git (make reconcile UNIT=platform-console)",
@@ -379,7 +381,7 @@ func platformDashboards(read Read, now time.Time) []PlatformEntry {
 	}.entry(read, now)
 }
 
-func platformNotifications(read Read, now time.Time) []PlatformEntry {
+func platformNotifications(read observe.Read, now time.Time) []PlatformEntry {
 	return platformCronJob{
 		what:        "notification checker status (console/console-notifications)",
 		consequence: "notifications may be late or lost (make reconcile UNIT=platform-console)",

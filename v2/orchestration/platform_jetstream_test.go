@@ -8,7 +8,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
-	"github.com/samclement/swhurl-platform/v2/observe"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 )
 
 func TestPlatformAllReadsJetStreamThroughTheExistingExecutor(t *testing.T) {
@@ -30,7 +30,7 @@ func TestPlatformAllReadsJetStreamThroughTheExistingExecutor(t *testing.T) {
 	}
 	for _, check := range groupsNamed(report, "events") {
 		for _, entry := range check.Entries {
-			if entry.Message == "JetStream has 1024 of 1024 MiB unreserved" && entry.Level == observe.CheckOK {
+			if entry.Message == "JetStream has 1024 of 1024 MiB unreserved" && entry.Level == healthrules.CheckOK {
 				return
 			}
 		}
@@ -43,7 +43,7 @@ func TestJetStreamExecFailureDoesNotExposeOutputOrDiagnostics(t *testing.T) {
 		{Result: kube.ExecResult{ExitCode: 1, Stdout: []byte("private-output")}},
 		{Err: errors.New("private-diagnostic"), Result: kube.ExecResult{Stdout: []byte("private-output")}},
 	} {
-		scope := observe.ScopeEvidence{}
+		scope := healthrules.ScopeEvidence{}
 		err := readJetStream(context.Background(), PlatformAllInputs{Executor: kubetest.NewExecutor(answer)}, &scope)
 		if err != nil || !scope.Events.Storage.Failed || len(scope.Events.Storage.Output) != 0 {
 			t.Fatal("an exec failure must be unavailable evidence, without its raw output")

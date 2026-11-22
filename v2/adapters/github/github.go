@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/observe"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 )
 
 // Reader is the read-only GitHub port. Tokens are explicit per request, never retained as client state.
 type Reader interface {
-	Hooks(context.Context, string, string) ([]observe.Hook, error)
+	Hooks(context.Context, string, string) ([]healthrules.Hook, error)
 	Token(context.Context, string, string) (Acceptance, error)
 }
 
@@ -54,7 +54,7 @@ func New(client *http.Client) Reader {
 }
 
 func validate(repository, token string) error {
-	if !observe.GitHubRepository(repository) {
+	if !healthrules.GitHubRepository(repository) {
 		return &Error{"invalid repository"}
 	}
 	if strings.TrimSpace(token) == "" {
@@ -89,11 +89,11 @@ func (a *API) get(ctx context.Context, path, token string) ([]byte, http.Header,
 
 // Hooks lists every page; reaching the bound or receiving an unexpected pagination link is an error,
 // never a partial result that could conceal a later hook.
-func (a *API) Hooks(ctx context.Context, repository, token string) ([]observe.Hook, error) {
+func (a *API) Hooks(ctx context.Context, repository, token string) ([]healthrules.Hook, error) {
 	if err := validate(repository, token); err != nil {
 		return nil, err
 	}
-	found := []observe.Hook{}
+	found := []healthrules.Hook{}
 	for page := 1; page <= maxPages; page++ {
 		path := fmt.Sprintf("/repos/%s/hooks?per_page=100&page=%d", repository, page)
 		body, headers, status, err := a.get(ctx, path, token)
@@ -170,17 +170,17 @@ type wireHook struct {
 	} `json:"last_response"`
 }
 
-func decodeHooks(body []byte) ([]observe.Hook, error) {
+func decodeHooks(body []byte) ([]healthrules.Hook, error) {
 	var wire []wireHook
 	if json.Unmarshal(body, &wire) != nil || wire == nil {
 		return nil, &Error{"malformed hooks response"}
 	}
-	found := []observe.Hook{}
+	found := []healthrules.Hook{}
 	for _, hook := range wire {
 		if hook.Active == nil || hook.Config == nil || hook.Config.URL == "" || hook.Events == nil {
 			return nil, &Error{"malformed hook"}
 		}
-		fact := observe.Hook{Active: *hook.Active, Events: hook.Events, Host: hookHost(hook.Config.URL)}
+		fact := healthrules.Hook{Active: *hook.Active, Events: hook.Events, Host: hookHost(hook.Config.URL)}
 		fact.Code, fact.Message = deliveryResponse(hook)
 		found = append(found, fact)
 	}

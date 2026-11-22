@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The two platform checks whose evidence comes from the host the operator runs on, not from the cluster alone: the
 // Flux controllers, judged against the settings the checkout installs them with, and the host heartbeat timer, whose
@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // CheckoutFluxSettings is the one file that states the Flux release and the controller arguments: make flux-install
@@ -20,7 +22,7 @@ import (
 const CheckoutFluxSettings = "clusters/home/flux-system/install/flux.json"
 
 // PlatformFluxController is where a Flux controller's Deployment is read; the settings name which controllers.
-var PlatformFluxController = Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "flux-system"}
+var PlatformFluxController = observe.Ref{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "flux-system"}
 
 // fluxDefaultComponents are flux install's own controllers; the settings name the extra ones this cluster runs.
 var fluxDefaultComponents = []string{"source-controller", "kustomize-controller", "helm-controller", "notification-controller"}
@@ -54,7 +56,7 @@ func (s FluxSettings) Controllers() []string {
 type FluxEvidence struct {
 	Settings    FluxSettings
 	Problem     string
-	Deployments map[string]Read
+	Deployments map[string]observe.Read
 }
 
 func platformFluxControllers(e FluxEvidence) []PlatformEntry {
@@ -71,10 +73,10 @@ func platformFluxControllers(e FluxEvidence) []PlatformEntry {
 
 // fluxController judges one controller: a plain `flux install` leaves it without the arguments Git states, and an
 // upgrade that did not happen leaves it at another version. Both warn; only a Deployment that cannot be read is bad.
-func fluxController(name, version string, args []string, read Read) PlatformEntry {
+func fluxController(name, version string, args []string, read observe.Read) PlatformEntry {
 	switch read.Status {
-	case Present:
-	case Absent:
+	case observe.Present:
+	case observe.Absent:
 		return warn(name + " is not installed (run: make flux-install)")
 	default:
 		return bad(fmt.Sprintf("cannot read flux-system/%s (kubectl -n flux-system get deploy %s)", name, name))

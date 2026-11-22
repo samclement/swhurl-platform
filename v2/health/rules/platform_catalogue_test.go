@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The catalogue is the operations page's check table: a test reads the page and fails when a row's order, name or
 // wording differs from the catalogue, or a row is missing or extra. The report is built from the same list, so the
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const operationsPage = "../../docs/operations.md"
+const operationsPage = "../../../docs/operations.md"
 
 // pageChecks are the "| Check | Passes when | Reads |" table's rows: name, what passing means and what it reads.
 func pageChecks(t *testing.T) [][3]string {

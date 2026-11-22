@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The two host checks, case by case: the cases verify-platform's Python checks (flux.check_controllers and
 // notifications.check_notification_heartbeat) were tested with, kept here when the checks moved.
@@ -8,19 +8,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 const fluxVersion = "2.8.1"
 
 // fluxDeployment is one controller's live Deployment, at version with the arguments it runs.
-func fluxDeployment(version string, args ...string) Read {
+func fluxDeployment(version string, args ...string) observe.Read {
 	quoted := make([]string, 0, len(args))
 	for _, arg := range args {
 		quoted = append(quoted, `"`+arg+`"`)
 	}
 	object := `{"metadata":{"labels":{"app.kubernetes.io/version":"` + version + `"}},"spec":{"template":{"spec":` +
 		`{"containers":[{"args":[` + strings.Join(quoted, ",") + `]}]}}}}`
-	return Read{Status: Present, Object: []byte(object)}
+	return observe.Read{Status: observe.Present, Object: []byte(object)}
 }
 
 func healthyFluxSettings() FluxSettings {
@@ -32,7 +34,7 @@ func healthyFluxSettings() FluxSettings {
 // healthyFlux is every controller installed at the pinned version, the one with required arguments running them.
 func healthyFlux() FluxEvidence {
 	settings := healthyFluxSettings()
-	deployments := map[string]Read{}
+	deployments := map[string]observe.Read{}
 	for _, name := range settings.Controllers() {
 		deployments[name] = fluxDeployment("v"+fluxVersion, settings.Args[name]...)
 	}
@@ -65,7 +67,7 @@ func TestFluxControllers(t *testing.T) {
 	}{
 		{"every controller matches", func(*FluxEvidence) {}, CheckOK, "kustomize-controller v2.8.1 with the settings in Git"},
 		{"a controller without required arguments states only its version", func(*FluxEvidence) {}, CheckOK, "helm-controller v2.8.1"},
-		{"a missing deployment warns", func(e *FluxEvidence) { e.Deployments["helm-controller"] = Read{Status: Absent} },
+		{"a missing deployment warns", func(e *FluxEvidence) { e.Deployments["helm-controller"] = observe.Read{Status: observe.Absent} },
 			CheckWarn, "helm-controller is not installed (run: make flux-install)"},
 		{"another version warns", func(e *FluxEvidence) { e.Deployments["source-controller"] = fluxDeployment("v0.0.1") },
 			CheckWarn, "source-controller is v0.0.1; expected v2.8.1 (run: make flux-install)"},
@@ -76,10 +78,10 @@ func TestFluxControllers(t *testing.T) {
 		{"an unknown version warns", func(e *FluxEvidence) { e.Deployments["source-controller"] = fluxDeployment("") },
 			CheckWarn, "source-controller is unknown; expected v2.8.1"},
 		{"an unreadable deployment is bad", func(e *FluxEvidence) {
-			e.Deployments["source-controller"] = Read{Status: Present, Object: []byte(`{"metadata":{}}`)}
+			e.Deployments["source-controller"] = observe.Read{Status: observe.Present, Object: []byte(`{"metadata":{}}`)}
 		}, CheckBad, "cannot read flux-system/source-controller (kubectl -n flux-system get deploy source-controller)"},
 		{"a failed read is bad, never a warning", func(e *FluxEvidence) {
-			e.Deployments["source-controller"] = Read{Status: Unavailable, Reason: ReasonForbidden}
+			e.Deployments["source-controller"] = observe.Read{Status: observe.Unavailable, Reason: observe.ReasonForbidden}
 		}, CheckBad, "cannot read flux-system/source-controller"},
 		{"malformed settings leave the version unchecked", func(e *FluxEvidence) {
 			*e = FluxEvidence{Problem: "it states no version"}

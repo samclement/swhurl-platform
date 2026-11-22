@@ -12,6 +12,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -43,7 +44,7 @@ func gitHubInputs(t *testing.T) (PlatformAllInputs, *githubtest.Fake) {
 
 func TestGitHubUsesInstalledSettingsAndExplicitSeparateCredentials(t *testing.T) {
 	inputs, fake := gitHubInputs(t)
-	scope := observe.ScopeEvidence{}
+	scope := healthrules.ScopeEvidence{}
 	if err := readGitHub(context.Background(), inputs, &scope); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestGitHubUsesInstalledSettingsAndExplicitSeparateCredentials(t *testing.T)
 		t.Fatalf("calls %+v", fake.Calls)
 	}
 	// No token bytes enter ScopeEvidence or the rendered report.
-	text := observe.PlatformText(observe.PlatformReport{Checks: observe.PlatformScopeChecks(observe.PlatformEvidence{}, scope)})
+	text := healthrules.PlatformText(healthrules.PlatformReport{Checks: healthrules.PlatformScopeChecks(healthrules.PlatformEvidence{}, scope)})
 	for _, secret := range []string{"operator-fixture", "console-fixture", "repo-fixture"} {
 		if strings.Contains(text, secret) {
 			t.Fatal("credential leaked")
@@ -74,8 +75,8 @@ func TestGitHubMissingOperatorTokenDoesNotSkipOtherReads(t *testing.T) {
 		t.Fatalf("%+v %v", report, err)
 	}
 	for _, check := range report.Checks[15:17] {
-		if !slices.ContainsFunc(check.Entries, func(e observe.PlatformEntry) bool {
-			return e.Level == observe.CheckBad && e.Message == "GitHub token not supplied"
+		if !slices.ContainsFunc(check.Entries, func(e healthrules.PlatformEntry) bool {
+			return e.Level == healthrules.CheckBad && e.Message == "GitHub token not supplied"
 		}) {
 			t.Fatalf("%+v", check)
 		}
@@ -83,7 +84,7 @@ func TestGitHubMissingOperatorTokenDoesNotSkipOtherReads(t *testing.T) {
 	if len(fake.Calls) != 2 || fake.Calls[0].Operation != "token" || fake.Calls[1].Operation != "token" {
 		t.Fatalf("%+v", fake.Calls)
 	}
-	if report.Checks[17].Entries[0].Level != observe.CheckOK {
+	if report.Checks[17].Entries[0].Level != healthrules.CheckOK {
 		t.Fatal("console acceptance stopped")
 	}
 }
@@ -92,7 +93,7 @@ func TestGitHubFailedSecretReadIsBadNotAbsence(t *testing.T) {
 	inputs, fake := gitHubInputs(t)
 	data := failingConsoleData{Data: inputs.Data, err: &kube.Error{Code: kube.Failed, Reason: observe.ReasonForbidden}}
 	inputs.Data = data
-	scope := observe.ScopeEvidence{}
+	scope := healthrules.ScopeEvidence{}
 	if err := readGitHub(context.Background(), inputs, &scope); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +167,7 @@ func TestInstalledSettingsFailuresNeverInventRepositoryOrDomain(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			inputs, fake := gitHubInputs(t)
 			test.change(inputs.Data.(*kubetest.Fake), inputs)
-			scope := observe.ScopeEvidence{}
+			scope := healthrules.ScopeEvidence{}
 			if err := readGitHub(context.Background(), inputs, &scope); err != nil {
 				t.Fatal(err)
 			}
@@ -190,7 +191,7 @@ func TestInstalledSettingsFailuresNeverInventRepositoryOrDomain(t *testing.T) {
 		} else {
 			cluster.Objects[ref] = []byte(body)
 		}
-		scope := observe.ScopeEvidence{}
+		scope := healthrules.ScopeEvidence{}
 		if err := readGitHub(context.Background(), inputs, &scope); err != nil {
 			t.Fatal(err)
 		}

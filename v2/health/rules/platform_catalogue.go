@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The catalogue of the platform checks: every group's name, the section its entries print under, what passing means and
 // what it reads, worded as the operations page states it. The report is built from this list, so a group's name, its

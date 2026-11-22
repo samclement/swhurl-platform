@@ -1,20 +1,22 @@
-package observe
+package rules
 
 import (
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 var platformNow = time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 
-func presentRead(ref Ref, object string) Read {
-	return Read{Ref: ref, Status: Present, Object: []byte(object)}
+func presentRead(ref observe.Ref, object string) observe.Read {
+	return observe.Read{Ref: ref, Status: observe.Present, Object: []byte(object)}
 }
 
-func collectionOf(ref Ref, items ...string) List {
-	list := List{Ref: ref, Status: Present, Items: [][]byte{}}
+func collectionOf(ref observe.Ref, items ...string) observe.List {
+	list := observe.List{Ref: ref, Status: observe.Present, Items: [][]byte{}}
 	for _, item := range items {
 		list.Items = append(list.Items, []byte(item))
 	}
@@ -82,15 +84,19 @@ func TestPlatformChecksPassInOrder(t *testing.T) {
 
 func TestPlatformChecks(t *testing.T) {
 	stale := platformNow.Add(-6 * time.Minute).Format(time.RFC3339)
-	unavailable := func(ref Ref) Read { return Read{Ref: ref, Status: Unavailable, Reason: ReasonForbidden} }
-	absent := func(ref Ref) Read { return Read{Ref: ref, Status: Absent, Reason: ReasonNotFound} }
+	unavailable := func(ref observe.Ref) observe.Read {
+		return observe.Read{Ref: ref, Status: observe.Unavailable, Reason: observe.ReasonForbidden}
+	}
+	absent := func(ref observe.Ref) observe.Read {
+		return observe.Read{Ref: ref, Status: observe.Absent, Reason: observe.ReasonNotFound}
+	}
 	for _, test := range []struct {
 		name, check string
 		change      func(*PlatformEvidence)
 		level       CheckLevel
 		message     string
 	}{
-		{"units unreadable", "flux-units", func(e *PlatformEvidence) { e.Units = List{Ref: PlatformUnits, Status: Unavailable} },
+		{"units unreadable", "flux-units", func(e *PlatformEvidence) { e.Units = observe.List{Ref: PlatformUnits, Status: observe.Unavailable} },
 			CheckBad, "cannot read Flux kustomizations"},
 		{"no units", "flux-units", func(e *PlatformEvidence) { e.Units = collectionOf(PlatformUnits) }, CheckBad, "no Flux kustomizations"},
 		{"unit not ready", "flux-units", func(e *PlatformEvidence) {
@@ -106,7 +112,9 @@ func TestPlatformChecks(t *testing.T) {
 		{"alert missing", "alerts", func(e *PlatformEvidence) { e.Alerts = collectionOf(PlatformAlerts) }, CheckWarn, "alert failures is missing"},
 		{"provider missing", "alerts", func(e *PlatformEvidence) { e.Providers = collectionOf(PlatformProviders) },
 			CheckBad, "alert failures points at provider ntfy, which does not exist"},
-		{"alerts unreadable", "alerts", func(e *PlatformEvidence) { e.Providers = List{Ref: PlatformProviders, Status: Unavailable} },
+		{"alerts unreadable", "alerts", func(e *PlatformEvidence) {
+			e.Providers = observe.List{Ref: PlatformProviders, Status: observe.Unavailable}
+		},
 			CheckBad, "cannot read Flux alerts and providers"},
 		{"notify not running", "notify-service", func(e *PlatformEvidence) {
 			e.Notify = presentRead(PlatformNotify, strings.Replace(notifyRunning, `"readyReplicas":2`, `"readyReplicas":0`, 1))

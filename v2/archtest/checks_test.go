@@ -215,12 +215,14 @@ func f(count int) int {
 		"telemetry/a.go":                       "package telemetry\n",
 		"workstreams/a.go":                     "package workstreams\n",
 		// A capability's rules are held to the same rule: the clock is an argument there too.
+		"health/rules/a.go":                  "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"recovery/rules/a.go":                "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"delivery/rules/a.go":                "package rules\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"notifications/rules/incident/a.go":  "package incident\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 		"notifications/rules/heartbeat/a.go": "package heartbeat\n\nimport \"time\"\n\nfunc f() time.Time { return time.Now() }\n",
 	})
 	expect(t, checkPure(m),
+		"pure health/rules/a.go:5: calls time.Now",
 		"pure notifications/rules/incident/a.go:5: calls time.Now",
 		"pure notifications/rules/heartbeat/a.go:5: calls time.Now",
 		"pure kernel/a.go:5: imports os, which is not in PureImports",

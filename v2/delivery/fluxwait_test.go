@@ -39,7 +39,7 @@ func (c *waitCluster) Read(_ context.Context, ref observe.Ref) (observe.Read, er
 }
 
 func (c *waitCluster) ListNamespace(_ context.Context, ref observe.Ref) (observe.List, error) {
-	if ref != observe.PlatformUnits {
+	if ref != fluxUnits {
 		return observe.List{}, fmt.Errorf("unexpected list of %+v", ref)
 	}
 	c.lists++

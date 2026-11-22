@@ -1,16 +1,18 @@
-package observe
+package rules
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 func healthyGitHub() (WebhookEvidence, WebhookEvidence, ConsoleTokenEvidence) {
 	code := 200
 	hook := Hook{Active: true, Events: []string{"push", "package", "registry_package"}, Host: "flux-webhook.example.test", Code: &code, Message: "OK"}
-	receiver := func(name string) Read {
-		return presentRead(Ref{Namespace: "flux-system", Name: name}, `{"status":{"conditions":[{"type":"Ready","status":"True"}]}}`)
+	receiver := func(name string) observe.Read {
+		return presentRead(observe.Ref{Namespace: "flux-system", Name: name}, `{"status":{"conditions":[{"type":"Ready","status":"True"}]}}`)
 	}
 	push := WebhookEvidence{Receiver: receiver("github"), Host: "flux-webhook.example.test", Repository: "owner/platform", Listing: HookListing{Hooks: []Hook{hook}}}
 	images := WebhookEvidence{Receiver: receiver("app-images"), Host: push.Host, Apps: []RepositoryHooks{{App: "demo-shop", Repository: "samclement/demo-shop", Listing: push.Listing}}}
@@ -30,8 +32,8 @@ func TestPushWebhook(t *testing.T) {
 		{"nonready", func(e *WebhookEvidence) {
 			e.Receiver.Object = []byte(`{"status":{"conditions":[{"type":"Ready","status":"False","message":"no secret"}]}}`)
 		}, CheckBad, "is not Ready: no secret"},
-		{"absent", func(e *WebhookEvidence) { e.Receiver.Status = Absent }, CheckBad, "could not read it"},
-		{"unavailable", func(e *WebhookEvidence) { e.Receiver.Status = Unavailable }, CheckBad, "could not read it"},
+		{"absent", func(e *WebhookEvidence) { e.Receiver.Status = observe.Absent }, CheckBad, "could not read it"},
+		{"unavailable", func(e *WebhookEvidence) { e.Receiver.Status = observe.Unavailable }, CheckBad, "could not read it"},
 		{"missing ready condition", func(e *WebhookEvidence) { e.Receiver.Object = []byte(`{}`) }, CheckBad, "no Ready condition"},
 		{"no hook", func(e *WebhookEvidence) { e.Listing.Hooks = nil }, CheckWarn, "no GitHub webhook on owner/platform calls"},
 		{"disabled", func(e *WebhookEvidence) { e.Listing.Hooks[0].Active = false }, CheckWarn, "is disabled; Flux falls back"},
@@ -65,8 +67,8 @@ func TestImageWebhooks(t *testing.T) {
 		{"nonready", func(e *WebhookEvidence) {
 			e.Receiver.Object = []byte(`{"status":{"conditions":[{"type":"Ready","status":"False","message":"no secret"}]}}`)
 		}, CheckBad, "is not Ready: no secret"},
-		{"absent", func(e *WebhookEvidence) { e.Receiver.Status = Absent }, CheckBad, "could not read it"},
-		{"unavailable", func(e *WebhookEvidence) { e.Receiver.Status = Unavailable }, CheckBad, "could not read it"},
+		{"absent", func(e *WebhookEvidence) { e.Receiver.Status = observe.Absent }, CheckBad, "could not read it"},
+		{"unavailable", func(e *WebhookEvidence) { e.Receiver.Status = observe.Unavailable }, CheckBad, "could not read it"},
 		{"no hook", func(e *WebhookEvidence) { e.Apps[0].Listing.Hooks = nil }, CheckWarn, "no image webhook on samclement/demo-shop; Flux finds its new images within the hour (make app-hooks)"},
 		{"no delivery", func(e *WebhookEvidence) { e.Apps[0].Listing.Hooks[0].Code = nil }, CheckOK, "no delivery yet"},
 		{"failure", func(e *WebhookEvidence) {

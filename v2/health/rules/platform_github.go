@@ -1,4 +1,4 @@
-package observe
+package rules
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // Hook is the read-only webhook evidence. Host is parsed by the adapter, never a secret-bearing URL.
@@ -33,7 +35,7 @@ type RepositoryHooks struct {
 
 // WebhookEvidence is the installed receiver and settings and the hooks read from GitHub.
 type WebhookEvidence struct {
-	Receiver                  Read
+	Receiver                  observe.Read
 	Host, Repository, Problem string
 	Listing                   HookListing
 	Apps                      []RepositoryHooks
@@ -95,9 +97,9 @@ func WebhookHost(domain string) (string, string) {
 	return "flux-webhook." + strings.ToLower(domain), ""
 }
 
-func receiverEntries(read Read) []PlatformEntry {
+func receiverEntries(read observe.Read) []PlatformEntry {
 	status, message := "Unknown", "could not read it"
-	if read.Status == Present {
+	if read.Status == observe.Present {
 		status, message = readyCondition(read.Object)
 	}
 	name := read.Ref.Namespace + "/" + read.Ref.Name

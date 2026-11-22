@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
@@ -26,10 +26,10 @@ func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
 		path   string
 		target *[]byte
 	}{
-		{observe.CheckoutProfile, &checkout.Profile},
-		{observe.CheckoutTeams, &checkout.Teams},
-		{observe.CheckoutAllocation, &checkout.Allocation},
-		{observe.CheckoutFluxSettings, &checkout.FluxSettings},
+		{healthrules.CheckoutProfile, &checkout.Profile},
+		{healthrules.CheckoutTeams, &checkout.Teams},
+		{healthrules.CheckoutAllocation, &checkout.Allocation},
+		{healthrules.CheckoutFluxSettings, &checkout.FluxSettings},
 	} {
 		data, status := c.checkoutFile(filepath.Join(root, file.path))
 		if status != 0 {
@@ -37,10 +37,10 @@ func (c cli) readCheckout(root string) (orchestration.Checkout, int) {
 		}
 		*file.target = data
 	}
-	if status := c.readRecords(filepath.Join(root, observe.CheckoutRecords), checkout); status != 0 {
+	if status := c.readRecords(filepath.Join(root, healthrules.CheckoutRecords), checkout); status != 0 {
 		return orchestration.Checkout{}, status
 	}
-	compiled, status := c.readCompiled(filepath.Join(root, observe.CheckoutCompiled))
+	compiled, status := c.readCompiled(filepath.Join(root, healthrules.CheckoutCompiled))
 	checkout.Compiled = compiled
 	return checkout, status
 }
@@ -89,8 +89,8 @@ func (c cli) readRecords(records string, checkout orchestration.Checkout) int {
 }
 
 // readCompiled reads every compiled instance folder, <app>/<env>, with the objects the checks compare, in order.
-func (c cli) readCompiled(base string) ([]observe.CompiledInstance, int) {
-	compiled := []observe.CompiledInstance{}
+func (c cli) readCompiled(base string) ([]healthrules.CompiledInstance, int) {
+	compiled := []healthrules.CompiledInstance{}
 	apps, status := c.folders(base)
 	if status != 0 {
 		return nil, status
@@ -111,15 +111,15 @@ func (c cli) readCompiled(base string) ([]observe.CompiledInstance, int) {
 	return compiled, 0
 }
 
-func (c cli) compiledInstance(folder, app, environment string) (observe.CompiledInstance, int) {
-	instance := observe.CompiledInstance{Application: app, Environment: environment, Files: map[string][]byte{}}
+func (c cli) compiledInstance(folder, app, environment string) (healthrules.CompiledInstance, int) {
+	instance := healthrules.CompiledInstance{Application: app, Environment: environment, Files: map[string][]byte{}}
 	entries, err := os.ReadDir(folder)
 	if err != nil {
 		fmt.Fprintf(c.diagnostic, "io: checkout: cannot read %s\n", folder)
 		return instance, 1
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !observe.CompiledObject(entry.Name()) {
+		if entry.IsDir() || !healthrules.CompiledObject(entry.Name()) {
 			continue
 		}
 		data, status := c.read(filepath.Join(folder, entry.Name()), filepath.Join(folder, entry.Name()))

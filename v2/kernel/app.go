@@ -5,6 +5,12 @@ import (
 	"regexp"
 )
 
+// StagingEnvironment is the environment that follows each app's newest image.
+const StagingEnvironment = "staging"
+
+// AppLabel names the app an app namespace or ImagePolicy belongs to; its presence selects them.
+const AppLabel = "platform.swhurl.com/app"
+
 // AppID is an app record's content identity: app-sha256 over its canonical encoding.
 type AppID string
 

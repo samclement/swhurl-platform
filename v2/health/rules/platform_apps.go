@@ -1,4 +1,4 @@
-package observe
+package rules
 
 // The checks of the apps: what Git declares for the instances — their records and v2's compiled tree — is what the
 // cluster, the registry and NATS have.
@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // ImageEvidence is what the image-automation check reads: the apps' ImagePolicies, what the checkout's staging
 // release records state, and what the registry says each policy's newest tag is.
 type ImageEvidence struct {
-	Policies List
+	Policies observe.List
 	// Records is each app's staging release record, by app; an app the checkout has no record for is not in it.
 	Records map[string]StagingRecord
 	// Newest is the registry's digest for each Ready policy's newest tag, by policy name.
@@ -40,9 +43,9 @@ type ImagePolicy struct {
 func (p ImagePolicy) Ready() bool { return p.Status == "True" }
 
 // ImagePolicies are the listed policies, by name; none when the list was not read.
-func ImagePolicies(list List) []ImagePolicy {
+func ImagePolicies(list observe.List) []ImagePolicy {
 	found := []ImagePolicy{}
-	if list.Status != Present {
+	if list.Status != observe.Present {
 		return found
 	}
 	for _, item := range list.Items {
@@ -59,7 +62,7 @@ func ImagePolicies(list List) []ImagePolicy {
 		}
 		_ = json.Unmarshal(item, &policy) // the adapter checked each item's identity; a status it cannot read is not Ready
 		status, message := readyCondition(item)
-		found = append(found, ImagePolicy{policy.Metadata.Name, policy.Metadata.Labels[AppLabel], status, message,
+		found = append(found, ImagePolicy{policy.Metadata.Name, policy.Metadata.Labels[kernel.AppLabel], status, message,
 			policy.Status.LatestRef.Tag})
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].Name < found[j].Name })
@@ -67,7 +70,7 @@ func ImagePolicies(list List) []ImagePolicy {
 }
 
 func platformImages(e ImageEvidence) []PlatformEntry {
-	if e.Policies.Status != Present {
+	if e.Policies.Status != observe.Present {
 		return []PlatformEntry{bad("cannot read the apps' ImagePolicies, so no staging deploy can be checked (kubectl -n " +
 			"flux-system get imagepolicies; is image-reflector-controller running? make flux-install)")}
 	}
@@ -91,7 +94,7 @@ func platformImages(e ImageEvidence) []PlatformEntry {
 // platformStaging is whether staging runs the image its policy picked, read from the record that owns the instance:
 // the record states the digest of the image's linux/amd64 manifest, and the registry resolves the picked tag to one.
 func platformStaging(policy ImagePolicy, records map[string]StagingRecord, newest NewestImage) PlatformEntry {
-	stated := CheckoutRecords + "/" + policy.App + "/" + StagingEnvironment + "/release.json"
+	stated := CheckoutRecords + "/" + policy.App + "/" + kernel.StagingEnvironment + "/release.json"
 	record, found := records[policy.App]
 	switch {
 	case !found:
@@ -118,16 +121,16 @@ func platformStaging(policy ImagePolicy, records map[string]StagingRecord, newes
 // IsolationEvidence is what the isolation check reads: the app namespaces, each compiled instance's namespace's
 // ResourceQuotas and NetworkPolicies, and the team registry.
 type IsolationEvidence struct {
-	Namespaces List
+	Namespaces observe.List
 	// Quotas and Policies are each compiled instance's namespace's collections, by namespace.
-	Quotas, Policies map[string]List
+	Quotas, Policies map[string]observe.List
 	// Teams are the registered teams; TeamsProblem says why the registry could not be read.
 	Teams        map[string]bool
 	TeamsProblem string
 }
 
 const isolationUnread = "cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked " +
-	"(kubectl get namespaces -l " + AppLabel + ")"
+	"(kubectl get namespaces -l " + kernel.AppLabel + ")"
 
 // platformIsolation is whether every instance v2 compiled has, live, its namespace with Git's labels, a registered
 // team, the platform quota and a NetworkPolicy on its pods. Namespaces kept for their data after an app was removed
@@ -166,12 +169,12 @@ func platformIsolation(e IsolationEvidence, compiled []CompiledInstance) []Platf
 
 // isolationRead is whether every collection the check needs was read.
 func isolationRead(e IsolationEvidence, compiled []CompiledInstance) bool {
-	if e.Namespaces.Status != Present {
+	if e.Namespaces.Status != observe.Present {
 		return false
 	}
 	for _, instance := range compiled {
 		if namespace := instance.Namespace(); namespace != "" &&
-			(e.Quotas[namespace].Status != Present || e.Policies[namespace].Status != Present) {
+			(e.Quotas[namespace].Status != observe.Present || e.Policies[namespace].Status != observe.Present) {
 			return false
 		}
 	}
@@ -245,7 +248,7 @@ func isolationProblems(e IsolationEvidence, namespace compiledObject, found map[
 const teamLabel = "platform.swhurl.com/team"
 
 // anyItem is whether one of a collection's items satisfies the test.
-func anyItem(list List, test func(compiledObject) bool) bool {
+func anyItem(list observe.List, test func(compiledObject) bool) bool {
 	for _, item := range list.Items {
 		var object compiledObject
 		if json.Unmarshal(item, &object) == nil && test(object) {
@@ -297,8 +300,8 @@ func platformSigning(e SigningEvidence) []PlatformEntry {
 // EventEvidence is what the events check reads: NATS, its stream controller, and the streams and consumers in every
 // namespace an instance declares one in (EventNamespaces), by namespace.
 type EventEvidence struct {
-	Server, Controller Read
-	Streams, Consumers map[string]List
+	Server, Controller observe.Read
+	Streams, Consumers map[string]observe.List
 	// Storage is JetStream's file store as NATS reports it.
 	Storage JetStreamStorage
 }
@@ -328,21 +331,21 @@ func platformEvents(e EventEvidence, compiled []CompiledInstance) []PlatformEntr
 // eventsRead is whether NATS, its controller and every namespace's streams and consumers were read: an absent
 // workload is read, and reported as not running.
 func eventsRead(e EventEvidence, compiled []CompiledInstance) bool {
-	for _, read := range []Read{e.Server, e.Controller} {
-		if read.Status == Unavailable || read.Status == "" {
+	for _, read := range []observe.Read{e.Server, e.Controller} {
+		if read.Status == observe.Unavailable || read.Status == "" {
 			return false
 		}
 	}
 	for _, namespace := range EventNamespaces(compiled) {
-		if e.Streams[namespace].Status != Present || e.Consumers[namespace].Status != Present {
+		if e.Streams[namespace].Status != observe.Present || e.Consumers[namespace].Status != observe.Present {
 			return false
 		}
 	}
 	return true
 }
 
-func eventWorkload(name string, read Read) PlatformEntry {
-	if read.Status == Absent {
+func eventWorkload(name string, read observe.Read) PlatformEntry {
+	if read.Status == observe.Absent {
 		return bad(name + " is missing: " + eventsLost)
 	}
 	if ready, _, _ := readyReplicas(read.Object); ready > 0 {
@@ -381,7 +384,7 @@ func eventObject(e EventEvidence, instance CompiledInstance, file string) (Platf
 
 // EgressEvidence is what the egress check reads: the proxy, and the ports v2's allocation gives the instances.
 type EgressEvidence struct {
-	Proxy Read
+	Proxy observe.Read
 	Ports []InstancePort
 	// Problem says why the allocation could not be read.
 	Problem string
@@ -397,8 +400,8 @@ const egressLost = "apps cannot reach outside the cluster"
 
 func platformEgress(e EgressEvidence, compiled []CompiledInstance) []PlatformEntry {
 	switch e.Proxy.Status {
-	case Present:
-	case Absent:
+	case observe.Present:
+	case observe.Absent:
 		return []PlatformEntry{bad("the egress proxy (egress/egress) is missing: " + egressLost + " (make reconcile UNIT=platform-egress)")}
 	default:
 		return []PlatformEntry{bad("cannot read the egress proxy (egress/egress): " + egressLost + " (make reconcile UNIT=platform-egress)")}

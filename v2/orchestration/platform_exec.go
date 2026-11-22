@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
@@ -33,7 +34,7 @@ func clickstackRef(kind, name string) observe.Ref {
 
 // readPodChecks shares ingestion reads across both groups; no raw key/URI/stdout/error survives
 // the pure comparison. Independent retention queries run even when another query failed.
-func readPodChecks(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readPodChecks(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	readIngestion(ctx, inputs, scope)
 	if err := readRegistration(ctx, inputs, scope); err != nil {
 		return err
@@ -53,7 +54,7 @@ func secretValue(ctx context.Context, data kube.Data, namespace, name, key strin
 	return found[0].Data[key], false
 }
 
-func readIngestion(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) {
+func readIngestion(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) {
 	collector, collectorFailed := secretValue(ctx, inputs.Data, "logging", "clickstack-ingestion-key", "CLICKSTACK_INGESTION_KEY")
 	uri, uriFailed := secretValue(ctx, inputs.Data, clickstackNamespace, mongoURISecret, "connectionString.standard")
 	var output []byte
@@ -65,7 +66,7 @@ func readIngestion(ctx context.Context, inputs PlatformAllInputs, scope *observe
 		output, failed = podOutput(ctx, inputs.Executor, kube.ExecRequest{Namespace: clickstackNamespace, Pod: "clickstack-mongodb-0", Container: "mongod",
 			Command: []string{"mongosh", "--quiet", "--nodb", "--norc", "--file", "/dev/stdin"}, Stdin: script})
 	}
-	scope.Ingestion = observe.CompareIngestion(collector, collectorFailed, output, failed)
+	scope.Ingestion = healthrules.CompareIngestion(collector, collectorFailed, output, failed)
 }
 
 func podOutput(ctx context.Context, executor kube.Executor, request kube.ExecRequest) ([]byte, bool) {
@@ -79,12 +80,12 @@ func podOutput(ctx context.Context, executor kube.Executor, request kube.ExecReq
 	return result.Stdout, false
 }
 
-func readRegistration(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readRegistration(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	deployment, err := inputs.Reader.Read(ctx, clickstackRef("Deployment", "clickstack-app"))
 	if err != nil {
 		return err
 	}
-	selector := observe.ClickStackSelector(deployment)
+	selector := healthrules.ClickStackSelector(deployment)
 	if selector == "" {
 		return nil
 	}
@@ -92,25 +93,25 @@ func readRegistration(ctx context.Context, inputs PlatformAllInputs, scope *obse
 	if err != nil {
 		return err
 	}
-	pod := observe.ClickStackPod(pods)
+	pod := healthrules.ClickStackPod(pods)
 	if pod == "" {
 		return nil
 	}
 	output, failed := podOutput(ctx, inputs.Executor, kube.ExecRequest{Namespace: clickstackNamespace, Pod: pod, Container: "app",
 		Command: []string{"node", "--input-type=module", "-"}, Stdin: []byte(installationScript)})
-	scope.Registration = observe.ParseRegistration(output, failed)
+	scope.Registration = healthrules.ParseRegistration(output, failed)
 	return nil
 }
 
-func readRetention(ctx context.Context, inputs PlatformAllInputs, scope *observe.ScopeEvidence) error {
+func readRetention(ctx context.Context, inputs PlatformAllInputs, scope *healthrules.ScopeEvidence) error {
 	for _, query := range []struct {
 		text   string
-		judge  func([]byte, bool) observe.PlatformEntry
-		target *observe.PlatformEntry
+		judge  func([]byte, bool) healthrules.PlatformEntry
+		target *healthrules.PlatformEntry
 	}{
-		{telemetryQuery, observe.TelemetryTTL, &scope.Retention.Telemetry},
-		{systemLogsQuery, observe.SystemLogTTL, &scope.Retention.SystemLogs},
-		{mergesQuery, observe.MergeFailures, &scope.Retention.Merges},
+		{telemetryQuery, healthrules.TelemetryTTL, &scope.Retention.Telemetry},
+		{systemLogsQuery, healthrules.SystemLogTTL, &scope.Retention.SystemLogs},
+		{mergesQuery, healthrules.MergeFailures, &scope.Retention.Merges},
 	} {
 		output, failed := podOutput(ctx, inputs.Executor, kube.ExecRequest{Namespace: clickstackNamespace, Pod: "clickstack-clickhouse-clickhouse-0-0-0", Container: "clickhouse-server",
 			Command: []string{"clickhouse-client", "-q", query.text}})
@@ -120,7 +121,7 @@ func readRetention(ctx context.Context, inputs PlatformAllInputs, scope *observe
 	if err != nil {
 		return err
 	}
-	if name := observe.MongoVolumeName(claim); name != "" {
+	if name := healthrules.MongoVolumeName(claim); name != "" {
 		scope.Retention.Volume, err = inputs.Reader.Read(ctx, observe.Ref{APIVersion: "v1", Kind: "PersistentVolume", Name: name})
 	}
 	return err

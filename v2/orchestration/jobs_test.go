@@ -99,8 +99,10 @@ func (s *jobRecords) kept(t *testing.T, id int) pages.Job {
 
 // auditLog is the registry's audit events, read while a job may still be writing them.
 type auditLog struct {
-	mu     sync.Mutex
-	events []JobEvent
+	mu       sync.Mutex
+	events   []JobEvent
+	finished chan struct{}
+	finish   sync.Once
 }
 
 // add keeps one event.
@@ -108,6 +110,20 @@ func (a *auditLog) add(event JobEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.events = append(a.events, event)
+	if event.State != "started" {
+		a.finish.Do(func() { close(a.finished) })
+	}
+}
+
+// awaitFinished waits for the first terminal audit event, after the final store save attempt.
+// Seeing the in-memory terminal state alone does not mean either effect has completed.
+func (a *auditLog) awaitFinished(t *testing.T) {
+	t.Helper()
+	select {
+	case <-a.finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("job never emitted its terminal audit event")
+	}
 }
 
 // all is the events so far.
@@ -119,7 +135,7 @@ func (a *auditLog) all() []JobEvent {
 
 // jobInputs is a registry with a fixed clock, a real pause and its audit events collected.
 func jobInputs(store *jobRecords) (JobsInputs, *auditLog) {
-	audit := &auditLog{}
+	audit := &auditLog{finished: make(chan struct{})}
 	now := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
 	return JobsInputs{Store: store, Owner: "console-pod", Now: func() time.Time { return now },
 		Sleep: time.Sleep, Audit: audit.add}, audit
@@ -164,6 +180,7 @@ func TestJobsRunOneJobPerTargetAndRecordItsLines(t *testing.T) {
 	if strings.Join(ended.Lines, ",") != "first,second" || ended.Link != "https://github.com/owner/repo/pull/42" {
 		t.Fatalf("job %+v", ended)
 	}
+	audit.awaitFinished(t)
 	if kept := store.kept(t, 1); kept.State != "succeeded" || len(kept.Lines) != 2 || kept.Owner != "console-pod" {
 		t.Fatalf("record %+v", kept)
 	}
@@ -191,6 +208,7 @@ func TestAJobsErrorIsItsLastLine(t *testing.T) {
 	if failed.Lines[len(failed.Lines)-1] != "[ERROR] Kustomization gw reconciliation failed: health check failed" {
 		t.Fatalf("lines %q", failed.Lines)
 	}
+	audit.awaitFinished(t)
 	lines := audit.all()
 	if last := lines[len(lines)-1]; last.State != "failed" || last.ID != 1 {
 		t.Fatalf("audit %+v", lines)

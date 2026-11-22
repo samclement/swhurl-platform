@@ -1,10 +1,11 @@
 id: 37
 title: "Observe: report delivery currentness instead of duplicating the revision verdict"
-state: ready
+state: done
 scope:
   - v2/observe/explain.go
   - v2/observe/explain_test.go
   - v2/observe/state_test.go
+  - v2/archtest/api.txt
   - docs/v2-status.md
 checks:
   - cd v2 && go test ./observe/... ./delivery/... -count=1
@@ -16,3 +17,27 @@ notes:
   - at: 2026-11-22T15:17:17.678Z
     commit: 73add754a641
     text: "Approved duplicate-verdict correction: revisionFindings already obtains deliveryrules.CurrentnessOf; derive unit.revision from that result, delete observe revision parser/appliedCommit/unitReason and duplicate reasons. Mapping: applied=>Applied/empty; unaffected=>Unaffected/complete_comparison_unaffected; pending+revision_not_applied=>NotApplied/reason; pending+relevant_path_changed=>Different/empty; unknown/not_assessed=>NotAssessed/delivery reason. Use exported delivery reason constants. Preserve finding order index 1, observation Version 5, JSON and error text. Existing state/report tests must pass without weakening; add table cases for unaffected/pending/unknown. No new pure edge needed."
+  - at: 2026-11-22T16:06:18.039Z
+    commit: f29df56fbb3c
+    text: "Pre-edit inspection: delivery owns currentness; removing observe's five revision-reason constants requires only explain_test.go/state_test.go consumer updates, both in scope; no other Go consumers found. Contract conflict: delivery returns unknown/comparison_not_supplied for a different commit without comparison evidence, but existing TestTheAppliedRevisionIsCompared and TestInstanceStates (a commit elsewhere) require Different/IsNotRunning and Updating. Approved mapping instead requires NotAssessed/Unknown. Awaiting decision before edits; report/version/error tests need no scope expansion. Task 38 owns canonical documentation integration."
+  - at: 2026-11-22T16:20:24.927Z
+    commit: f29df56fbb3c
+    text: "Contract question: different commit without comparison evidence -> Operator requested Opus 5.5 review then continuation. Review rejected changing no-evidence status to Unknown: docs/iteration-2-plan.md:1123 says unknown relevance leaves status updating; :1127 keeps host status without --changes conservative; make app-status supplies no comparison. Preserve existing no-evidence tests unchanged. Map delivery currentness for presentation in revisionFindings: different-commit pending or unknown with comparison_* / relevance_unknown reason => Different with empty reason (existing Updating/IsNotRunning semantics); NotAssessed only for unrecognized revision, no commit supplied or unread unit. Preserve explicit applied/unaffected mappings and other existing behavior, using delivery-owned reason constants, not a second commit parser/verdict. Add evidence-present and no-evidence regression cases without weakening existing tests. Reviewer found no Version 5/JSON/error format change needed. This resolves prior mapping conflict in favor of documented behavior preservation; if delivery states cannot be distinguished without duplicated business decisions, stop and surface it."
+  - at: 2026-11-22T16:22:59.173Z
+    commit: f29df56fbb3c
+    text: Implemented approved conservative presentation of delivery currentness; no comparison/relevance exemption remains Different/Updating, exact applied and proved-unaffected stay positive, missing/unrecognised/unread revision evidence stays unassessed. Removed observe's duplicate parser/unitReason and five reason constants; only in-scope test consumers changed to delivery constants. Comparison regression table checks findings/order, currentness literal/reasons, verdict and State; short digest parts now agree with delivery's unrecognised_revision (old parser incorrectly treated them as known Different). Targeted observe/delivery suite passed before and after reshape. No live effects. Task 38 must integrate canonical status/evidence/workstream docs; docs/v2-status.md intentionally untouched here per operator ownership.
+  - at: 2026-11-22T16:24:34.643Z
+    commit: f29df56fbb3c
+    text: "Completion blocked by missing API snapshot scope: registered targeted tests passed; make check-v2 reached all-package tests and failed only TestPublicAPI on the five intentionally deleted observe reason constants (../../../.tasks/logs/37-2.log:42-52). My pre-edit Go-consumer audit missed v2/archtest/api.txt. That file needs five approved removals/regeneration to reflect the ownership move; no test should be weakened or aliases restored. Request scope addition v2/archtest/api.txt, then run documented TestPublicAPI -update and re-run tk done under machine hold. Task remains active with three in-scope code/test files modified; docs untouched for task 38."
+  - at: 2026-11-22T16:25:36.030Z
+    commit: f29df56fbb3c
+    text: Add API snapshot scope for removal of five approved duplicate observe constants? -> Operator approved v2/archtest/api.txt. Regenerate through existing TestPublicAPI update command and rerun registered task checks; do not weaken checks.
+  - at: 2026-11-22T16:25:50.984Z
+    commit: f29df56fbb3c
+    text: "done: Observe presents delivery currentness without its duplicate parser or five reason constants; API snapshot updated. Conservative no-comparison Updating preserved; comparison and malformed-revision regressions added. Registered observe/delivery tests and check-v2 passed. Version 5/JSON/error formats unchanged; no live verification."
+  - at: 2026-11-22T16:25:50.984Z
+    commit: f29df56fbb3c
+    text: "followup: Task 38 owns canonical documentation integration: record delivery-owned revision currentness, conservative Updating without comparison/relevance proof, and unrecognised short digest handling in status/evidence/workstreams."
+  - at: 2026-11-22T16:27:34.180Z
+    commit: f29df56fbb3c
+    text: branch dsa/01M8201MHEAPE54DHRPVSCNGN2/task-37

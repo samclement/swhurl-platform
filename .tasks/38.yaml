@@ -23,3 +23,6 @@ notes:
   - at: 2026-11-22T15:53:16.027Z
     commit: bd06a136246e
     text: "Carry task 35 followups into existing docs scope: operations.md/contributing.md five deleted observe/platform paths; iteration-2-plan.md ownership text; dated current-state evidence and workstreams synchronization. Broader make check-docs reports workload-identity-status.md Uncommitted:none due broad registry scope: do not silently expand scope or claim full check passes; report remaining blocker if still applicable. Registered task 35 checks passed."
+  - at: 2026-11-22T16:27:34.449Z
+    commit: f29df56fbb3c
+    text: "Task 37 completion followup: document delivery-owned revision currentness; conservative Updating remains without comparison/relevance proof per Opus review and existing plan contract. Unrecognized short digest now follows delivery unrecognised_revision rather than old duplicate parser treating it as known Different; record this explicitly. Version 5/JSON/error formats unchanged; targeted suite and check-v2 passed on worker branch."

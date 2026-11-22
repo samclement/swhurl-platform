@@ -3016,7 +3016,7 @@ and effects unchanged and its existing tests moved with the code they test.
 
 | Slice | Capability | Operation followed through the move | State |
 | --- | --- | --- | --- |
-| 1 | recovery | `swhurl-v2 restore` (`make restore-sqlite`) | code moved, offline; D1 open |
+| 1 | recovery | `swhurl-v2 restore` (`make restore-sqlite`) | code moved and one archive verdict (D1 decided), offline |
 | 2 | delivery | `swhurl-v2 promote`; one "did this release land?" verdict that health and notifications report | proposed |
 | 3 | notifications | incident, heartbeat and notify workflows | proposed |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | proposed |
@@ -3046,9 +3046,12 @@ v2/cmd/swhurl-v2/       restore's flags, reading the operator's files, wiring an
   `adapters/s3` and `cmd/swhurl-v2` no longer define or decide archive eligibility. The navigation test: a failed
   `sqlite-backups` check or a `restore: incomplete/...` line points to `recovery/rules` for the contract, its
   implementation and its tests.
-- **Open decision (D1): one archive verdict.** Today two rules answer "is there a fresh SQLite archive?". Restore
-  and app status (`recovery/rules`) take the newest `*.db.age` by S3's `LastModified`, metadata or not, and refuse
-  it later if its metadata is missing; `verify-platform`'s `sqlite-backups` check (`observe/platform_store.go`)
-  counts an archive only once its `sqlite-<UTC>.json` is beside it, aged by the stamp in its name. Platform
-  verification reuses recovery's verdict only once one rule is chosen; until then both stay, the second named as a
-  duplicate in its own comment.
+- **Decision (D1), 22 November 2026: one archive verdict.** Restore and app status used to take the newest
+  `*.db.age` by S3's `LastModified` and refuse it later if its metadata was missing, while `verify-platform`'s
+  `sqlite-backups` check counted an archive only once its metadata was beside it, aged by the stamp in its name.
+  The operator chose one rule, owned by `recovery/rules`: an archive counts only when its metadata
+  (`sqlite-<UTC>.json` beside `sqlite-<UTC>.db.age`) is listed, aged by S3's `LastModified`. A half-uploaded
+  newest archive gives way to the previous complete one for restore and app status; an archive named with `--from`
+  (`FROM=`) is chosen without that test, so a restore still refuses it as `incomplete/archive_metadata_absent`.
+  Platform verification reuses the verdict: `sqlite-backups` through `rules.InstanceArchive`, MongoDB's backups
+  through `rules.NewestArchive` with their `.archive.gz.age` suffix, so `observe` keeps no archive rule of its own.

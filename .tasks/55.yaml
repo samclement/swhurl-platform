@@ -39,3 +39,6 @@ notes:
   - at: 2026-11-22T18:47:18.080Z
     commit: 92a9053edd5f
     text: "Carry task 48 followup: iteration-2-plan.md:327 says connectivity's rules live in kernel; now v2/connectivity/rules reads the egress allocation and resolution documents, kernel keeps their types. Dated current-state entries stay historical."
+  - at: 2026-11-22T19:04:25.567Z
+    commit: 3218ce327a10
+    text: "Carry task 50 followup: iteration-2-plan.md still places creation in orchestration and omits the apps -> provisioning edge; apps now owns creation (apps.Create). Known copies (follow-ups, do not claim resolved): apps/create.go encryptedSeed copied from orchestration/mint.go; delivery and apps each read an image's declaration/source commit."

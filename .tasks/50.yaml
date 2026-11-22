@@ -1,6 +1,6 @@
 id: 50
 title: Apps owns creation, writing records through provisioning
-state: ready
+state: done
 scope:
   - v2/apps/create*.go
   - v2/orchestration/create.go
@@ -23,3 +23,18 @@ notes:
   - at: 2026-11-22T18:19:36.700Z
     commit: 8aba040c99aa
     text: "Operator-approved slice 5 rest. Principle: capabilities own decisions and sequencing (where you go to change it); pure rules packages hold shared verdicts; console stays in orchestration (deferred to its own slice). No live checks; conductor runs no post-merge checks; make check-docs not registered. Leave docs/v2-status.md deferred-row cleanup for task 55 unless your scope says otherwise; page is near its 250-line cap."
+  - at: 2026-11-22T19:02:43.663Z
+    commit: 3218ce327a10
+    text: "done: Create moved from orchestration to v2/apps (apps.Create/CreateInputs/Created/Refusal); swhurl-v2 create calls it; new apps→provisioning workflow edge with fixture test; encryptedSeed copied from orchestration/mint.go; added no-recipient refusal test; api.txt and v2-status row updated. Offline only, no live create."
+  - at: 2026-11-22T19:02:43.663Z
+    commit: 3218ce327a10
+    text: "followup: delivery/deploy.go revisionOf/declarationOf comments say 'Copied from orchestration/create.go': now apps/create.go; one owner for reading an image's declaration and revision (delivery and apps each copy it)."
+  - at: 2026-11-22T19:02:43.663Z
+    commit: 3218ce327a10
+    text: "followup: encryptedSeed is now copied in apps/create.go and orchestration/mint.go; move it to provisioning (owner of the seed beside the record) when mint moves, and drop mint.go's 'a mint and a create' wording."
+  - at: 2026-11-22T19:02:43.663Z
+    commit: 3218ce327a10
+    text: "followup: docs/iteration-2-plan.md capability map (apps row) and workflow-edge prose still name creation in orchestration and list only orchestration→health/apps edges; add apps→provisioning."
+  - at: 2026-11-22T19:04:25.161Z
+    commit: 3218ce327a10
+    text: branch dsa/01M829SQY5Y9R5JP90JASVP66H/task-50

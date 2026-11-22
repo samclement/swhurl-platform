@@ -1,6 +1,6 @@
 id: 5
 title: record D1 as decided (metadata rule for both) and the behaviour change it makes
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/v2-status.md
@@ -18,3 +18,12 @@ notes:
   - at: 2026-11-22T11:33:09.524Z
     commit: 15078dc9dd19
     text: "Replaces task 3 (read its notes). Record D1 as decided (operator chose option 1): one rule, an archive counts only with its metadata; restore and app status fall back to the previous complete archive; a --from archive without metadata is still refused; platform verification (sqlite-backups and MongoDB backups) reuses recovery's verdict. Pointers: iteration-2-plan.md §36 row 1 loses 'D1 open' and the 'Open decision (D1)' paragraph becomes the dated decision; operations.md:317 restore-sqlite text describes what is (task 1 followup: the newest without listed metadata is skipped for the previous complete one; only a FROM= archive is refused as incomplete); current-state.md's 'D1 ... is open' becomes a dated entry naming the checks that ran (nothing live changed); v2-status.md Gate/Uncommitted lines and row 96, and the Go-replacement row in workstreams.md, no longer name D1 as the next gate. make check-docs is not a check here because it fails while the tree is uncommitted; run it if useful but don't treat that failure as yours."
+  - at: 2026-11-22T11:43:10.510Z
+    commit: ddee28ae08f3
+    text: "done: D1 recorded as decided: plan §36 row 1 and dated decision paragraph; operations.md restore/verify text says newest complete archive wins, FROM= without metadata refused, aged by S3 time; new current-state entry; v2-status Gate/Uncommitted (none: slice is committed on v2-recovery-slice) and row 96; workstreams row. check-v2 passed; nothing live verified."
+  - at: 2026-11-22T11:43:10.510Z
+    commit: ddee28ae08f3
+    text: "followup: make check-docs fails only on workload-identity-status.md 'Uncommitted' while these docs are uncommitted; clears on commit. Gate now reads 'review capability slice 1 (recovery) and merge it to main'; update v2-status and workstreams when it lands on main."
+  - at: 2026-11-22T11:43:54.708Z
+    commit: ddee28ae08f3
+    text: branch dsa/01M81GX1WGA9VWGM689C5D793D/task-5

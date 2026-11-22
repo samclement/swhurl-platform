@@ -38,3 +38,6 @@ notes:
   - at: 2026-11-22T21:14:28.437Z
     commit: 837a4b265f1a
     text: branch dsa/01M82H53ED75ESV2FJ7SCZ3W49/task-61
+  - at: 2026-11-22T21:14:45.319Z
+    commit: 7c4a72c646c7
+    text: Operator authorized a separate bounded kube cancellation-test investigation after recurrence. Task 61 is complete and merged at 7c4a72c6; no extension of documentation-task scope. Conductor will use fresh read-only scout to define investigation task; fixes require separately approved scope.

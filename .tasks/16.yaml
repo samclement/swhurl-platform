@@ -1,6 +1,6 @@
 id: 16
 title: The landed-revision verdict (currentness and its comparison evidence) moves to delivery/rules
-state: ready
+state: done
 scope:
   - v2/delivery/rules/changes.go
   - v2/delivery/rules/changes_test.go
@@ -45,3 +45,9 @@ notes:
       Question from worker: where do the Explain-level currentness tests and TestPromotionReadiness... go once observe/changes_test.go is deleted? -> Option 1: observe/report_test.go (task 12 owns it and moves TestPromotionReadiness from there); task re-created with v2/observe/report_test.go in scope because tk cannot widen scope.
       ---
       Work is done and uncommitted in this worktree; all five checks plus the three greps pass (make check-v2 exit 0). Placement: observe/changes.go moved to delivery/rules/changes.go (package rules, reusing rules.go's invalid/repositoryPath/containsField/appliedCommit/unitReason; ChangeScope.validate exported as Validate because observe's Target.validate calls it; changeScopeOf stays in observe/explain.go). Pure tests (CurrentnessOf table, DecodeChanges strictness, malformed-proof refusal, endpoint mismatch) are in delivery/rules/changes_test.go. Explain-level tests (unaffectedReport, TestUnaffectedNeverWaivesUnhealthyEvidence, TestExplainRefusesInvalidProof…, TestPromotionReadinessUsesReviewedSelectedAndRunningDigest, TestPromotionReadinessNeedsTheReviewedDigestRunning) moved to observe/report_test.go per operator option 1, so task 12 moves TestPromotionReadiness* from report_test.go, not changes_test.go. Outside packages import delivery/rules as deliveryrules (recovery/rules already owns the name rules). Error text unchanged: rules.Error with Code invalid prints 'invalid: field: reason' like observe.Error; cmd status_all_test asserts 'invalid: changes:'. JSON unchanged (Version 5).
+  - at: 2026-11-22T12:44:46.511Z
+    commit: acf86f205705
+    text: "done: observe/changes.go moved to delivery/rules/changes.go (Currentness, Changes, Comparison, ChangeScope, DecodeChanges, CurrentnessOf; ChangeScope.Validate exported for observe.Target). Pure tests in delivery/rules/changes_test.go; Explain-level tests in observe/report_test.go. Callers import deliveryrules. JSON (Version 5) and error text unchanged. No live run."
+  - at: 2026-11-22T12:46:36.170Z
+    commit: d48585b954e7
+    text: branch dsa/01M81M5YMT9K5WW9JHJ0J6YMJB/task-11

@@ -1,12 +1,12 @@
-package orchestration
+package apps
 
 import (
 	"bytes"
-	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // InstanceInputs is one instance's documents and the file its record is written to. A use case that changes a

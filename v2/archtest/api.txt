@@ -478,12 +478,19 @@ adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient stri
 adapters/sops: type Error struct {Reason string}
 apps: func (*Refusal) Error() string
 apps: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
+apps: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
+apps: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
 apps: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
 apps: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
+apps: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
+apps: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
+apps: type InstanceInputs struct {provisioningrules.Inputs InstancePath string}
 apps: type Refusal struct {Subject, Reason string}
 apps: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
+apps: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
+apps: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 apptemplatetest: const AppLabel = "platform.swhurl.com/app"
 apptemplatetest: const Bad Level = "bad"
 apptemplatetest: const Claim = Web
@@ -1445,7 +1452,6 @@ orchestration: func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, re
 orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
-orchestration: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
@@ -1462,7 +1468,6 @@ orchestration: func Remove(inputs RemovalInputs, destination string, writer file
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
-orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
 orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
@@ -1491,15 +1496,12 @@ orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data Cli
 orchestration: type DashboardReport struct {Lines []DashboardLine}
 orchestration: type DestroyInputs struct {Reader kube.Reader Writer kube.Writer Secrets kube.SecretNamer Target datadestroy.Target DryRun bool Now func() time.Time Sleep func(time.Duration)}
 orchestration: type DestroyOutcome struct {Volume string Made []datadestroy.Change}
-orchestration: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
-orchestration: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
 orchestration: type FlagCard struct {Rows []FlagRow Problem string}
 orchestration: type FlagOverride struct {Value any Readable bool StoredAt time.Time}
 orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bool Overridden bool Override FlagOverride AgeDays int Stale bool Effective any}
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type FluxRelease struct {Namespace string Name string}
-orchestration: type InstanceInputs struct {provisioningrules.Inputs InstancePath string}
 orchestration: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
 orchestration: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
 orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
@@ -1521,8 +1523,6 @@ orchestration: type Removal struct {Application, Environment string Written []fi
 orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
-orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
-orchestration: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
 orchestration: type TeamScenarioInputs struct {Instances []provisioningrules.Inputs Environment string Executor kube.Executor}
 pages: const ConsoleAppsRoot = "v2-apps/instances"
 pages: const ConsoleAuthFolder = "platform/auth"

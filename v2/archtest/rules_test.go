@@ -136,8 +136,8 @@ var Layers = map[string]int{
 	// The provisioning capability: writing an instance's folder and records, and its pure compilation of them.
 	"provisioning": 2, "provisioning/rules": 0,
 
-	// The apps capability: its status use cases, comparing the cluster with an instance's records, and creation, which
-	// writes a new app's first records from the image it publishes.
+	// The apps capability: its status use cases, comparing the cluster with an instance's records, and creation
+	// and editing, which write an app's records through provisioning.
 	"apps": 2,
 
 	// The connectivity capability: its declaration-change use case (what a connect, disconnect or allow writes), its
@@ -175,8 +175,9 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // must be declared use-case packages; self edges and cycles are forbidden. The console's composition stays in
 // orchestration: ConsoleChecks invokes health's collector and ConsoleStatus apps' status of every instance;
 // reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
-// so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, orchestration's edit
-// and delivery's deploy and promote write through it.
+// so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
+// and delivery's deploy and promote write through it. Orchestration still uses provisioning's records-root constant
+// when minting an instance's seed.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps", "provisioning"},
 	"delivery":      {"provisioning"},

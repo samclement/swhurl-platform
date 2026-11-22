@@ -33,3 +33,6 @@ notes:
   - at: 2026-11-22T18:30:47.494Z
     commit: f2fac03fb879
     text: "Carry task 46 followup: docs now false after provisioning owns writing: iteration-2-plan.md capability-map row (writers in orchestration), the slice-5 notes, and current-state/v2-status mentions of delivery/write.go (deleted). v2/provisioning (layer 2) owns CompileInto/WriteCompiled/Documents/InstanceDocuments/RecordFiles; edges orchestration,delivery->provisioning. Known leftovers (operator follow-ups, do not claim resolved): provisioning.Documents duplicates provisioning/rules' private documents(); delivery/delivery.go keeps Refusal/reasonOf/unavailable copied from orchestration/usecase.go."
+  - at: 2026-11-22T18:36:35.182Z
+    commit: da9887ae45b5
+    text: "Carry task 47 followup: iteration-2-plan.md capability map (~line 327) and layout paragraph (~354) still name calls/events; now v2/connectivity/rules/calls and v2/connectivity/rules/events."

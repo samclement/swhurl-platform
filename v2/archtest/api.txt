@@ -726,7 +726,6 @@ delivery: func (*Refusal) Error() string
 delivery: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 delivery: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 delivery: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
-delivery: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 delivery: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 delivery: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
 delivery: type FluxWaitInputs struct {Reader kube.Reader Timeout time.Duration Poll time.Duration Now func() time.Time Sleep func(time.Duration) Progress func(FluxWaitLine)}
@@ -1420,7 +1419,6 @@ orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
-orchestration: func CompileInto(inputs provisioningrules.Inputs, destination string, writer files.Writer) (Result, error)
 orchestration: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
@@ -1461,8 +1459,6 @@ orchestration: func SetTeam(inputs TeamInputs, destination string, writer files.
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
 orchestration: func TeamScenario(ctx context.Context, inputs TeamScenarioInputs) ([]teamscenario.Line, error)
 orchestration: func UnreachableFlags(environment string, flags []producer.Flag, declarationProblem string, reason error, now time.Time) FlagCard
-orchestration: func WithEventsSecret(compiled kernel.Compilation, secret []byte) ([]kernel.File, error)
-orchestration: func WithOffers(manifests []kernel.File, documents []kernel.File) ([]kernel.File, error)
 orchestration: type AppHookOutcome struct {Application, Repository string State kernel.ImageHookState Problem string}
 orchestration: type AppHooksInputs struct {Staging map[string][]byte Owner, HookHost string GitHubToken, HookToken string DryRun bool Repos github.RepositoryWriter}
 orchestration: type AppRepoInputs struct {Name, Type, Stack, Description string Owner, Identity, PlatformRepository string Settings []string Resume, DryRun bool Contract []byte Work string Token, ReposToken, HookToken, HookHost string Source github.Console Renderer copier.Renderer Repos github.RepositoryWriter Images func(image string) (registry.Reader, error) Now func() time.Time Sleep func(time.Duration) Note func(string)}
@@ -1518,7 +1514,6 @@ orchestration: type RegistryInputs struct {Registry []byte RegistryPath string A
 orchestration: type RegistryOutcome struct {Team string Action kernel.TeamAction Channel string Written []files.Outcome}
 orchestration: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
 orchestration: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
-orchestration: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 orchestration: type Stack struct {Name, Repository, Revision, Description string}
 orchestration: type StackContract struct {Copier string Stacks []Stack Types []AppType}
 orchestration: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
@@ -1801,6 +1796,16 @@ provisioning/rules: func Compile(inputs Inputs) (kernel.Compilation, error)
 provisioning/rules: func Declare(inputs Inputs) (Declaration, error)
 provisioning/rules: type Declaration struct {Application, Environment string Declared kernel.Declared}
 provisioning/rules: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
+provisioning: const RecordsRoot = "v2-records"
+provisioning: func (*Refusal) Error() string
+provisioning: func CompileInto(inputs rules.Inputs, destination string, writer files.Writer) (Result, error)
+provisioning: func Complete(inputs rules.Inputs) (kernel.Compilation, []kernel.File, error)
+provisioning: func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error)
+provisioning: func InstanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle, compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error)
+provisioning: func RecordFiles(root, application, environment string, app, release, instance, eventsSecret []byte, offers []kernel.File) []kernel.File
+provisioning: func WriteCompiled(destination string, compiled kernel.Compilation, written []kernel.File, writer files.Writer) ([]files.Outcome, error)
+provisioning: type Refusal struct {Subject, Reason string}
+provisioning: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 recovery/rules: const BackupAbsent = "absent"
 recovery/rules: const BackupCurrent = "current"
 recovery/rules: const BackupFailing = "failing"

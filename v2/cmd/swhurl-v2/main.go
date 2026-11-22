@@ -31,6 +31,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 const usage = `usage:
@@ -1351,7 +1352,7 @@ func (c cli) compile(r request) int {
 		if c.appTreeRefused(r.out) {
 			return 2
 		}
-		result, err := orchestration.CompileInto(inputs, r.out, c.writer)
+		result, err := provisioning.CompileInto(inputs, r.out, c.writer)
 		return c.wrote(result.Written, err)
 	}
 	compiled, err := provisioningrules.Compile(inputs)

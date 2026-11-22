@@ -6,6 +6,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // DeployInputs is one staging instance's delivery inputs: its records, the app's record (its team), the
@@ -56,7 +57,7 @@ func newDeployRequest(inputs DeployInputs) (deployRequest, error) {
 	if request.profile, err = kernel.DecodeProfile(inputs.Profile); err != nil {
 		return deployRequest{}, err
 	}
-	request.connections, request.egress, err = documents(inputs.Calls, inputs.Egress, request.instance.Application,
+	request.connections, request.egress, err = provisioning.Documents(inputs.Calls, inputs.Egress, request.instance.Application,
 		request.instance.Environment)
 	return request, err
 }
@@ -98,11 +99,11 @@ func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reade
 	if err != nil {
 		return Deploy{}, err
 	}
-	documents, err := instanceDocuments(selected, candidate, compiled, declaration.OfferedFiles())
+	documents, err := provisioning.InstanceDocuments(selected, candidate, compiled, declaration.OfferedFiles())
 	if err != nil {
 		return Deploy{}, err
 	}
-	outcomes, err := writeCompiled(destination, compiled, documents, writer)
+	outcomes, err := provisioning.WriteCompiled(destination, compiled, documents, writer)
 	return Deploy{Tag: tag.Name, Release: candidate, Instance: selected, Compilation: compiled,
 		Written: outcomes, Changed: true}, err
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // MintInputs is one mint's inputs: the instance record, the profile that states the platform's recipient, the
@@ -50,7 +51,7 @@ func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter 
 	if err != nil {
 		return MintOutcome{}, err
 	}
-	folder := recordsRoot + "/" + updated.Application + "/" + updated.Environment
+	folder := kernel.RecordFolder(provisioning.RecordsRoot, updated.Application, updated.Environment)
 	written, err := writer.Write(destination, []kernel.File{
 		{Path: folder + "/" + kernel.EventsSecretFile, Document: encrypted},
 		{Path: folder + "/instance.json", Document: record},

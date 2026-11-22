@@ -6,6 +6,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // InstanceInputs is one instance's documents and the file its record is written to. A use case that changes a
@@ -63,7 +64,7 @@ func Edit(editable Editable, destination string, writer files.Writer) (Edition, 
 	}
 	inputs := editable.Inputs
 	inputs.Instance = record
-	compiled, files, err := compileComplete(inputs)
+	compiled, files, err := provisioning.Complete(inputs)
 	if err != nil {
 		return Edition{Compilation: compiled}, err
 	}
@@ -71,7 +72,7 @@ func Edit(editable Editable, destination string, writer files.Writer) (Edition, 
 		Before: before, After: after, Compilation: compiled, ResolutionStale: relationshipsChanged(before, after),
 		AllocationStale: !equal(before.Grants.Egress, after.Grants.Egress)}
 	written := append([]kernel.File{{Path: editable.InstancePath, Document: record}}, files...)
-	result.Written, err = writeCompiled(destination, compiled, written, writer)
+	result.Written, err = provisioning.WriteCompiled(destination, compiled, written, writer)
 	return result, err
 }
 
@@ -124,12 +125,12 @@ func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamCh
 			return result, err
 		}
 		one.App = app
-		compiled, rendered, err := compileComplete(one.Inputs)
+		compiled, rendered, err := provisioning.Complete(one.Inputs)
 		if err != nil {
 			return result, err
 		}
 		result.Instances = append(result.Instances, spec)
-		outcomes, err := writeCompiled(destination, compiled, append(pending, rendered...), writer)
+		outcomes, err := provisioning.WriteCompiled(destination, compiled, append(pending, rendered...), writer)
 		result.Written = append(result.Written, outcomes...)
 		if err != nil {
 			return result, err

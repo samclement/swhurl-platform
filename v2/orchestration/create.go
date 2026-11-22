@@ -7,6 +7,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // CreateInputs is what a create takes: the app and its team, the image reference the operator named, the platform
@@ -129,7 +130,7 @@ func createdRecords(inputs CreateInputs, spec kernel.InstanceSpec, app kernel.Ap
 	if err != nil {
 		return nil, err
 	}
-	return recordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
+	return provisioning.RecordFiles(inputs.RecordsRoot, spec.Application, spec.Environment, appDocument, releaseDocument,
 		instanceDocument, secret, declaration.OfferedFiles()), nil
 }
 

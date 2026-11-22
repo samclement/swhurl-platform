@@ -16,7 +16,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // render: every file v2 derives from its records, from the tree they live in.
@@ -362,15 +362,8 @@ func channelSecretsAgree(out string, registry kernel.TeamRegistry) error {
 // instanceRender is the files one instance's folder holds once compiled: the compilation with its seed and the
 // documents it publishes, as CompileInto writes them.
 func instanceRender(inputs provisioningrules.Inputs) ([]kernel.File, error) {
-	compiled, err := provisioningrules.Compile(inputs)
-	if err != nil {
-		return nil, err
-	}
-	written, err := orchestration.WithEventsSecret(compiled, inputs.EventsSecret)
-	if err != nil {
-		return nil, err
-	}
-	return orchestration.WithOffers(written, inputs.Offers)
+	_, written, err := provisioning.Complete(inputs)
+	return written, err
 }
 
 // documents is the two documents that record a revision, at the revisions given, and the platform's other files. The
@@ -402,8 +395,8 @@ func (c cli) writeRendered(r request, rendered rendering) int {
 		if err != nil {
 			break
 		}
-		var result orchestration.Result
-		result, err = orchestration.CompileInto(inputs, r.out, c.writer)
+		var result provisioning.Result
+		result, err = provisioning.CompileInto(inputs, r.out, c.writer)
 		outcomes = append(outcomes, result.Written...)
 	}
 	fmt.Fprintln(c.diagnostic, writtenSummary(outcomes))

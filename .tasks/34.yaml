@@ -1,10 +1,11 @@
 id: 34
 title: "Notifications: one pure owner for the platform notification destination"
-state: ready
+state: done
 scope:
   - v2/notifications/rules/notify/**
   - v2/notifications/heartbeat.go
   - v2/orchestration/dashboards.go
+  - v2/archtest/api.txt
   - docs/v2-status.md
 checks:
   - cd v2 && go test ./notifications/... ./orchestration/... -count=1
@@ -16,3 +17,18 @@ notes:
   - at: 2026-11-22T15:17:16.793Z
     commit: 73add754a641
     text: "Approved correction from slice 3: heartbeat.go and orchestration/dashboards.go duplicate console/notification-ntfy/NTFY_PLATFORM_URL destination facts. notifications/rules/notify already owns notification vocabulary: give these facts exported names there, consume from both callers, delete copies. Values and behavior unchanged; no workflow edge. Verify no duplicate destination literals remain outside pure owner. Update status only as required."
+  - at: 2026-11-22T15:28:14.711Z
+    commit: 29425e371caa
+    text: "Implementation is complete in the four permitted files; targeted notification/orchestration tests pass before and after. tk done failed only at TestPublicAPI: v2/archtest/api.txt must record the three approved exported constants (PlatformSecretNamespace, PlatformSecretName, PlatformURLKey), but that file is outside task scope. Failure evidence: .tasks/logs/34-2.log lines 42-48. No guardrail changed or weakened; need permission to expand scope for the required API snapshot update."
+  - at: 2026-11-22T15:29:01.092Z
+    commit: 29425e371caa
+    text: Worker asked to add v2/archtest/api.txt for three approved exported notification destination constants -> Operator approved. Scope now includes snapshot; regenerate using the existing TestPublicAPI update command and rerun task checks. No other expansion.
+  - at: 2026-11-22T15:29:26.072Z
+    commit: 29425e371caa
+    text: "done: Centralized platform destination constants in notifications/rules/notify; heartbeat and dashboards consume them without behavior changes. Updated API snapshot and v2 status. Targeted tests passed before/after; tk checks (targeted tests and make check-v2) passed. Duplicate caller literals removed. Offline only; no live verification. Next gate remains health slice 4."
+  - at: 2026-11-22T15:30:13.422Z
+    commit: 29425e371caa
+    text: "Completion evidence: git diff --check passed; cd v2 && go test ./notifications/... ./orchestration/... -count=1 passed before and after; go test ./archtest -run TestPublicAPI -update added exactly the three approved constants; final tk done reran both required checks successfully, including make check-v2 (gofmt, vet, all Go tests/guardrails and rendered comparison). Existing heartbeat/dashboard tests cover successful destination reads and missing/unreadable/empty/invalid destinations. No new workflow edge, live effects, commits or pushes. docs/v2-status.md records the pure destination owner and dirty paths; health slice 4 remains the gate. All five changed files are left uncommitted."
+  - at: 2026-11-22T15:31:08.099Z
+    commit: 29425e371caa
+    text: branch dsa/01M81XRHFZBRFYC4WR68DQJPP4/task-34

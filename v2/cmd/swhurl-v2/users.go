@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/samclement/swhurl-platform/v2/events"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules/events"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 

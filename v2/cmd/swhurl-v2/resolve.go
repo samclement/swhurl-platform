@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/samclement/swhurl-platform/v2/calls"
-	"github.com/samclement/swhurl-platform/v2/events"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules/calls"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules/events"
 )
 
 // resolutionDocument is the versioned document render writes to calls.json and `compile --calls` reads: every

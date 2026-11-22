@@ -534,18 +534,6 @@ apptemplatetest: type Level string
 apptemplatetest: type Line struct {Level Level Text string}
 apptemplatetest: type Preflight struct {Reason string}
 apptemplatetest: type Rendered struct {Units map[string][]byte Host string HealthPath string}
-calls: const CalleeAbsent = "callee_absent"
-calls: const CalleeNotWeb = "callee_not_web"
-calls: const NoConsent = "no_consent"
-calls: const SelfCall = "self_call"
-calls: func (*Error) Error() string
-calls: func Resolve(declarations []Declaration) (Resolution, error)
-calls: type Declaration struct {Application, Environment, Team, Kind string Port int32 Calls, Allows []string}
-calls: type Error struct {Field, Reason string}
-calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
-calls: type Refusal struct {Application, Environment, Callee, Reason string}
-calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
-calls: type Wait struct {Caller, Callee, Environment, Reason string}
 certissuer: const AlreadySet Outcome = iota
 certissuer: const IssuersDir = "infra/issuers"
 certissuer: const Key = "CERT_ISSUER"
@@ -579,6 +567,33 @@ checkrepo: type Path struct {Path string Values map[string]string}
 checkrepo: type Report struct {Results []Result Paths []Path}
 checkrepo: type Repository struct {Present []string Text map[string]string Manifests map[string]Decoded}
 checkrepo: type Result struct {Check, Okay string Problems []string}
+connectivity/rules/calls: const CalleeAbsent = "callee_absent"
+connectivity/rules/calls: const CalleeNotWeb = "callee_not_web"
+connectivity/rules/calls: const NoConsent = "no_consent"
+connectivity/rules/calls: const SelfCall = "self_call"
+connectivity/rules/calls: func (*Error) Error() string
+connectivity/rules/calls: func Resolve(declarations []Declaration) (Resolution, error)
+connectivity/rules/calls: type Declaration struct {Application, Environment, Team, Kind string Port int32 Calls, Allows []string}
+connectivity/rules/calls: type Error struct {Field, Reason string}
+connectivity/rules/calls: type Pair struct {Caller, Callee, Environment string CalleePort int32}
+connectivity/rules/calls: type Refusal struct {Application, Environment, Callee, Reason string}
+connectivity/rules/calls: type Resolution struct {Pairs []Pair Waiting []Wait Refused []Refusal}
+connectivity/rules/calls: type Wait struct {Caller, Callee, Environment, Reason string}
+connectivity/rules/events: const ConsumerCollision = "consumer_collision"
+connectivity/rules/events: const InvalidSubscription = "invalid_subscription"
+connectivity/rules/events: const NotPublished = "not_published"
+connectivity/rules/events: const Repeated = "repeated"
+connectivity/rules/events: const SelfSubscription = "self_subscription"
+connectivity/rules/events: func (*Error) Error() string
+connectivity/rules/events: func Consumer(subscriber, event string) string
+connectivity/rules/events: func Object(publisher, event string) string
+connectivity/rules/events: func Resolve(declarations []Declaration) ([]Resolved, error)
+connectivity/rules/events: func Stream(environment, publisher string) string
+connectivity/rules/events: func Subject(environment, publisher, event string) string
+connectivity/rules/events: type Declaration struct {Application, Environment string Publishes []string Subscriptions []string PublicationsKnown bool}
+connectivity/rules/events: type Error struct {Application, Environment, Field, Reason string}
+connectivity/rules/events: type Resolved struct {Connected []Subscription Pending []string}
+connectivity/rules/events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -734,21 +749,6 @@ delivery: type FluxWaitLine struct {Level FluxWaitLevel Text string}
 delivery: type PromoteInputs struct {StagingInstance, StagingRelease []byte Instance, Release, App, Profile []byte Calls, Egress []byte Offers []kernel.File Expected kernel.InstanceRevision}
 delivery: type Promotion struct {Staging kernel.ReleaseBundle Before kernel.ReleaseBundle Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Changed bool Written []files.Outcome}
 delivery: type Refusal struct {Subject, Reason string}
-events: const ConsumerCollision = "consumer_collision"
-events: const InvalidSubscription = "invalid_subscription"
-events: const NotPublished = "not_published"
-events: const Repeated = "repeated"
-events: const SelfSubscription = "self_subscription"
-events: func (*Error) Error() string
-events: func Consumer(subscriber, event string) string
-events: func Object(publisher, event string) string
-events: func Resolve(declarations []Declaration) ([]Resolved, error)
-events: func Stream(environment, publisher string) string
-events: func Subject(environment, publisher, event string) string
-events: type Declaration struct {Application, Environment string Publishes []string Subscriptions []string PublicationsKnown bool}
-events: type Error struct {Application, Environment, Field, Reason string}
-events: type Resolved struct {Connected []Subscription Pending []string}
-events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 health/rules: const CheckBad CheckLevel = "bad"
 health/rules: const CheckOK CheckLevel = "ok"
 health/rules: const CheckWarn CheckLevel = "warn"

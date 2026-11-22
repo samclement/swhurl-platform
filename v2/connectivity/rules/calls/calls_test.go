@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/calls"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules/calls"
 )
 
 // declaration is one instance: what it calls and who may call it.

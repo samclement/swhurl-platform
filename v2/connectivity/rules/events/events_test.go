@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/events"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules/events"
 )
 
 func declaration(application, environment string, publishes, subscriptions []string) events.Declaration {

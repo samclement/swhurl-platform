@@ -3,11 +3,11 @@
   "application": "test-01",
   "source": {
     "repository": "samclement/test-01",
-    "commit": "1be83989f8c0453f7cc7b16c103baefb2fe0605b"
+    "commit": "7111ea223ff377aaa13e0db1ab607da03f83453d"
   },
   "artifact": {
     "image": "ghcr.io/samclement/test-01",
-    "digest": "sha256:a19d505f41416a9a991bcd079b57f9380ea4f835bcf341714d6c21987b47e085",
+    "digest": "sha256:a4fa3b24afb766b699475895cd16c5937e67d4c6d9362d70c320b95521577ba9",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -26,5 +26,5 @@
     "events",
     "flags"
   ],
-  "releaseId": "rel-sha256:df509f0de80cab6b117dcf8d684e4d17d9250238be8fb329c38f7b3299b08ff3"
+  "releaseId": "rel-sha256:30a6e4edfc8dddcae052a5f5ab195d1ac849a1c4ea8132d8c87106858bf11e78"
 }

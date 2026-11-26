@@ -201,22 +201,20 @@ func (c cli) edit(r request) int {
 
 // setTeam applies the app-level change: the app record's team, and every environment's files with the label it renders.
 func (c cli) setTeam(r request, change editChange) int {
-	environments, err := appEnvironments(r.records, r.app)
-	if err != nil {
-		fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", filepath.Join(r.records, r.app))
-		return 1
-	}
 	appPath, err := underOut(r.out, filepath.Join(r.records, r.app, appFile))
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	app, status := c.read(filepath.Join(r.records, r.app, appFile), "app")
+	records, status := c.records(r.records)
 	if status != 0 {
 		return status
 	}
-	inputs := apps.TeamInputs{App: app, AppPath: appPath, Team: change.team}
-	for _, environment := range environments {
-		one, status := c.recordsEdit(r.out, r.records, r.app, environment)
+	inputs := apps.TeamInputs{AppPath: appPath, Team: change.team}
+	for _, record := range records {
+		if record.Application != r.app {
+			continue
+		}
+		one, status := c.editFolder(r.out, r.records, record)
 		if status != 0 {
 			return status
 		}
@@ -224,8 +222,12 @@ func (c cli) setTeam(r request, change editChange) int {
 		if status != 0 {
 			return status
 		}
+		inputs.App = record.App
 		inputs.Instances = append(inputs.Instances,
 			apps.InstanceInputs{Inputs: instanceInputs, InstancePath: one.instancePath})
+	}
+	if inputs.Instances == nil {
+		return fail(c.diagnostic, fmt.Errorf("invalid: records: %s holds no instance", r.app))
 	}
 	result, err := apps.SetTeam(inputs, r.out, c.writer)
 	if err != nil {
@@ -240,30 +242,35 @@ func (c cli) setTeam(r request, change editChange) int {
 	return emit(c.out, c.diagnostic, document)
 }
 
-// recordsEdit reads one instance's own folder, with everything a write of it needs. A folder that holds a seed or
-// offered documents keeps them: a write either carries them or is refused by the compiler, never drops them.
+// recordsEdit reads one instance's own folder from the records tree, with everything a write of it needs.
 func (c cli) recordsEdit(out, root, application, environment string) (recordsEdit, int) {
-	folder := filepath.Join(root, application, environment)
+	records, status := c.records(root)
+	if status != 0 {
+		return recordsEdit{}, status
+	}
+	record, status := c.recordOf(records, application, environment)
+	if status != 0 {
+		return recordsEdit{}, status
+	}
+	return c.editFolder(out, root, record)
+}
+
+// editFolder is one instance's records with the rest of its folder a write needs. A folder that holds a seed or
+// offered documents keeps them: a write either carries them or is refused by the compiler, never drops them.
+func (c cli) editFolder(out, root string, record files.InstanceRecords) (recordsEdit, int) {
+	folder := filepath.Join(root, record.Application, record.Environment)
 	instancePath, err := underOut(out, filepath.Join(folder, instanceFile))
 	if err != nil {
 		return recordsEdit{}, fail(c.diagnostic, err)
 	}
-	one := recordsEdit{application: application, environment: environment, instancePath: instancePath}
-	what := application + "/" + environment
+	one := recordsEdit{application: record.Application, environment: record.Environment, instancePath: instancePath,
+		instance: record.Instance, release: record.Release, app: record.App}
+	what := record.Application + "/" + record.Environment
 	var status int
-	if one.instance, status = c.read(filepath.Join(folder, instanceFile), what+" instance"); status != 0 {
-		return recordsEdit{}, status
-	}
-	if one.release, status = c.read(filepath.Join(folder, releaseFile), what+" release"); status != 0 {
-		return recordsEdit{}, status
-	}
-	if one.app, status = c.read(filepath.Join(root, application, appFile), "app"); status != 0 {
-		return recordsEdit{}, status
-	}
 	if one.secret, status = c.readPresent(filepath.Join(folder, kernel.EventsSecretFile), what+" events secret"); status != 0 {
 		return recordsEdit{}, status
 	}
-	offers := filepath.Join(folder, "offers")
+	offers := filepath.Join(folder, offersFolder)
 	if _, err := os.Stat(offers); err == nil {
 		if one.offers, status = c.offersAt(offers); status != 0 {
 			return recordsEdit{}, status

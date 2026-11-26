@@ -107,28 +107,34 @@ func (c cli) promoteInputs(r request) (delivery.PromoteInputs, int) {
 	if status != 0 {
 		return delivery.PromoteInputs{}, status
 	}
-	apps := map[string][]byte{}
-	staging, status := c.readInstance(r.records, r.app, "staging", apps)
+	records, status := c.records(r.records)
 	if status != 0 {
 		return delivery.PromoteInputs{}, status
 	}
-	target, status := c.readInstance(r.records, r.app, r.env, apps)
+	staging, status := c.promoted(records, r.app, stagingDir)
 	if status != 0 {
 		return delivery.PromoteInputs{}, status
 	}
-	app, seen := apps[r.app]
-	if !seen {
-		if app, status = c.read(filepath.Join(r.records, r.app, appFile), "app"); status != 0 {
-			return delivery.PromoteInputs{}, status
-		}
+	target, status := c.promoted(records, r.app, r.env)
+	if status != 0 {
+		return delivery.PromoteInputs{}, status
 	}
 	offers, status := c.stagingOffers(r.records, r.app)
 	if status != 0 {
 		return delivery.PromoteInputs{}, status
 	}
 	return delivery.PromoteInputs{StagingInstance: staging.instance, StagingRelease: staging.release,
-		Instance: target.instance, Release: target.release, App: app, Profile: profile, Calls: calls,
+		Instance: target.instance, Release: target.release, App: target.app, Profile: profile, Calls: calls,
 		Egress: egress, Offers: offers, Expected: kernel.InstanceRevision(r.expected)}, 0
+}
+
+// promoted is one of the promotion's two instances from the tree's records, checked to hold what its folder names.
+func (c cli) promoted(records []files.InstanceRecords, application, environment string) (recordInstance, int) {
+	record, status := c.recordOf(records, application, environment)
+	if status != 0 {
+		return recordInstance{}, status
+	}
+	return c.describedRecord(record)
 }
 
 // optional reads a document a command may be given, if it names one: an absent name is no document rather than a
@@ -144,7 +150,7 @@ func (c cli) optional(path, what string) ([]byte, int) {
 // release, written beside its records and compiled files as the delivery that produced staging wrote them. A
 // staging instance that publishes nothing has no folder to carry.
 func (c cli) stagingOffers(records, app string) ([]kernel.File, int) {
-	folder := filepath.Join(records, app, "staging", offersFolder)
+	folder := filepath.Join(records, app, stagingDir, offersFolder)
 	if _, err := os.Stat(folder); err != nil {
 		return nil, 0
 	}

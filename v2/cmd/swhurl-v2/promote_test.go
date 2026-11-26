@@ -191,8 +191,21 @@ func TestPromoteNeedsProductionInTheTree(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, recordsFixture, "prod", "instance.json")); err != nil {
 		t.Fatal(err)
 	}
-	status, _, diagnostic, _ := promote(t, root)
-	if status != 1 || !strings.Contains(diagnostic, "instance") {
+	status, _, diagnostic, writer := promote(t, root)
+	if status != 2 || !strings.Contains(diagnostic, "demo-orders/prod has no instance.json") || writer.Writes != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic)
+	}
+}
+
+// A folder holds the instance its path names: production's folder holding staging's record is refused.
+func TestPromoteRefusesAFolderHoldingAnotherInstance(t *testing.T) {
+	root := promoteTree(t)
+	if err := os.WriteFile(filepath.Join(root, recordsFixture, "prod", "instance.json"), fixture(t, "staging.json"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic, writer := promote(t, root)
+	if status != 2 || !strings.Contains(diagnostic, "demo-orders/prod holds demo-orders/staging") || writer.Writes != 0 {
 		t.Fatalf("exit %d: %s", status, diagnostic)
 	}
 }

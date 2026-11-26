@@ -182,11 +182,27 @@ func TestRecordsRefusesAHalfReadTreeAndDeliversNothing(t *testing.T) {
 	status := runWithRegistry([]string{"deploy", "--records", half, "--profile", "../../testdata/profile.json",
 		"--out", t.TempDir()}, &stdout, &diagnostic, os.ReadFile, writer,
 		answering(registrytest.Scenario{Tags: []string{nextTag}}))
-	if status != 1 || !strings.Contains(diagnostic.String(), "release") {
+	if status != 2 || !strings.Contains(diagnostic.String(), "demo-orders/staging has no release.json") {
 		t.Fatalf("a tree without a release record: exit %d, %q", status, diagnostic.String())
 	}
 	if writer.Writes != 0 || stdout.Len() != 0 {
 		t.Fatalf("a half-read tree delivered something: %d writes", writer.Writes)
+	}
+}
+
+// The tree is read whole: an instance deploy does not deliver, missing its release, still refuses the run.
+func TestRecordsRefusesATreeWhoseOtherInstanceIsHalfRead(t *testing.T) {
+	root := recordsTree(t)
+	prod := filepath.Join(root, recordsFixture, "prod")
+	if err := os.MkdirAll(prod, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(prod, "instance.json"), fixture(t, "prod.json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic, writer := recordsDeploy(t, root, nil, answering(registrytest.Scenario{Tags: []string{nextTag}}))
+	if status != 2 || !strings.Contains(diagnostic, "demo-orders/prod has no release.json") || writer.Writes != 0 {
+		t.Fatalf("exit %d, %d writes: %s", status, writer.Writes, diagnostic)
 	}
 }
 

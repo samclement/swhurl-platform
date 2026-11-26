@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -183,15 +182,16 @@ func (c cli) recordsInputs(r request) ([]recordInstance, []byte, []byte, int) {
 	if status != 0 {
 		return nil, nil, nil, status
 	}
-	names, err := instanceFolders(r.records)
-	if err != nil {
-		fmt.Fprintf(c.diagnostic, "io: records: %v\n", err)
-		return nil, nil, nil, 1
+	records, status := c.records(r.records)
+	if status != 0 {
+		return nil, nil, nil, status
 	}
-	apps := map[string][]byte{}
-	instances := make([]recordInstance, 0, len(names))
-	for _, name := range names {
-		one, status := c.readInstance(r.records, name, stagingDir, apps)
+	instances := []recordInstance{}
+	for _, record := range records {
+		if record.Environment != stagingDir {
+			continue
+		}
+		one, status := c.describedRecord(record)
 		if status != 0 {
 			return nil, nil, nil, status
 		}
@@ -205,6 +205,27 @@ func (c cli) recordsCalls(r request) ([]byte, int) {
 		return nil, 0
 	}
 	return c.read(r.callFile, "calls")
+}
+
+// records is every instance the records tree holds, as the files adapter reads it. A tree that names an instance
+// without its release or app record is refused whole (2); a record that cannot be read is an I/O failure (1).
+func (c cli) records(root string) ([]files.InstanceRecords, int) {
+	records, err := files.ReadRecords(root)
+	if err != nil {
+		return nil, c.failure(err)
+	}
+	return records, 0
+}
+
+// recordOf is one instance's records from the tree's, or a refusal when the tree holds no such instance.
+func (c cli) recordOf(records []files.InstanceRecords, application, environment string) (files.InstanceRecords, int) {
+	for _, one := range records {
+		if one.Application == application && one.Environment == environment {
+			return one, 0
+		}
+	}
+	return files.InstanceRecords{}, fail(c.diagnostic, fmt.Errorf("invalid: records: %s/%s has no %s", application,
+		environment, instanceFile))
 }
 
 // readInstance reads one app's records in one environment, and keeps the app record it shares with the app's other
@@ -228,6 +249,16 @@ func (c cli) readInstance(root, name, environment string, apps map[string][]byte
 		apps[name] = app
 	}
 	one.app = app
+	if status := c.describeRecords(&one); status != 0 {
+		return recordInstance{}, status
+	}
+	return one, 0
+}
+
+// describedRecord is one instance's records as a delivery takes them, described before anything runs.
+func (c cli) describedRecord(record files.InstanceRecords) (recordInstance, int) {
+	one := recordInstance{application: record.Application, environment: record.Environment,
+		instance: record.Instance, release: record.Release, app: record.App}
 	if status := c.describeRecords(&one); status != 0 {
 		return recordInstance{}, status
 	}
@@ -258,23 +289,4 @@ func (c cli) describeRecords(one *recordInstance) int {
 	}
 	one.image = release.Artifact.Image
 	return 0
-}
-
-// instanceFolders is every app folder under root that holds a staging instance record, in name order.
-func instanceFolders(root string) ([]string, error) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := os.Stat(filepath.Join(root, entry.Name(), stagingDir, instanceFile))
-		if err == nil && !info.IsDir() {
-			names = append(names, entry.Name())
-		}
-	}
-	return names, nil
 }

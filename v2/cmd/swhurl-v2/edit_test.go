@@ -102,6 +102,37 @@ func TestEditCLIRefusals(t *testing.T) {
 	}
 }
 
+// An edit reads the tree whole and names what it lacks: an instance it does not hold, an app with no instance, and a
+// half-read instance elsewhere in the tree are refused before anything is written.
+func TestEditCLIRefusesWhatTheTreeDoesNotHold(t *testing.T) {
+	root := editTree(t)
+	other := filepath.Join(root, "demo-shop", "staging")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "instance.json"), fixture(t, "staging.json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic, writer := editRun(t, root, "--env", "staging", "--set", "replicas=3")
+	if status != 2 || !strings.Contains(diagnostic, "demo-shop/staging has no release.json") || writer.Writes != 0 {
+		t.Errorf("a half-read tree: exit %d, %d writes: %s", status, writer.Writes, diagnostic)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "demo-shop")); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic, writer = editRun(t, root, "--env", "prod", "--set", "replicas=3")
+	if status != 2 || !strings.Contains(diagnostic, "demo-orders/prod has no instance.json") || writer.Writes != 0 {
+		t.Errorf("an absent instance: exit %d, %d writes: %s", status, writer.Writes, diagnostic)
+	}
+	if err := os.Remove(filepath.Join(root, recordsFixture, "staging", "instance.json")); err != nil {
+		t.Fatal(err)
+	}
+	status, _, diagnostic, writer = editRun(t, root, "--set", "team=payments")
+	if status != 2 || !strings.Contains(diagnostic, "demo-orders holds no instance") || writer.Writes != 0 {
+		t.Errorf("an app with no instance: exit %d, %d writes: %s", status, writer.Writes, diagnostic)
+	}
+}
+
 // An egress change writes the hosts the record grants and says the allocation is older than it: the proxy's port and
 // configuration are the whole tree's render, so nothing else of this edit reaches the cluster's documents.
 func TestEditCLIEgress(t *testing.T) {

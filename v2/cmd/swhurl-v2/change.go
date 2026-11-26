@@ -230,7 +230,8 @@ func (c cli) changeCopy(spec *changeSpec, repository, token string) (string, str
 	if err != nil {
 		return "", "", fail(c.diagnostic, err)
 	}
-	tree, err := orchestration.ReadTree(archive, true)
+	// The working copy is the whole tree: a change's commands may read any file of it.
+	tree, err := files.ReadArchive(archive, true, func(string) bool { return true })
 	if err != nil {
 		return "", "", fail(c.diagnostic, err)
 	}

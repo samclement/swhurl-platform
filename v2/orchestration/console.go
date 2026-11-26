@@ -1,17 +1,10 @@
 package orchestration
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
-	"io"
-	"maps"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -63,125 +56,18 @@ func instanceFile(parts []string) bool {
 	return parts[4] == "offers"
 }
 
-// FilterTarball is the console's one archive read: the selected files of one commit, by repository path. The archive
-// may carry GitHub's leading folder (the tarball) or none (a local checkout's `git archive`). A path that would leave
-// the tree is refused, and a link is never followed: only regular files are read.
+// FilterTarball is the console's one archive read: the selected files of one commit, by repository path, read as
+// files.ReadArchive reads any repository archive.
 func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error) {
-	reader, closeArchive := archiveReader(content)
-	defer closeArchive()
-	archive := tar.NewReader(reader)
-	found := map[string][]byte{}
-	for {
-		entry, err := archive.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("cannot read repository archive: %w", err)
-		}
-		file, body, keep, err := readEntry(archive, entry, prefixed)
-		if err != nil {
-			return nil, err
-		}
-		if keep {
-			found[file] = body
-		}
+	tree, err := files.ReadArchive(content, prefixed, selected)
+	if err != nil {
+		return nil, err
+	}
+	found := make(map[string][]byte, len(tree))
+	for _, file := range tree {
+		found[file.Path] = file.Body
 	}
 	return found, nil
-}
-
-// readEntry is one archive entry as the filter keeps it: its repository path and bytes, or why the archive is refused.
-func readEntry(archive *tar.Reader, entry *tar.Header, prefixed bool) (string, []byte, bool, error) {
-	if leaving(entry.Name) {
-		return "", nil, false, fmt.Errorf("cannot read repository archive: %s leaves the repository", entry.Name)
-	}
-	file, ok := archivePath(entry.Name, prefixed)
-	if !ok || entry.Typeflag != tar.TypeReg || !selected(file) {
-		return "", nil, false, nil
-	}
-	body, err := io.ReadAll(io.LimitReader(archive, maxArchiveFile+1))
-	if err != nil {
-		return "", nil, false, fmt.Errorf("cannot read repository archive: %w", err)
-	}
-	if len(body) > maxArchiveFile {
-		return "", nil, false, fmt.Errorf("cannot read repository archive: %s is too large", file)
-	}
-	return file, body, true, nil
-}
-
-// maxArchiveFile bounds one file the console keeps: every document it reads is far smaller.
-const maxArchiveFile = 1 << 20
-
-// archiveReader reads a repository archive as tar, gzipped or not: GitHub serves a tarball, a checkout's `git archive`
-// need not be compressed.
-func archiveReader(content []byte) (io.Reader, func()) {
-	gzipped, err := gzip.NewReader(bytes.NewReader(content))
-	if err != nil {
-		return bytes.NewReader(content), func() {}
-	}
-	return gzipped, func() { gzipped.Close() }
-}
-
-// maxTreeFile bounds one file of a whole tree a change is applied to. It is larger than a page's bound because the
-// tree holds the repository's documents too, and the whole archive is already bounded by the caller's download.
-const maxTreeFile = 8 << 20
-
-// ReadTree reads a whole repository archive: every regular file, with the mode the archive states. The archive may
-// carry GitHub's leading folder (the tarball) or none (a checkout's `git archive`). A path that would leave the tree is
-// refused and a link is never followed, as the console's filtered read is.
-func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error) {
-	reader, closeArchive := archiveReader(content)
-	defer closeArchive()
-	archive := tar.NewReader(reader)
-	found := []files.TreeFile{}
-	for {
-		entry, err := archive.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("cannot read repository archive: %w", err)
-		}
-		if leaving(entry.Name) {
-			return nil, fmt.Errorf("cannot read repository archive: %s leaves the repository", entry.Name)
-		}
-		file, ok := archivePath(entry.Name, prefixed)
-		if !ok || entry.Typeflag != tar.TypeReg {
-			continue
-		}
-		body, err := io.ReadAll(io.LimitReader(archive, maxTreeFile+1))
-		if err != nil {
-			return nil, fmt.Errorf("cannot read repository archive: %w", err)
-		}
-		if len(body) > maxTreeFile {
-			return nil, fmt.Errorf("cannot read repository archive: %s is too large", file)
-		}
-		found = append(found, files.TreeFile{Path: file, Executable: entry.Mode&0o111 != 0, Body: body})
-	}
-	slices.SortFunc(found, func(a, b files.TreeFile) int { return strings.Compare(a.Path, b.Path) })
-	return found, nil
-}
-
-// leaving reports whether an entry's name would escape the repository, which no archive GitHub serves may contain.
-func leaving(name string) bool {
-	return strings.HasPrefix(name, "/") || strings.Contains(name, "..")
-}
-
-// archivePath is an entry's repository path, with GitHub's leading folder removed, or false for a path that leaves
-// the tree or names nothing.
-func archivePath(name string, prefixed bool) (string, bool) {
-	clean := path.Clean("/" + name)
-	if strings.HasPrefix(name, "/") || strings.Contains(name, "..") || clean == "/" {
-		return "", false
-	}
-	parts := strings.Split(strings.TrimPrefix(clean, "/"), "/")
-	if prefixed {
-		if len(parts) < 2 {
-			return "", false
-		}
-		parts = parts[1:]
-	}
-	return strings.Join(parts, "/"), len(parts) > 0
 }
 
 // ConsoleSource is where a console reads its pinned tree: GitHub at main's commit, or the operator's own checkout
@@ -263,31 +149,19 @@ type ConsoleRecords struct {
 	Instances []provisioningrules.Inputs
 }
 
-// Records splits a filtered tree into the instances it holds, in app and environment order. A folder without an
-// instance record is not an instance; a record that cannot be read is refused rather than shown.
-func Records(files map[string][]byte) (ConsoleRecords, error) {
-	found := ConsoleRecords{Shared: provisioningrules.Inputs{Profile: files[consoleProfile], Calls: files[consoleCalls],
-		Egress: files[consoleEgress]}}
-	instances := map[string]provisioningrules.Inputs{}
-	for file := range files {
-		rest, ok := strings.CutPrefix(file, consoleRecords+"/")
-		if !ok || !strings.HasSuffix(rest, "/instance.json") {
-			continue
-		}
-		folder := strings.TrimSuffix(rest, "/instance.json")
-		app, env, split := strings.Cut(folder, "/")
-		if !split || strings.Contains(env, "/") {
-			continue
-		}
-		key := app + "/" + env
-		one := instances[key]
-		one.Instance, one.Release = files[consoleRecords+"/"+folder+"/instance.json"], files[consoleRecords+"/"+folder+"/release.json"]
-		one.App = files[consoleRecords+"/"+app+"/app.json"]
-		one.Profile, one.Calls, one.Egress = found.Shared.Profile, found.Shared.Calls, found.Shared.Egress
-		instances[key] = one
+// Records splits a filtered tree into the instances it holds, in app and environment order, as files.Records reads
+// any records tree; each takes the documents every compilation takes.
+func Records(tree map[string][]byte) (ConsoleRecords, error) {
+	found := ConsoleRecords{Shared: provisioningrules.Inputs{Profile: tree[consoleProfile], Calls: tree[consoleCalls],
+		Egress: tree[consoleEgress]}}
+	instances, err := files.Records(tree, consoleRecords)
+	if err != nil {
+		return ConsoleRecords{}, err
 	}
-	for _, key := range slices.Sorted(maps.Keys(instances)) {
-		found.Instances = append(found.Instances, instances[key])
+	for _, one := range instances {
+		inputs := found.Shared
+		inputs.App, inputs.Instance, inputs.Release = one.App, one.Instance, one.Release
+		found.Instances = append(found.Instances, inputs)
 	}
 	return found, nil
 }

@@ -82,11 +82,15 @@ adapters/files: func (Disk) Prune(dir, folder string, rendered []string) ([]Outc
 adapters/files: func (Disk) Remove(dir, path string) ([]Outcome, error)
 adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
 adapters/files: func New() Writer
+adapters/files: func ReadArchive(content []byte, prefixed bool, keep func(file string) bool) ([]TreeFile, error)
+adapters/files: func ReadRecords(dir string) ([]InstanceRecords, error)
+adapters/files: func Records(tree map[string][]byte, root string) ([]InstanceRecords, error)
 adapters/files: func Snapshot(dir string) ([]TreeFile, error)
 adapters/files: func Target(base, relative string) (string, error)
 adapters/files: func Unpack(dir string, tree []TreeFile) error
 adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
+adapters/files: type InstanceRecords struct {Application, Environment string App, Instance, Release []byte}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type TreeFile struct {Path string Executable bool Body []byte}
 adapters/files: type Writer interface {Write(dir string, files []kernel.File) ([]Outcome, error) Prune(dir, folder string, rendered []string) ([]Outcome, error) Remove(dir, path string) ([]Outcome, error)}
@@ -980,12 +984,15 @@ kernel: func ImagePolicyName(application string) string
 kernel: func ImageRepository(image string) string
 kernel: func ImageRepositoryName(application string) string
 kernel: func InstanceFolder(application, environment string, profile PlatformProfile) string
+kernel: func InstanceRecordOf(root, file string) (application, environment string, ok bool)
+kernel: func InstanceRecordPath(root, application, environment string) string
 kernel: func NamespaceOf(application, environment string) string
 kernel: func NewUserKey(seed [32]byte) UserKey
 kernel: func NewestTag(tags []string) (ImageTag, bool)
 kernel: func Ownership(claims []Claim) []Conflict
 kernel: func PlanImageHook(listed []ListedHook, want string) ImageHookPlan
 kernel: func RecordFolder(root, application, environment string) string
+kernel: func ReleaseRecordPath(root, application, environment string) string
 kernel: func RenderAuth(namespaces []string, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderInstance(spec InstanceFacts, http WorkloadFacts, profile PlatformProfile) (ResourceSet, error)
 kernel: func RenderNotify(registry TeamRegistry) (ResourceSet, error)
@@ -1467,8 +1474,7 @@ orchestration: func Mint(inputs MintInputs, destination string, writer files.Wri
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
-orchestration: func ReadTree(content []byte, prefixed bool) ([]files.TreeFile, error)
-orchestration: func Records(files map[string][]byte) (ConsoleRecords, error)
+orchestration: func Records(tree map[string][]byte) (ConsoleRecords, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error

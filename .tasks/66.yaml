@@ -1,6 +1,6 @@
 id: 66
 title: One records reader in adapters/files over a directory and a downloaded tarball, built on kernel's layout paths
-state: active
+state: done
 scope:
   - v2/adapters/files/records.go
   - v2/adapters/files/records_test.go
@@ -24,3 +24,18 @@ notes:
   - at: 2026-11-26T07:29:27.473Z
     commit: 0a81414b2703
     text: "operator: the records reader extends adapters/files, not a new adapter"
+  - at: 2026-11-26T07:47:04.999Z
+    commit: 4ea1c3d09505
+    text: "Reader contract for 67/69/70: files.Records(tree, root) and files.ReadRecords(dir) return every folder holding instance.json, ordered by (app, env); a missing release.json or app.json refuses the whole tree with 'invalid: records: <folder> has no <name>' (exit 2), and an unreadable record is files.Error IO (exit 1). Deploy filters staging itself. One per-file archive bound now: 8 MiB (the console's filtered read was 1 MiB)."
+  - at: 2026-11-26T07:47:05.303Z
+    commit: 4ea1c3d09505
+    text: "done: Added files.ReadArchive (tar moved from orchestration; ReadTree deleted), files.Records over an archive tree and files.ReadRecords over a directory (same result, tested), and kernel InstanceRecordPath/ReleaseRecordPath/InstanceRecordOf. Console Records and change use them. Console now refuses an instance missing app.json; per-file bound 8 MiB. Not verified live."
+  - at: 2026-11-26T07:47:05.303Z
+    commit: 4ea1c3d09505
+    text: "followup: adapters/files/files.go package doc still says the package only writes; it now also reads archives and records."
+  - at: 2026-11-26T07:47:05.303Z
+    commit: 4ea1c3d09505
+    text: "followup: docs/workstreams.md and docs/v2-status.md have no entry for the records reader (outside this task's scope)."
+  - at: 2026-11-26T07:48:47.429Z
+    commit: cc52114f60f0
+    text: branch dsa/01M8BC5CH7HD9KVQFPCCZPJR7B/task-66

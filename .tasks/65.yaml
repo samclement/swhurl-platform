@@ -1,6 +1,6 @@
 id: 65
 title: Quote --expect in the console change's promote step and test that every quoted line matches its request
-state: active
+state: done
 scope:
   - v2/cmd/swhurl-v2/change_steps.go
   - v2/cmd/swhurl-v2/change_test.go
@@ -13,3 +13,18 @@ notes:
   - at: 2026-11-26T07:32:54.067Z
     commit: 4ea1c3d09505
     text: "Fix the promote step's --expect value (staging -> production revision) in this task, or only quote it? -> operator: fix it here (option 1): expect production's record revision, quote it, test every quoted line matches its request, and test the step's request promotes against the fixture tree"
+  - at: 2026-11-26T07:37:59.854Z
+    commit: 4ea1c3d09505
+    text: "done: Console promote step now expects production's record revision (was staging's: promote compares --expect with prod, so every console promotion was refused stale) and quotes --expect=<rev>; team channel request holds the transport its line quotes. Tests: every kind's quoted line parses to its request; v2-promote change runs end to end. Not verified live."
+  - at: 2026-11-26T07:37:59.854Z
+    commit: 4ea1c3d09505
+    text: "followup: docs/console.md:97 says the console's promote carries --expect the staging instance revision; it is now production's instance revision (as docs/apps.md:844 states). Update that sentence."
+  - at: 2026-11-26T07:37:59.854Z
+    commit: 4ea1c3d09505
+    text: "followup: teamStep quotes --description=<text> unquoted, and descriptions may contain spaces (kernel validateDescription), so the PR body's team-add/team-edit line is not typeable as shown; quote it (and any value with spaces) and extend TestChangeStepsQuoteTheirRequests with a multi-word description."
+  - at: 2026-11-26T07:37:59.854Z
+    commit: 4ea1c3d09505
+    text: "followup: docs/v2-status.md / docs/workstreams.md / docs/current-state.md need the dated entry for this v2 change (console promote expectation fixed), outside task 65's scope."
+  - at: 2026-11-26T07:40:50.867Z
+    commit: 786d80f70b23
+    text: branch dsa/01M8BC5CF0CC1551M4YPSVV9Z9/task-65

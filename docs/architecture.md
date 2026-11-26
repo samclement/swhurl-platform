@@ -276,4 +276,4 @@ flowchart LR
   cm -- demo-shop-tls --> ingress
 ```
 
-App creation through the commands and console deploys staging. Production is created through [promotion](apps.md#promote-to-production); later promotions update its image and what moves with it. Console promotions carry only production's records; you merge them on GitHub ([console](console.md#review-and-merge)), and the Render workflow renders them. Each environment retains its own Flux unit, settings, storage and credentials. Custom deployments remain reviewed Git edits.
+App creation through the commands and console deploys staging. Production is created through [promotion](apps.md#promote-to-production); later promotions update its image and what moves with it. A console promotion runs `promote` and then `render`, so its pull request carries production's records and the files rendered from them; you merge it on GitHub, and the Render workflow finds `main` already rendered ([console](console.md#promotions)). Each environment retains its own Flux unit, settings, storage and credentials. Custom deployments remain reviewed Git edits.

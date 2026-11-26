@@ -6,6 +6,8 @@ import (
 	"compress/gzip"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -225,10 +227,11 @@ func TestChangeCLIRefusesWhatItCannotDo(t *testing.T) {
 	}
 }
 
-// A promotion names the revision staging's record states, so what is merged is what the reviewer saw.
+// A promotion expects the revision production's record states, the instance it changes, and quotes it.
 func TestChangeStepsPromote(t *testing.T) {
 	dir := t.TempDir()
 	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
+	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
 	tree := newChangeTree(dir)
 	change, _ := pages.ConsoleChangeNamed("v2-promote")
 	steps, err := cli{}.changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"},
@@ -239,12 +242,15 @@ func TestChangeStepsPromote(t *testing.T) {
 	if len(steps) != 2 || steps[0].command != "promote" || steps[1].command != "render" {
 		t.Fatalf("a promotion runs %v", steps)
 	}
-	revision, err := mustDecodeInstance(t, dir, "demo-orders/staging/instance.json")
+	revision, err := mustDecodeInstance(t, dir, "demo-orders/prod/instance.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if steps[0].request.expected != string(revision) {
-		t.Errorf("the promotion expects %q, want %q", steps[0].request.expected, revision)
+		t.Errorf("the promotion expects %q, want production's %q", steps[0].request.expected, revision)
+	}
+	if !strings.Contains(steps[0].display, " --expect="+string(revision)+" ") {
+		t.Errorf("the quoted promotion is %q", steps[0].display)
 	}
 	if steps[0].request.env != "prod" || steps[0].request.app != "demo-orders" {
 		t.Errorf("the promotion changes %s/%s", steps[0].request.app, steps[0].request.env)
@@ -255,6 +261,117 @@ func TestChangeStepsPromote(t *testing.T) {
 	if !strings.HasSuffix(steps[1].display, "--revision @base") {
 		t.Errorf("the quoted render is %q", steps[1].display)
 	}
+	if err := os.Remove(dir + "/v2-records/demo-orders/prod/instance.json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (cli{}).changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"},
+		tree, changeRevision); err == nil || !strings.Contains(err.Error(), "demo-orders/prod") {
+		t.Errorf("a promotion without production's record gave %v", err)
+	}
+}
+
+// A promotion is one promote and a render, and the pull request quotes the promote it ran, expectation included.
+func TestChangeCLIPromote(t *testing.T) {
+	tree := changeTreeFiles(t)
+	tree["v2-records/demo-orders/prod/instance.json"] = string(fixture(t, "prod.json"))
+	tree["v2-records/demo-orders/prod/release.json"] = string(fixture(t, "r41.json"))
+	prod, err := kernel.DecodeInstance(fixture(t, "prod.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision, err := prod.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &githubtest.ConsoleFake{Commit: changeRevision, Archive: changeTarball(t, tree)}
+	publisher := githubtest.NewPublisher(githubtest.PublisherScenario())
+	status, stdout, diagnostic := changeRun(t, source, publisher, "change", "--kind", "v2-promote",
+		"--app", "demo-orders", "--env", "staging", "--requested-by", "operator@example.test")
+	if status != 0 {
+		t.Fatalf("change exited %d: %s%s", status, diagnostic, stdout)
+	}
+	if len(publisher.Pulls) != 1 {
+		t.Fatalf("the change opened %d pull requests", len(publisher.Pulls))
+	}
+	if body := publisher.Pulls[0].Body; !strings.Contains(body, "swhurl-v2 promote --records v2-records "+
+		"--app demo-orders --env=prod --profile v2/testdata/profile.json --expect="+string(revision)+" ") {
+		t.Errorf("the pull request's body is:\n%s", body)
+	}
+	carried := map[string]bool{}
+	for _, entry := range publisher.Trees[0].Entries {
+		carried[entry.Path] = true
+	}
+	if !carried["v2-records/demo-orders/prod/release.json"] {
+		t.Errorf("the promotion did not carry production's release: %v", carried)
+	}
+}
+
+// Every line a change quotes is the request it runs: parsed as the command's own flags, with the working copy's paths
+// and the @base it stands for put back, a quoted line is exactly what the step does.
+func TestChangeStepsQuoteTheirRequests(t *testing.T) {
+	dir := t.TempDir()
+	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
+	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
+	tree := newChangeTree(dir)
+	for _, spec := range []changeSpec{
+		{kind: "new", app: "example", env: "staging", image: "ghcr.io/owner/example:1",
+			settings: []string{"team=demo", "exposure=authenticated-web", "replicas=2"}},
+		{kind: "new", app: "example", env: "staging", image: "ghcr.io/owner/example:1", settings: []string{"team=demo"}},
+		{kind: "v2-scale", app: "demo-orders", env: "staging", settings: []string{"replicas=2"}},
+		{kind: "v2-expose", app: "demo-orders", env: "prod", settings: []string{"exposure=public-web"}},
+		{kind: "v2-team", app: "demo-orders", env: "staging", settings: []string{"team=payments"}},
+		{kind: "v2-connect", app: "demo-orders", env: "staging", calls: []string{"demo-shop"}},
+		{kind: "v2-allow", app: "demo-orders", env: "staging", allows: []string{"demo-shop"}},
+		{kind: "v2-remove", app: "demo-orders", env: "staging"},
+		{kind: "v2-promote", app: "demo-orders", env: "staging"},
+		{kind: "team-add", team: "payments", description: "Payments"},
+		{kind: "team-edit", team: "payments", description: "Payments", rename: "billing"},
+		{kind: "team-remove", team: "payments"},
+		{kind: "team-channel-set", team: "payments"},
+		{kind: "team-channel-set", team: "payments", transport: "ntfy"},
+		{kind: "team-channel-remove", team: "payments"},
+	} {
+		change, found := pages.ConsoleChangeNamed(spec.kind)
+		if !found {
+			t.Fatalf("%s is not a kind", spec.kind)
+		}
+		steps, err := cli{}.changeSteps(change, &spec, tree, changeRevision)
+		if err != nil {
+			t.Fatalf("%s: %v", spec.kind, err)
+		}
+		for _, step := range steps {
+			quoted := quotedRequest(t, step.display, tree, changeRevision)
+			want := step.request
+			want.command = step.command
+			if !reflect.DeepEqual(quoted, want) {
+				t.Errorf("%s: the line %q is\n %+v\nbut the step runs\n %+v", spec.kind, step.display, quoted, want)
+			}
+		}
+	}
+}
+
+// quotedRequest is the request a quoted line parses to in the working copy: its paths under the copy's root and @base
+// as the commit the change was applied to. The flags' own bookkeeping is not part of what the line asks for.
+func quotedRequest(t *testing.T, line string, tree changeTree, revision string) request {
+	t.Helper()
+	words := strings.Fields(line)
+	if len(words) < 2 || words[0] != "swhurl-v2" {
+		t.Fatalf("the quoted line %q is not a swhurl-v2 command", line)
+	}
+	r, outcome := parse(words[1:])
+	if outcome != parsed {
+		t.Fatalf("the quoted line %q does not parse", line)
+	}
+	for _, path := range []*string{&r.records, &r.profile, &r.out, &r.callFile, &r.egressFile} {
+		if *path != "" {
+			*path = filepath.Join(tree.dir, *path)
+		}
+	}
+	if r.revision == "@base" {
+		r.revision = revision
+	}
+	r.outFlag, r.descriptionFlag, r.stateFlag, r.maxAgeFlag = nil, nil, nil, nil
+	return r
 }
 
 // A team's channel change carries its transport on the command line and its address on standard input, and never

@@ -119,7 +119,7 @@ func settingSteps(tree changeTree, s *changeSpec, revision string) ([]changeStep
 // connectionSteps is a connect or a disconnect, which asks for a delta on the record's own declarations rather than
 // for a whole list: the editor shows what the cluster holds, and a change merged but not yet applied is not in it.
 func (c cli) connectionSteps(tree changeTree, s *changeSpec, revision string) ([]changeStep, error) {
-	current, err := c.instanceRecord(tree, s)
+	current, err := c.instanceRecord(tree, s.name(), s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (c cli) connectionSteps(tree changeTree, s *changeSpec, revision string) ([
 
 // allowSteps is a change to who may call the instance, asked for as grants and revocations.
 func (c cli) allowSteps(tree changeTree, s *changeSpec, revision string) ([]changeStep, error) {
-	current, err := c.instanceRecord(tree, s)
+	current, err := c.instanceRecord(tree, s.name(), s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -143,10 +143,11 @@ func (c cli) allowSteps(tree changeTree, s *changeSpec, revision string) ([]chan
 	return append(edits(tree, s.name(), s.env, settings), renderStep(tree, revision)), nil
 }
 
-// promoteSteps is a promotion of what staging selects now: it names the revision staging's record states, so what is
-// merged is what the reviewer saw, and production's files come from the render beside staging's.
+// promoteSteps is a promotion of what staging selects now: it expects the revision production's record states, the
+// instance a promotion changes, so a production changed since the working copy was read refuses rather than being
+// overwritten, and production's files come from the render beside staging's.
 func (c cli) promoteSteps(tree changeTree, s *changeSpec, revision string) ([]changeStep, error) {
-	current, err := c.instanceRecord(tree, s)
+	current, err := c.instanceRecord(tree, s.name(), "prod")
 	if err != nil {
 		return nil, err
 	}
@@ -154,18 +155,16 @@ func (c cli) promoteSteps(tree changeTree, s *changeSpec, revision string) ([]ch
 	if err != nil {
 		return nil, err
 	}
-	step := promoteStep(tree, s.name())
-	step.request.expected = string(expected)
-	return []changeStep{step, renderStep(tree, revision)}, nil
+	return []changeStep{promoteStep(tree, s.name(), string(expected)), renderStep(tree, revision)}, nil
 }
 
-// instanceRecord is the instance's record as the working copy states it: the tree the change is applied to, never the
+// instanceRecord is one instance's record as the working copy states it: the tree the change is applied to, never the
 // cluster.
-func (c cli) instanceRecord(tree changeTree, s *changeSpec) (kernel.InstanceSpec, error) {
-	path := filepath.Join(tree.records, s.name(), s.env, instanceFile)
+func (c cli) instanceRecord(tree changeTree, app, env string) (kernel.InstanceSpec, error) {
+	path := filepath.Join(tree.records, app, env, instanceFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return kernel.InstanceSpec{}, fmt.Errorf("io: instance: cannot read the record of %s/%s", s.name(), s.env)
+		return kernel.InstanceSpec{}, fmt.Errorf("io: instance: cannot read the record of %s/%s", app, env)
 	}
 	spec, err := kernel.DecodeInstance(data)
 	if err != nil {
@@ -205,14 +204,14 @@ func removeStep(tree changeTree, app, env string) changeStep {
 			" --profile v2/testdata/profile.json --calls " + pages.ConsoleCallsFile + " --out ."}
 }
 
-// promoteStep selects production's release from staging's record.
-func promoteStep(tree changeTree, app string) changeStep {
-	r := request{records: tree.records, app: app, env: "prod", profile: tree.profile, out: tree.dir,
-		callFile: tree.calls, egressFile: tree.egress}
+// promoteStep selects production's release from staging's record, if production's record is still the expected one.
+func promoteStep(tree changeTree, app, expected string) changeStep {
+	r := request{records: tree.records, app: app, env: "prod", profile: tree.profile, expected: expected,
+		out: tree.dir, callFile: tree.calls, egressFile: tree.egress}
 	return changeStep{command: "promote", request: r,
 		display: "swhurl-v2 promote --records " + pages.ConsoleRecordsRoot + " --app " + app + " --env=prod" +
-			" --profile v2/testdata/profile.json --out . --calls " + pages.ConsoleCallsFile + " --egress " +
-			pages.ConsoleEgressFile}
+			" --profile v2/testdata/profile.json --expect=" + expected + " --out . --calls " +
+			pages.ConsoleCallsFile + " --egress " + pages.ConsoleEgressFile}
 }
 
 // renderStep writes what the whole tree of records derives: the instance's files, the platform's documents and the
@@ -262,7 +261,7 @@ func teamStep(tree changeTree, s *changeSpec, action string) changeStep {
 		r.rename = s.rename
 		display += " --rename=" + s.rename
 	case "channel":
-		r.transport = s.transport
+		r.transport = transportOf(s.transport)
 		display += " --transport=" + transportOf(s.transport)
 	}
 	return changeStep{command: "team", request: r,

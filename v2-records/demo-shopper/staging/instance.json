@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "demo-shopper",
   "environment": "staging",
-  "release": "rel-sha256:bd27a4c8f00a19477ab02717de6b94b492be33d59d110bb996855fedbe890c5f",
+  "release": "rel-sha256:8e78bfbca6a7c5e319cf6234a426aac07f3174c84e1bdda6becf377db269cc1d",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 128

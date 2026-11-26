@@ -3,11 +3,11 @@
   "application": "demo-shop",
   "source": {
     "repository": "samclement/demo-shop",
-    "commit": "7c632d69e9bf893babb203b7fa0f242c21c77b87"
+    "commit": "922a31a902155f94e4daba9a99e6a1c2e85a9b88"
   },
   "artifact": {
     "image": "ghcr.io/samclement/demo-shop",
-    "digest": "sha256:06a9b0d70caba650e7cff2d8cfb62590b7a0565b194c6d626aeb6d572ebe6221",
+    "digest": "sha256:e7459fe51be7000eb29a62dfafd5d82f8dca206d91fea55c229db9d8909df0d7",
     "mediaType": "application/vnd.oci.image.manifest.v1+json",
     "platform": "linux/amd64"
   },
@@ -27,5 +27,5 @@
     "events",
     "flags"
   ],
-  "releaseId": "rel-sha256:cb51997c82e53d97e462ad8e758daac555e230b10093ea4277c753d5543c6808"
+  "releaseId": "rel-sha256:5ae64268088812dfa7a6f4961d9675c973b4f1fdd784984539d6c18e6fb17630"
 }

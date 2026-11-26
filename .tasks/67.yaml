@@ -1,6 +1,6 @@
 id: 67
 title: Replace the four records-root constants and the hard-coded instance.json paths with kernel layout paths and the reader
-state: active
+state: done
 scope:
   - v2/kernel/record_paths.go
   - v2/pages/console_change.go
@@ -34,3 +34,15 @@ notes:
   - at: 2026-11-26T07:58:12.329Z
     commit: 3989130cb846
     text: scope widened by the conductor to v2/archtest/rules_test.go (operator-approved pages->kernel edge)
+  - at: 2026-11-26T07:58:22.297Z
+    commit: 61bf25f7bfb9
+    text: "done: Added kernel.RecordsRoot; deleted provisioning.RecordsRoot, orchestration consoleRecords and pages.TeamsRecord; healthrules.CheckoutRecords/CheckoutTeams and pages.ConsoleRecordsRoot derive from kernel. Record paths in console renders/evidence/settings/teams, mint, InstanceDocuments, health and flagDocument use kernel layout paths. pages->kernel edge added (operator). Not verified live."
+  - at: 2026-11-26T07:58:22.297Z
+    commit: 61bf25f7bfb9
+    text: "followup: docs/iteration-2-plan.md:3271 still says orchestration uses provisioning's records-root constant; mint now uses kernel.RecordsRoot."
+  - at: 2026-11-26T07:58:22.297Z
+    commit: 61bf25f7bfb9
+    text: "followup: pages.ConsoleRecordsRoot and healthrules.CheckoutRecords survive as aliases of kernel.RecordsRoot because cmd/swhurl-v2/change_steps.go, verify_checkout.go, health/platform_github.go and health/rules/platform_apps.go (out of scope) use them; the last two also hard-code release.json."
+  - at: 2026-11-26T07:59:58.534Z
+    commit: 5ff91ec52eee
+    text: branch dsa/01M8BD8BZA3QSTBXHAYQE3SQJK/task-67

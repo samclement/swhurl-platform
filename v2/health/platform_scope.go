@@ -428,11 +428,13 @@ func readDatabases(ctx context.Context, inputs PlatformAllInputs, scope *healthr
 func databaseInstances(releases map[string][]byte) ([][2]string, string) {
 	found := [][2]string{}
 	for _, key := range sortedKeys(releases) {
+		application, environment, _ := strings.Cut(key, "/")
 		release, err := kernel.DecodeRelease(releases[key])
 		if err != nil {
-			return nil, fmt.Sprintf("%s/%s/release.json: cannot read it: %v", healthrules.CheckoutRecords, key, err)
+			return nil, fmt.Sprintf("%s: cannot read it: %v",
+				kernel.ReleaseRecordPath(healthrules.CheckoutRecords, application, environment), err)
 		}
-		if application, environment, _ := strings.Cut(key, "/"); release.Database == "sqlite" {
+		if release.Database == "sqlite" {
 			found = append(found, [2]string{application, environment})
 		}
 	}

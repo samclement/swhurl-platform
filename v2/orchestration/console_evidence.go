@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -117,8 +118,8 @@ func unitFiles(unit string) ([]string, bool) {
 	if !found || !pathSegment(app) || !pathSegment(env) {
 		return nil, false
 	}
-	return []string{consoleRecords + "/" + app + "/app.json", consoleRecords + "/" + unit + "/instance.json",
-		consoleRecords + "/" + unit + "/release.json", consoleApps + "/" + unit + "/helmrelease.json"}, true
+	return []string{kernel.AppRecordPath(kernel.RecordsRoot, app), kernel.InstanceRecordPath(kernel.RecordsRoot, app, env),
+		kernel.ReleaseRecordPath(kernel.RecordsRoot, app, env), consoleApps + "/" + unit + "/helmrelease.json"}, true
 }
 
 // pathSegment is one folder name a record path may hold.

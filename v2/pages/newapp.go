@@ -86,11 +86,11 @@ func newAppFlags(fields map[string][]string, appType AppType, teams map[string]T
 	team := strings.TrimSpace(field(fields, "team"))
 	if len(teams) == 0 {
 		return nil, fmt.Errorf("no team is registered (%s): add one on the Teams page first; every app belongs to "+
-			"a team", TeamsRecord)
+			"a team", ConsoleTeamsFile)
 	}
 	if _, registered := teams[team]; !registered {
 		return nil, fmt.Errorf("choose the team that owns the app: one of %s (%s)",
-			strings.Join(sortedKeys(teams), ", "), TeamsRecord)
+			strings.Join(sortedKeys(teams), ", "), ConsoleTeamsFile)
 	}
 	flags := []string{"team=" + team}
 	exposure, host := strings.TrimSpace(field(fields, "exposure")), strings.TrimSpace(field(fields, "host"))
@@ -170,10 +170,6 @@ func NewAppFromRecord(record map[string]any, catalogue StackCatalogue) (NewAppCh
 	return NewAppChoices{Name: name, Stack: stack, Description: text("description"), Type: appType,
 		Answers: answers, Flags: flags, Record: record}, nil
 }
-
-// TeamsRecord is the document a team is registered in: the console names it in the sentence that refuses an
-// unregistered one, because that sentence is what an operator has to edit.
-const TeamsRecord = "v2-records/teams.json"
 
 // Type is one app type by key.
 func (c StackCatalogue) Type(key string) (AppType, bool) {

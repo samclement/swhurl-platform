@@ -161,6 +161,7 @@ var PureDependencies = map[string][]string{
 	"delivery/rules":     {"kernel"},
 	"provisioning/rules": {"kernel", "connectivity/rules"},
 	"connectivity/rules": {"kernel"},
+	"pages":              {"kernel"},
 
 	"notifications/rules/incident": {"delivery/rules"},
 }
@@ -178,7 +179,7 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
 // so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
 // and delivery's deploy and promote write through it. Apps' create and orchestration's mint also use provisioning's
-// encrypted seed construction; mint keeps its identity workflow and uses provisioning's records-root constant.
+// encrypted seed construction; mint keeps its identity workflow.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps", "provisioning"},
 	"delivery":      {"provisioning"},

@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -20,14 +20,12 @@ import (
 func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error) {
 	found := map[string]pages.Render{}
 	for file, instance := range tree {
-		rest, inRecords := strings.CutPrefix(file, consoleRecords+"/")
-		parts := strings.Split(rest, "/")
-		if !inRecords || len(parts) != 3 || parts[2] != "instance.json" {
+		app, env, isInstance := kernel.InstanceRecordOf(kernel.RecordsRoot, file)
+		if !isInstance {
 			continue
 		}
-		app, env := parts[0], parts[1]
-		appRecord, hasApp := tree[consoleRecords+"/"+app+"/app.json"]
-		release, hasRelease := tree[consoleRecords+"/"+app+"/"+env+"/release.json"]
+		appRecord, hasApp := tree[kernel.AppRecordPath(kernel.RecordsRoot, app)]
+		release, hasRelease := tree[kernel.ReleaseRecordPath(kernel.RecordsRoot, app, env)]
 		if !hasApp || !hasRelease {
 			continue
 		}

@@ -4,6 +4,9 @@ import "strings"
 
 // Record names belong to the writer vocabulary, shared by readers and revision relevance.
 const (
+	// RecordsRoot is the folder a checkout keeps every instance's records in, relative to the checkout's root.
+	RecordsRoot = "v2-records"
+
 	AppRecordName      = "app.json"
 	InstanceRecordName = "instance.json"
 	ReleaseRecordName  = "release.json"

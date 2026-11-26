@@ -40,7 +40,7 @@ func TestConsoleDesiredVariablesReadsBothForms(t *testing.T) {
 
 // The Scale form starts from the configuration the record states, and a record that is not there states nothing.
 func TestConsoleSettings(t *testing.T) {
-	tree := map[string][]byte{consoleRecords + "/web/prod/instance.json": []byte(
+	tree := map[string][]byte{"v2-records/web/prod/instance.json": []byte(
 		`{"schemaVersion":1,"application":"web","environment":"prod","configuration":{"replicas":3,"memoryMiB":256}}`)}
 	settings := ConsoleSettings(tree, "web", "prod")
 	if settings["replicas"] != "3" || settings["memoryMiB"] != "256" {

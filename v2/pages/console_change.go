@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // A console change is one kind of pull request the console opens: the branch it is pushed to, the instance or team
@@ -16,7 +18,7 @@ import (
 // The repository's own layout, as a console change carries it.
 const (
 	// ConsoleRecordsRoot is the folder the platform's records live in.
-	ConsoleRecordsRoot = "v2-records"
+	ConsoleRecordsRoot = kernel.RecordsRoot
 	// ConsoleAppsRoot is the folder the compiler writes one instance's files into.
 	ConsoleAppsRoot = "v2-apps/instances"
 	// ConsoleUnitsRoot is the folder Flux applies an instance from.
@@ -28,7 +30,7 @@ const (
 	// ConsoleEgressFile is the allocation the proxy's port and the instance's grants are decided in.
 	ConsoleEgressFile = "platform/egress/allocation.json"
 	// ConsoleTeamsFile is the team registry: one record for the whole platform.
-	ConsoleTeamsFile = ConsoleRecordsRoot + "/teams.json"
+	ConsoleTeamsFile = ConsoleRecordsRoot + "/" + kernel.TeamsRecordName
 	// ConsoleRoutesFile is what v2 renders from the registry for the notification service.
 	ConsoleRoutesFile = "platform/notify/routes.json"
 	// ConsoleChannelsFolder is where v2 renders one encrypted Secret per team channel.
@@ -206,12 +208,12 @@ func (c ConsoleChange) Owns(name, env, file string) bool {
 	if strings.HasPrefix(file, ConsoleAuthFolder+"/") {
 		return true
 	}
-	if file == ConsoleRecordsRoot+"/"+name+"/app.json" {
+	if file == kernel.AppRecordPath(ConsoleRecordsRoot, name) {
 		return true
 	}
 	for _, one := range c.ownedEnvs(env) {
 		namespace := name + "-" + one
-		if strings.HasPrefix(file, ConsoleRecordsRoot+"/"+name+"/"+one+"/") ||
+		if strings.HasPrefix(file, kernel.RecordFolder(ConsoleRecordsRoot, name, one)+"/") ||
 			strings.HasPrefix(file, ConsoleAppsRoot+"/"+name+"/"+one+"/") ||
 			file == ConsoleUnitsRoot+"/app-"+namespace+".json" {
 			return true

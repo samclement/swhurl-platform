@@ -13,14 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 )
 
 // The checkout's files the checks compare the cluster with, relative to its root.
 const (
 	CheckoutProfile    = "v2/testdata/profile.json"
-	CheckoutTeams      = "v2-records/teams.json"
-	CheckoutRecords    = "v2-records"
+	CheckoutTeams      = kernel.RecordsRoot + "/" + kernel.TeamsRecordName
+	CheckoutRecords    = kernel.RecordsRoot
 	CheckoutCompiled   = "v2-apps/instances"
 	CheckoutAllocation = "platform/egress/allocation.json"
 	checkoutRoutes     = "platform/notify/routes.json"

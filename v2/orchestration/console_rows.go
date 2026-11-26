@@ -86,7 +86,7 @@ func consoleRowOf(instance observe.InstanceReport, teams map[string]string) (*pa
 // ConsoleTeams is the team registry as a page shows it: each team's description and its channel's name and
 // transport, read from the pinned tree's v2-records/teams.json.
 func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error) {
-	data, known := tree[consoleRecords+"/teams.json"]
+	data, known := tree[kernel.RecordsRoot+"/"+kernel.TeamsRecordName]
 	if !known {
 		return nil, fmt.Errorf("cannot read v2-records/teams.json: not in the repository")
 	}

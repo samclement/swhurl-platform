@@ -51,10 +51,10 @@ func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter 
 	if err != nil {
 		return MintOutcome{}, err
 	}
-	folder := kernel.RecordFolder(provisioning.RecordsRoot, updated.Application, updated.Environment)
+	folder := kernel.RecordFolder(kernel.RecordsRoot, updated.Application, updated.Environment)
 	written, err := writer.Write(destination, []kernel.File{
 		{Path: folder + "/" + kernel.EventsSecretFile, Document: encrypted},
-		{Path: folder + "/instance.json", Document: record},
+		{Path: kernel.InstanceRecordPath(kernel.RecordsRoot, updated.Application, updated.Environment), Document: record},
 	})
 	outcome := MintOutcome{Application: updated.Application, Environment: updated.Environment,
 		Public: pair.Public, Previous: previous, Written: written}

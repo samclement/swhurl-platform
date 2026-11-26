@@ -2,10 +2,6 @@ package provisioning
 
 import "github.com/samclement/swhurl-platform/v2/kernel"
 
-// RecordsRoot is where a v2-owned instance keeps its own records, under the checkout the caller writes into. It is
-// this capability's own output and becomes a profile fact only if a second writer needs it.
-const RecordsRoot = "v2-records"
-
 // RecordFiles is the records one instance states: one app record and the environment's pair, under the records root
 // the caller chose. An instance with a broker identity also keeps its encrypted seed beside the record, before the
 // instance that names its public key, so the record folder is what a later compile reads. The documents it publishes
@@ -42,10 +38,11 @@ func InstanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle,
 	if err != nil {
 		return nil, err
 	}
-	folder := kernel.RecordFolder(RecordsRoot, spec.Application, spec.Environment)
 	records, err := withOffers([]kernel.File{
-		{Path: folder + "/" + kernel.ReleaseRecordName, Document: releaseDocument},
-		{Path: folder + "/" + kernel.InstanceRecordName, Document: instanceDocument},
+		{Path: kernel.ReleaseRecordPath(kernel.RecordsRoot, spec.Application, spec.Environment),
+			Document: releaseDocument},
+		{Path: kernel.InstanceRecordPath(kernel.RecordsRoot, spec.Application, spec.Environment),
+			Document: instanceDocument},
 	}, offers)
 	if err != nil {
 		return nil, err

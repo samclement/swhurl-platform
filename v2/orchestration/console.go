@@ -17,6 +17,7 @@ import (
 	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/health"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -25,9 +26,8 @@ import (
 // takes, the records themselves, and the compiled manifests and offers a page shows. Nothing else is downloaded.
 const (
 	consoleProfile = "v2/testdata/profile.json"
-	consoleCalls   = "v2-records/calls.json"
+	consoleCalls   = kernel.RecordsRoot + "/calls.json"
 	consoleEgress  = "platform/egress/allocation.json"
-	consoleRecords = "v2-records"
 	consoleApps    = "v2-apps/instances"
 	consoleStacks  = "v2/contract/stacks.json"
 )
@@ -37,7 +37,7 @@ func selected(file string) bool {
 	if file == consoleProfile || file == consoleCalls || file == consoleEgress || file == consoleStacks {
 		return true
 	}
-	if strings.HasPrefix(file, consoleRecords+"/") {
+	if strings.HasPrefix(file, kernel.RecordsRoot+"/") {
 		return strings.HasSuffix(file, ".json")
 	}
 	parts := strings.Split(file, "/")
@@ -154,7 +154,7 @@ type ConsoleRecords struct {
 func Records(tree map[string][]byte) (ConsoleRecords, error) {
 	found := ConsoleRecords{Shared: provisioningrules.Inputs{Profile: tree[consoleProfile], Calls: tree[consoleCalls],
 		Egress: tree[consoleEgress]}}
-	instances, err := files.Records(tree, consoleRecords)
+	instances, err := files.Records(tree, kernel.RecordsRoot)
 	if err != nil {
 		return ConsoleRecords{}, err
 	}
@@ -174,7 +174,7 @@ func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, 
 	if err != nil {
 		return observe.Collection{}, err
 	}
-	status := apps.StatusInputs{Inputs: inputs.Shared, Revision: revision, RecordsRoot: consoleRecords,
+	status := apps.StatusInputs{Inputs: inputs.Shared, Revision: revision, RecordsRoot: kernel.RecordsRoot,
 		SharedPaths: []string{consoleProfile, consoleCalls, consoleEgress}, Changes: changes, Reader: reader,
 		Source: source, Now: now, MaxAge: 26 * time.Hour}
 	result, err := apps.StatusAll(ctx, status, inputs.Instances)

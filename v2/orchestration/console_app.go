@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 	"github.com/samclement/swhurl-platform/v2/producer"
 )
@@ -139,7 +140,7 @@ func variableText(value, from orderedValue) string {
 
 // ConsoleSettings is the instance's configuration the Scale form shows as placeholders.
 func ConsoleSettings(tree map[string][]byte, app, env string) map[string]string {
-	instance, known := tree[consoleRecords+"/"+app+"/"+env+"/instance.json"]
+	instance, known := tree[kernel.InstanceRecordPath(kernel.RecordsRoot, app, env)]
 	if !known {
 		return map[string]string{}
 	}

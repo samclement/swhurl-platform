@@ -787,8 +787,8 @@ health/rules: const CheckoutAllocation = "platform/egress/allocation.json"
 health/rules: const CheckoutCompiled = "v2-apps/instances"
 health/rules: const CheckoutFluxSettings = "clusters/home/flux-system/install/flux.json"
 health/rules: const CheckoutProfile = "v2/testdata/profile.json"
-health/rules: const CheckoutRecords = "v2-records"
-health/rules: const CheckoutTeams = "v2-records/teams.json"
+health/rules: const CheckoutRecords = kernel.RecordsRoot
+health/rules: const CheckoutTeams = kernel.RecordsRoot + "/" + kernel.TeamsRecordName
 health/rules: const PlatformKind = "v2-platform-checks"
 health/rules: const PlatformVersion = 1
 health/rules: func (CompiledInstance) Namespace() string
@@ -906,6 +906,7 @@ kernel: const NoTeam Code = "no_team"
 kernel: const NotifyFolder = "notify"
 kernel: const OverQuota Code = "over_quota"
 kernel: const OwnershipConflict Code = "ownership_conflict"
+kernel: const RecordsRoot = "v2-records"
 kernel: const Refused = "refused"
 kernel: const ReleaseRecordName = "release.json"
 kernel: const RemoveTeam TeamAction = "remove"
@@ -1536,9 +1537,9 @@ pages: const ConsoleAuthFolder = "platform/auth"
 pages: const ConsoleCallsFile = ConsoleRecordsRoot + "/calls.json"
 pages: const ConsoleChannelsFolder = "platform/notify/channels"
 pages: const ConsoleEgressFile = "platform/egress/allocation.json"
-pages: const ConsoleRecordsRoot = "v2-records"
+pages: const ConsoleRecordsRoot = kernel.RecordsRoot
 pages: const ConsoleRoutesFile = "platform/notify/routes.json"
-pages: const ConsoleTeamsFile = ConsoleRecordsRoot + "/teams.json"
+pages: const ConsoleTeamsFile = ConsoleRecordsRoot + "/" + kernel.TeamsRecordName
 pages: const ConsoleUnitsRoot = "clusters/home"
 pages: const FinishAppJob = "finish new app"
 pages: const FluxSection = "Flux Kustomizations"
@@ -1553,7 +1554,6 @@ pages: const StateStopped = "stopped"
 pages: const StateSuspended = "suspended"
 pages: const StateUnknown = "unknown"
 pages: const StateUpdating = "updating"
-pages: const TeamsRecord = "v2-records/teams.json"
 pages: const ValueAbsent ValueKind = iota
 pages: const ValueArray
 pages: const ValueBool
@@ -1811,7 +1811,6 @@ provisioning/rules: func Declare(inputs Inputs) (Declaration, error)
 provisioning/rules: func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error)
 provisioning/rules: type Declaration struct {Application, Environment string Declared kernel.Declared}
 provisioning/rules: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
-provisioning: const RecordsRoot = "v2-records"
 provisioning: func (*Refusal) Error() string
 provisioning: func CompileInto(inputs rules.Inputs, destination string, writer files.Writer) (Result, error)
 provisioning: func Complete(inputs rules.Inputs) (kernel.Compilation, []kernel.File, error)

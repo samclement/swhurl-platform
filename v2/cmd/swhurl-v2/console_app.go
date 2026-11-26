@@ -172,7 +172,7 @@ func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tr
 
 // flagDocument is the path an instance's offered flags document takes in the pinned tree.
 func flagDocument(instance pages.Instance) string {
-	return "v2-records/" + instance.App + "/" + instance.Env + "/offers/" + kernel.DocumentRoles["flags"]
+	return kernel.RecordFolder(kernel.RecordsRoot, instance.App, instance.Env) + "/offers/" + kernel.DocumentRoles["flags"]
 }
 
 // promotion is staging's image reviewed against production's, or the promotion pull request already open.

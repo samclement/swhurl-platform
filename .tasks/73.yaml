@@ -1,0 +1,28 @@
+id: 73
+title: Run the record kinds' steps (edit, remove, promote, render) as typed calls to apps and delivery, return the PR address instead of scraping "Opened", and derive each quoted line from its typed step
+state: ready
+scope:
+  - v2/console/steps.go
+  - v2/console/steps_test.go
+  - v2/console/change.go
+  - v2/cmd/swhurl-v2/change.go
+  - v2/cmd/swhurl-v2/change_steps.go
+  - v2/cmd/swhurl-v2/console_change.go
+  - v2/cmd/swhurl-v2/console_new.go
+  - v2/orchestration/console_publish.go
+  - v2/pages/console_change.go
+  - docs/console.md
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
+  - make check-v2
+  - make check-docs
+after:
+  - 72
+  - 69
+  - 70
+reason: null
+notes:
+  - at: 2026-11-26T07:29:27.780Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

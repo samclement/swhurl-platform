@@ -1,0 +1,26 @@
+id: 66
+title: One records reader in adapters/files over a directory and a downloaded tarball, built on kernel's layout paths
+state: ready
+scope:
+  - v2/adapters/files/records.go
+  - v2/adapters/files/records_test.go
+  - v2/adapters/files/archive.go
+  - v2/adapters/files/archive_test.go
+  - v2/kernel/record_paths.go
+  - v2/kernel/record_paths_test.go
+  - v2/orchestration/console.go
+  - v2/orchestration/console_test.go
+  - v2/orchestration/console_evidence_test.go
+  - v2/cmd/swhurl-v2/change.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+checks:
+  - cd v2 && go test ./adapters/files/... ./orchestration/ ./cmd/swhurl-v2/
+  - make check-v2
+after: []
+reason: null
+notes:
+  - at: 2026-11-26T07:29:27.473Z
+    commit: 0a81414b2703
+    text: "operator: the records reader extends adapters/files, not a new adapter"

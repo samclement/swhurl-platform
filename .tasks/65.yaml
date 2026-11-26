@@ -1,0 +1,12 @@
+id: 65
+title: Quote --expect in the console change's promote step and test that every quoted line matches its request
+state: ready
+scope:
+  - v2/cmd/swhurl-v2/change_steps.go
+  - v2/cmd/swhurl-v2/change_test.go
+checks:
+  - cd v2 && go test ./cmd/swhurl-v2/ -run TestChange
+  - make check-v2
+after: []
+reason: null
+notes: []

@@ -1,0 +1,26 @@
+id: 75
+title: Move the console's composition root and page rendering into v2/console, leaving thin HTTP handlers in cmd
+state: ready
+scope:
+  - v2/console/server.go
+  - v2/console/pages.go
+  - v2/console/*_test.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/cmd/swhurl-v2/console_pages.go
+  - v2/cmd/swhurl-v2/console_test.go
+  - v2/cmd/swhurl-v2/console_pages_test.go
+  - v2/cmd/swhurl-v2/main.go
+  - v2/orchestration/console.go
+  - v2/orchestration/console_test.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
+  - make check-v2
+after:
+  - 74
+reason: null
+notes:
+  - at: 2026-11-26T07:29:28.113Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

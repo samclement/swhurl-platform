@@ -1,0 +1,22 @@
+id: 74
+title: Run the new-app, connection, allow, team and channel kinds through their typed calls, leaving one table as the only kind list
+state: ready
+scope:
+  - v2/console/steps.go
+  - v2/console/steps_test.go
+  - v2/console/change.go
+  - v2/cmd/swhurl-v2/change_steps.go
+  - v2/cmd/swhurl-v2/change.go
+  - v2/pages/console_change.go
+  - v2/pages/app.go
+  - v2/cmd/swhurl-v2/promote.go
+checks:
+  - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/
+  - make check-v2
+after:
+  - 73
+reason: null
+notes:
+  - at: 2026-11-26T07:29:27.955Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

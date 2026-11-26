@@ -1,0 +1,16 @@
+id: 71
+title: Put the archive prefix rule and the minimum presigned-URL TTL in recovery/rules, reading the profile once
+state: ready
+scope:
+  - v2/recovery/rules/*.go
+  - v2/cmd/swhurl-v2/status.go
+  - v2/cmd/swhurl-v2/restore.go
+  - v2/cmd/swhurl-v2/status_test.go
+  - v2/cmd/swhurl-v2/restore_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./recovery/... ./cmd/swhurl-v2/ -run 'TestArchive|TestRestore|TestStatus'
+  - make check-v2
+after: []
+reason: null
+notes: []

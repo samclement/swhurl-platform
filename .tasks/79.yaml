@@ -1,0 +1,19 @@
+id: 79
+title: "Record the console slice as moved offline: plan section 36 state, workstream row, v2 status and dated evidence"
+state: ready
+scope:
+  - docs/iteration-2-plan.md
+  - docs/workstreams.md
+  - docs/v2-status.md
+  - docs/console.md
+  - docs/current-state.md
+checks:
+  - make check-docs
+  - make check-repo
+after:
+  - 78
+reason: null
+notes:
+  - at: 2026-11-26T07:29:28.799Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

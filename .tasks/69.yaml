@@ -1,0 +1,17 @@
+id: 69
+title: Read deploy, edit and promote's records through the adapters/files reader
+state: ready
+scope:
+  - v2/cmd/swhurl-v2/deploy_records.go
+  - v2/cmd/swhurl-v2/edit.go
+  - v2/cmd/swhurl-v2/promote.go
+  - v2/cmd/swhurl-v2/deploy_records_test.go
+  - v2/cmd/swhurl-v2/edit_test.go
+  - v2/cmd/swhurl-v2/promote_test.go
+checks:
+  - cd v2 && go test ./cmd/swhurl-v2/ -run 'TestDeploy|TestEdit|TestPromote'
+  - make check-v2
+after:
+  - 67
+reason: null
+notes: []

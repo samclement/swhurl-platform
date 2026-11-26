@@ -1,0 +1,11 @@
+id: 64
+title: Correct the promotion paragraph in docs/architecture.md
+state: ready
+scope:
+  - docs/architecture.md
+checks:
+  - make check-docs
+  - make check-repo
+after: []
+reason: null
+notes: []

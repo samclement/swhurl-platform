@@ -1,0 +1,33 @@
+id: 77
+title: Move Activity, the change job and the new-app job into v2/console
+state: ready
+scope:
+  - v2/console/activity.go
+  - v2/console/changes.go
+  - v2/console/evidence.go
+  - v2/console/newapp.go
+  - v2/console/publish.go
+  - v2/console/*_test.go
+  - v2/cmd/swhurl-v2/console_activity.go
+  - v2/cmd/swhurl-v2/console_change.go
+  - v2/cmd/swhurl-v2/console_new.go
+  - v2/cmd/swhurl-v2/console_activity_test.go
+  - v2/cmd/swhurl-v2/console_change_test.go
+  - v2/cmd/swhurl-v2/console_evidence_test.go
+  - v2/orchestration/console_changes.go
+  - v2/orchestration/console_evidence.go
+  - v2/orchestration/console_publish.go
+  - v2/orchestration/console_changes_test.go
+  - v2/orchestration/console_evidence_test.go
+  - v2/orchestration/console_publish_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
+  - make check-v2
+after:
+  - 76
+reason: null
+notes:
+  - at: 2026-11-26T07:29:28.441Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

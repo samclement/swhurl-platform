@@ -1,0 +1,23 @@
+id: 67
+title: Replace the four records-root constants and the hard-coded instance.json paths with kernel layout paths and the reader
+state: ready
+scope:
+  - v2/kernel/record_paths.go
+  - v2/pages/console_change.go
+  - v2/pages/newapp.go
+  - v2/provisioning/records.go
+  - v2/health/rules/platform_scope.go
+  - v2/health/platform_scope.go
+  - v2/orchestration/console*.go
+  - v2/orchestration/mint.go
+  - v2/cmd/swhurl-v2/console_app.go
+  - v2/apps/*.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+checks:
+  - make check-v2
+  - make check-apps
+after:
+  - 66
+reason: null
+notes: []

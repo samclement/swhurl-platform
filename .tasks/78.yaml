@@ -1,0 +1,25 @@
+id: 78
+title: Move the flag, secret and audit handlers into v2/console and retire the console's orchestration edges and files
+state: ready
+scope:
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/console_secrets.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/cmd/swhurl-v2/console_flags_test.go
+  - v2/cmd/swhurl-v2/console_secrets_test.go
+  - v2/orchestration/console*.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+  - docs/iteration-2-plan.md
+checks:
+  - cd v2 && go test ./...
+  - make check-v2
+  - make check-apps
+after:
+  - 77
+reason: null
+notes:
+  - at: 2026-11-26T07:29:28.638Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

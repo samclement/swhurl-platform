@@ -1,0 +1,28 @@
+id: 76
+title: Move the app and instance pages, actions and their readers into v2/console
+state: ready
+scope:
+  - v2/console/app.go
+  - v2/console/actions.go
+  - v2/console/rows.go
+  - v2/console/offers.go
+  - v2/console/*_test.go
+  - v2/cmd/swhurl-v2/console_app.go
+  - v2/cmd/swhurl-v2/console_actions.go
+  - v2/cmd/swhurl-v2/console_app_test.go
+  - v2/cmd/swhurl-v2/console_actions_test.go
+  - v2/orchestration/console_app.go
+  - v2/orchestration/console_rows.go
+  - v2/orchestration/console_offers.go
+  - v2/orchestration/console_app_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
+  - make check-v2
+after:
+  - 75
+reason: null
+notes:
+  - at: 2026-11-26T07:29:28.269Z
+    commit: 0a81414b2703
+    text: operator approved the section-36 console slice (2026-11-26)

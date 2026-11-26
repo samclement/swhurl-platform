@@ -1,0 +1,18 @@
+id: 70
+title: Move batch deploy into delivery.DeployAll, taking the records reader
+state: ready
+scope:
+  - v2/delivery/deployall.go
+  - v2/delivery/deployall_test.go
+  - v2/cmd/swhurl-v2/deploy.go
+  - v2/cmd/swhurl-v2/deploy_records.go
+  - v2/cmd/swhurl-v2/deploy_records_test.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+checks:
+  - cd v2 && go test ./delivery/... ./cmd/swhurl-v2/ -run Deploy
+  - make check-v2
+after:
+  - 69
+reason: null
+notes: []

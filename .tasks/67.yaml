@@ -14,6 +14,7 @@ scope:
   - v2/apps/*.go
   - v2/archtest/api.txt
   - v2/archtest/budgets.json
+  - v2/archtest/rules_test.go
 checks:
   - make check-v2
   - make check-apps
@@ -30,3 +31,6 @@ notes:
   - at: 2026-11-26T07:55:30.692Z
     commit: 61bf25f7bfb9
     text: "operator: pages may import kernel (PureDependencies edge pages->kernel); scope extended to v2/archtest/rules_test.go for that edge and the stale mint comment only"
+  - at: 2026-11-26T07:58:12.329Z
+    commit: 3989130cb846
+    text: scope widened by the conductor to v2/archtest/rules_test.go (operator-approved pages->kernel edge)

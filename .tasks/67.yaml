@@ -1,6 +1,6 @@
 id: 67
 title: Replace the four records-root constants and the hard-coded instance.json paths with kernel layout paths and the reader
-state: ready
+state: active
 scope:
   - v2/kernel/record_paths.go
   - v2/pages/console_change.go
@@ -20,4 +20,13 @@ checks:
 after:
   - 66
 reason: null
-notes: []
+notes:
+  - at: 2026-11-26T07:55:22.801Z
+    commit: 61bf25f7bfb9
+    text: "May pages import kernel (new PureDependencies edge in v2/archtest/rules_test.go, outside scope)? -> operator: yes (option 1); add the edge and fix the stale mint comment; pages uses kernel.RecordsRoot/AppRecordPath/RecordFolder"
+  - at: 2026-11-26T07:55:22.965Z
+    commit: 61bf25f7bfb9
+    text: "operator sidenote: pages being imported into core logic seems wrong (pages = view models)"
+  - at: 2026-11-26T07:55:30.692Z
+    commit: 61bf25f7bfb9
+    text: "operator: pages may import kernel (PureDependencies edge pages->kernel); scope extended to v2/archtest/rules_test.go for that edge and the stale mint comment only"

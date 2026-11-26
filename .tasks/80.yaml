@@ -1,0 +1,27 @@
+id: 80
+title: Move Offers/OfferedAPI out of pages into a domain package and add an archtest rule that only console and cmd import pages
+state: ready
+scope:
+  - v2/adapters/appsource/*.go
+  - v2/pages/*.go
+  - v2/connectivity/*.go
+  - v2/apps/*.go
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/*.go
+  - v2/orchestration/*.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+  - docs/architecture.md
+  - docs/iteration-2-plan.md
+checks:
+  - cd v2 && go test ./...
+  - make check-v2
+  - make check-apps
+after:
+  - 79
+reason: null
+notes:
+  - at: 2026-11-26T07:56:11.086Z
+    commit: 61bf25f7bfb9
+    text: "operator: pages holds view models and must not be imported by core logic. Destination of Offers (connectivity or apps) is the operator's choice: ask before moving."

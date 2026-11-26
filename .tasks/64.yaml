@@ -1,6 +1,6 @@
 id: 64
 title: Correct the promotion paragraph in docs/architecture.md
-state: ready
+state: done
 scope:
   - docs/architecture.md
 checks:
@@ -8,4 +8,10 @@ checks:
   - make check-repo
 after: []
 reason: null
-notes: []
+notes:
+  - at: 2026-11-26T07:31:34.900Z
+    commit: 4ea1c3d09505
+    text: "done: docs/architecture.md:279 said console promotions carry only production's records and that the Render workflow renders them. Corrected: the console runs promote then render (change_steps.go promoteSteps), so the PR carries records and rendered files and Render finds main rendered; links console.md#promotions. check-docs, check-repo pass. Nothing live."
+  - at: 2026-11-26T07:33:27.423Z
+    commit: 4ea1c3d09505
+    text: branch dsa/01M8BC5CCC6RWQNPY638Y9BDDK/task-64

@@ -1,6 +1,6 @@
 id: 66
 title: One records reader in adapters/files over a directory and a downloaded tarball, built on kernel's layout paths
-state: ready
+state: active
 scope:
   - v2/adapters/files/records.go
   - v2/adapters/files/records_test.go

@@ -1,6 +1,6 @@
 id: 65
 title: Quote --expect in the console change's promote step and test that every quoted line matches its request
-state: ready
+state: active
 scope:
   - v2/cmd/swhurl-v2/change_steps.go
   - v2/cmd/swhurl-v2/change_test.go
@@ -9,4 +9,7 @@ checks:
   - make check-v2
 after: []
 reason: null
-notes: []
+notes:
+  - at: 2026-11-26T07:32:54.067Z
+    commit: 4ea1c3d09505
+    text: "Fix the promote step's --expect value (staging -> production revision) in this task, or only quote it? -> operator: fix it here (option 1): expect production's record revision, quote it, test every quoted line matches its request, and test the step's request promotes against the fixture tree"

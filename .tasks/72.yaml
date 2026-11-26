@@ -1,6 +1,6 @@
 id: 72
 title: Create v2/console with one change-kind table (kind, title, envs, flags, planned operations) and register its layer and edges
-state: ready
+state: active
 scope:
   - v2/console/console.go
   - v2/console/change.go

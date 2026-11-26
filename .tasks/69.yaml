@@ -1,6 +1,6 @@
 id: 69
 title: Read deploy, edit and promote's records through the adapters/files reader
-state: ready
+state: done
 scope:
   - v2/cmd/swhurl-v2/deploy_records.go
   - v2/cmd/swhurl-v2/edit.go
@@ -14,4 +14,19 @@ checks:
 after:
   - 67
 reason: null
-notes: []
+notes:
+  - at: 2026-11-26T08:07:05.211Z
+    commit: 581cc1e0621c
+    text: "done: deploy --records, promote and edit (one instance and team) read records via files.ReadRecords (c.records/recordOf); deploy filters staging, promote keeps the folder/spec check. Missing record now exit 2 not 1; whole tree is read, so any half-read instance refuses. instanceFolders deleted. 1 MiB per-record bound gone for these reads. Not verified live."
+  - at: 2026-11-26T08:07:05.211Z
+    commit: 581cc1e0621c
+    text: "followup: render.go renderFolders still walks folders and calls recordsEdit per instance, which now reads the whole tree each time (n tree reads): read once with c.records and call editFolder. remove.go also goes through recordsEdit."
+  - at: 2026-11-26T08:07:05.211Z
+    commit: 581cc1e0621c
+    text: "followup: status_all.go is the last caller of readInstance (deploy_records.go), and team.go and dashboards.go still read records by hand with appEnvironments: move them to c.records and delete readInstance."
+  - at: 2026-11-26T08:07:05.211Z
+    commit: 581cc1e0621c
+    text: "followup: files.ReadRecords has no per-file size bound (c.read capped inputs at 1 MiB; the archive reader caps at 8 MiB): decide whether the directory reader should share the archive's bound."
+  - at: 2026-11-26T08:08:36.655Z
+    commit: 581cc1e0621c
+    text: branch dsa/01M8BDX210NQ833YYAVTAABCXQ/task-69

@@ -20,6 +20,8 @@ scope:
   - v2/archtest/api.txt
   - v2/cmd/swhurl-v2/change_test.go
   - v2/console/change_test.go
+  - v2/adapters/files/checkout.go
+  - v2/adapters/files/checkout_test.go
 checks:
   - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/
   - make check-v2
@@ -39,3 +41,6 @@ notes:
   - at: 2026-11-27T08:49:44.970Z
     commit: 50236db83d91
     text: "add change_test.go and console/change_test.go to scope? -> conductor: yes; tests of in-scope code belong to the task"
+  - at: 2026-11-27T08:50:36.130Z
+    commit: 11d3328ac063
+    text: "where does create's 'app already has records' check live? -> conductor: option 1, files.Checkout.Empty in adapters/files (+test), apps.CreateIn refuses as today, cmd appAbsent deleted; settled by the operator's choices (readers in adapters/files, assembly below cmd) and keeps behaviour unchanged"

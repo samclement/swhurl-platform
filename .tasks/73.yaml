@@ -1,6 +1,6 @@
 id: 73
 title: Run the record kinds' steps (edit, remove, promote, render) as typed calls to apps and delivery, return the PR address instead of scraping "Opened", and derive each quoted line from its typed step
-state: active
+state: done
 scope:
   - v2/console/steps.go
   - v2/console/steps_test.go
@@ -77,3 +77,18 @@ notes:
   - at: 2026-11-27T08:42:06.915Z
     commit: 09cb4f1c554e
     text: "May docs/v2-status.md change so make check-docs (a check of this task) passes? -> conductor: yes, only what check-docs needs; the task's own check settles it."
+  - at: 2026-11-27T08:42:44.272Z
+    commit: c00f1aead0f0
+    text: "done: Record kinds run typed: console.Edit/Remove/Promote/RenderStep quote lines; cmd runner calls apps.EditIn/SetTeamIn/RemoveIn, delivery.PromoteIn, provisioning.Render via files.Checkout; cmds/policy use same calls. Render decisions in connectivity/provisioning rules. openChange/openAppRepo return PR URL. Offline only, not live."
+  - at: 2026-11-27T08:42:44.272Z
+    commit: c00f1aead0f0
+    text: "followup: cmd commitRevision regexp (render.go, status_all.go) duplicates provisioning/rules.CommitRevision; status_all.go is outside 73's scope"
+  - at: 2026-11-27T08:42:44.272Z
+    commit: c00f1aead0f0
+    text: "followup: files.Read bounds reads at 1 MiB like cmd's readInput; main.go readInput/maxInput could reuse files.Read"
+  - at: 2026-11-27T08:42:44.272Z
+    commit: c00f1aead0f0
+    text: "followup: docs/v2-status.md now says Uncommitted: v2/ for this work; reset it when the slice is committed and recorded (task 79)"
+  - at: 2026-11-27T08:44:26.669Z
+    commit: 03a285235e5c
+    text: branch dsa/01M8DZ4WVATTTQCATX6WAYS2WV/task-73

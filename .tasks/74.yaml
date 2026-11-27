@@ -1,6 +1,6 @@
 id: 74
 title: Run the new-app, connection, allow, team and channel kinds through their typed calls, leaving one table as the only kind list
-state: ready
+state: active
 scope:
   - v2/console/steps.go
   - v2/console/steps_test.go
@@ -28,6 +28,9 @@ scope:
   - v2/archtest/rules_test.go
   - v2/archtest/budgets.json
   - docs/iteration-2-plan.md
+  - v2/archtest/checks_test.go
+  - docs/v2-status.md
+  - docs/current-state.md
 checks:
   - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/
   - make check-v2
@@ -56,3 +59,6 @@ notes:
   - at: 2026-11-27T13:34:38.519Z
     commit: dbb59ce17223
     text: "connect/disconnect/allow builders need connectivity.ConnectionSettings/AllowSettings; console may not import connectivity -> operator: option 2: move them (pure) into connectivity/rules, delete the then-empty connectivity root package and its layer registration; step builders move into console, cmd's switch deleted. If they turn out not pure or the package not empty, fall back to option 1 (register console->connectivity) and say so in the done note."
+  - at: 2026-11-27T13:44:29.707Z
+    commit: a0f7d59f9d75
+    text: "deleting v2/connectivity needs checks_test.go, v2-status.md, current-state.md links -> conductor: option 1, widen; these are direct consequences of the operator's option-2 decision (delete the package), and leaving dead links breaks docs"

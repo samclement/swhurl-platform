@@ -1,6 +1,6 @@
 id: 77
 title: Move Activity, the change job and the new-app job into v2/console
-state: ready
+state: done
 scope:
   - v2/console/activity.go
   - v2/console/changes.go
@@ -58,3 +58,15 @@ notes:
   - at: 2026-11-27T17:45:43.033Z
     commit: b3ebbb298b48
     text: "Operator approved bounded finishing attempt in retained task-77 worktree after two failures: preserve partial code move, finish public-API baseline and affected docs, run required checks. No adjacent implementation. Approved replacing 78-80 with five smaller sequential tasks; Offers destination remains undecided."
+  - at: 2026-11-27T17:59:19.650Z
+    commit: 897df7215297
+    text: "done: Kept the retained move: Activity, change and new-app jobs, publish and merge evidence now in v2/console; console.Change is the only kind table (pages.ConsoleChange gone). Regenerated archtest/api.txt, fixed AppChange's doc comment, updated console.md's kind-table links and v2-status's console rows. check-v2 and check-docs pass. Not verified live."
+  - at: 2026-11-27T17:59:19.650Z
+    commit: 897df7215297
+    text: "followup: docs/git-history-rewrite-rehearsal.md (lines ~174, ~351) still points at v2/orchestration/console_changes.go and console_evidence.go, now moved to v2/console/changes.go and evidence.go"
+  - at: 2026-11-27T17:59:19.650Z
+    commit: 897df7215297
+    text: "followup: v2/adapters/kube exec_test.go:347 TestExecUpgradeRefusalsAndCancellation hung once to the 600s timeout in tk done's check-v2 (log .tasks/logs/77-2.log); passed -count=20 after. Unbounded <-served wait after a cancelled Exec looks flaky"
+  - at: 2026-11-27T18:00:51.357Z
+    commit: 0bd6b24d2046
+    text: branch dsa/01M8ENXCWQW4YT7D4GVGD01YVS/task-77

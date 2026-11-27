@@ -1,5 +1,6 @@
 // Package pages computes what the console's pages show: rows, labels, states, reasons, ages and the sorted slices
 // a template iterates. It prints nothing and renders nothing, so no page's data can slip html/template's escaper.
+// Only the console's use cases (console) and the command that serves them (cmd/swhurl-v2) import it.
 package pages
 
 import (

@@ -693,6 +693,11 @@ console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
 console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 console: func (*FlagStore) Card(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
 console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (problem string, status int)
+console: func (*Jobs) Drain(timeout time.Duration) bool
+console: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
+console: func (*Jobs) Reach(ctx context.Context, id int)
+console: func (*Jobs) Recent(ctx context.Context) []pages.Job
+console: func (*Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any, work JobWork) (pages.Job, error)
 console: func (*Redactor) Add(secret string)
 console: func (*Redactor) Redact(text string) string
 console: func (*Refusal) Error() string
@@ -746,9 +751,10 @@ console: func BranchTarget(branch string) (action, target string)
 console: func ChangeJobViewOf(job pages.Job, now time.Time) *ChangeJobView
 console: func ChangeNamed(kind string) (Change, bool)
 console: func ChangeViewOf(row pages.ChangeRow, now time.Time) ChangeView
-console: func ChangeWork(proposal ChangeProposal, open func(context.Context, ChangeProposal, func(string)) (string, error)) orchestration.JobWork
+console: func ChangeWork(proposal ChangeProposal, open func(context.Context, ChangeProposal, func(string)) (string, error)) JobWork
 console: func Changes() []Change
 console: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
+console: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
 console: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
 console: func ConsoleTeamInput(file string) bool
 console: func DesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
@@ -757,7 +763,8 @@ console: func FlagDocument(instance pages.Instance) string
 console: func FlagView(environment string, card orchestration.FlagCard) pages.FlagView
 console: func JobPageOf(ctx context.Context, jobs []pages.Job, id int, reads ChangeReads, canCreate bool) (JobPage, bool)
 console: func MergePlanFor(kind string, changed []string) string
-console: func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead, open func(context.Context, NewAppRequest, func(string)) (string, error)) orchestration.JobWork
+console: func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead, open func(context.Context, NewAppRequest, func(string)) (string, error)) JobWork
+console: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]connectivityrules.Offers
 console: func OpenPullViewOf(pr pages.OpenPull, now time.Time) *OpenPullView
 console: func OpenPulls(ctx context.Context, client github.Console, repository, token string) ([]pages.OpenPull, string)
@@ -774,7 +781,7 @@ console: func SplitNames(values []string) []string
 console: func StackCatalogue(tree map[string][]byte) (pages.StackCatalogue, error)
 console: func TeamRegistry(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 console: func UnitPageOf(unit pages.Unit) UnitPage
-console: func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) orchestration.JobWork
+console: func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) JobWork
 console: func WorkingCopy(dir string) files.Checkout
 console: type Activity struct {Moving, Ended []ChangeView PRsError string}
 console: type ActivityFacts struct {}
@@ -790,7 +797,12 @@ console: type EditStep struct {App, Env, Setting string}
 console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
 console: type FlagChange struct {Name string Set bool Value string Identity string}
 console: type FlagStore struct {Seed string URL string Open func(ctx context.Context, url, seed, inbox string) (nats.KV, error) Now func() time.Time Audit func(line string)}
+console: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
 console: type JobPage struct {Job ChangeJobView Track pages.Track Stage pages.Stage PR *OpenPullView CanResume bool}
+console: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
+console: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
+console: type Jobs struct {}
+console: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(JobEvent)}
 console: type Layer struct {Title, Text string Members []UnitRow}
 console: type NewAppRead struct {Contract []byte Catalogue pages.StackCatalogue Teams map[string]pages.TeamInfo Connectable pages.Connectable TeamsError string HookHost string}
 console: type NewAppRequest struct {Choices pages.NewAppChoices Finishing bool Identity, HookHost string Contract []byte}
@@ -1615,11 +1627,6 @@ orchestration: const FluxResume FluxAction = "resume"
 orchestration: const FluxSuspend FluxAction = "suspend"
 orchestration: const NoFlagsProblem = "This console has no NATS key (console-nats Secret), so overrides cannot be read or set."
 orchestration: const StaleDays = 14
-orchestration: func (*Jobs) Drain(timeout time.Duration) bool
-orchestration: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
-orchestration: func (*Jobs) Reach(ctx context.Context, id int)
-orchestration: func (*Jobs) Recent(ctx context.Context) []pages.Job
-orchestration: func (*Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any, work JobWork) (pages.Job, error)
 orchestration: func (*Refusal) Error() string
 orchestration: func (OrderedValue) Member(name string) OrderedValue
 orchestration: func (OrderedValue) Text() string
@@ -1639,7 +1646,6 @@ orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
-orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
 orchestration: func DecodeOrdered(data []byte) (OrderedValue, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
@@ -1648,7 +1654,6 @@ orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
 orchestration: func ImageDeclaration(reader appsource.Reader, root string) (string, error)
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
-orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func ScalarText(value any) string
@@ -1682,11 +1687,6 @@ orchestration: type FlagRow struct {Name string Flag producer.Flag Undeclared bo
 orchestration: type FluxAction string
 orchestration: type FluxInputs struct {Action FluxAction Unit string Release *FluxRelease Cluster Cluster Now func() time.Time Sleep func(time.Duration) Progress func(string)}
 orchestration: type FluxRelease struct {Namespace string Name string}
-orchestration: type JobEvent struct {ID int Action string Target string Identity string State string Link string Duration time.Duration}
-orchestration: type JobStore interface {// Load is every record the store holds, as written; anything malformed is not a job. Load(ctx context.Context) ([]string, error) // Save writes each record, and deletes the records whose value is nil, in one change: two pods writing at once // cannot drop each other's keys. Save(ctx context.Context, records map[int]*string) error // Alive is whether the pod that ran a job still exists. An unreadable answer counts as alive. Alive(ctx context.Context, owner string) (bool, error)}
-orchestration: type JobWork func(ctx context.Context, line func(string)) (link string, err error)
-orchestration: type Jobs struct {}
-orchestration: type JobsInputs struct {Store JobStore Owner string Now func() time.Time Sleep func(time.Duration) Redact func(string) string Audit func(JobEvent)}
 orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.SecretNamer Executor kube.Executor Now func() time.Time Sleep func(time.Duration) Say func(lifecycletest.Line)}
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}

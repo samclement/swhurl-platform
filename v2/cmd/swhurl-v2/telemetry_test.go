@@ -14,7 +14,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
 	"github.com/samclement/swhurl-platform/v2/adapters/otlp/otlptest"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // counting is an identifier source that never repeats: each byte read is the next value.
@@ -200,7 +199,7 @@ func TestAReadOutsideARequestIsNotASpan(t *testing.T) {
 		t.Fatal("a nil telemetry decorated a read")
 	}
 	none.flush(context.Background())
-	none.job(orchestration.JobEvent{State: "failed"})
+	none.job(console.JobEvent{State: "failed"})
 }
 
 type localSource struct{}
@@ -234,8 +233,8 @@ func TestAFailedReadIsAFailedSpan(t *testing.T) {
 // A job that ended is one span of its own and is counted by action and state; its start records nothing.
 func TestAJobThatEndedIsASpanAndCounted(t *testing.T) {
 	trace, fake := testTelemetry(nil)
-	trace.job(orchestration.JobEvent{ID: 68, Action: "scale", Target: "web/prod", State: "started"})
-	trace.job(orchestration.JobEvent{ID: 68, Action: "scale", Target: "web/prod", State: "failed", Duration: 3 * time.Second})
+	trace.job(console.JobEvent{ID: 68, Action: "scale", Target: "web/prod", State: "started"})
+	trace.job(console.JobEvent{ID: 68, Action: "scale", Target: "web/prod", State: "failed", Duration: 3 * time.Second})
 	trace.flush(context.Background())
 	got := received(t, fake)
 	jobs := got.named("job scale")

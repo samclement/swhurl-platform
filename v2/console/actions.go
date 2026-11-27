@@ -12,7 +12,7 @@ import (
 
 // UnitWork is one unit action as a job's work: Flux's own lines, and the refusal it ends with when there is one. The
 // action's refusal — a root unit, a suspended unit's reconcile — is the job's own last line.
-func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) orchestration.JobWork {
+func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) JobWork {
 	return func(ctx context.Context, line func(string)) (string, error) {
 		return "", orchestration.Flux(ctx, orchestration.FluxInputs{Action: orchestration.FluxAction(action), Unit: unit,
 			Cluster: cluster, Now: now, Sleep: time.Sleep, Progress: line})

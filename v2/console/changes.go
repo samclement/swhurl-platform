@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"net/http"
 	"slices"
 	"strings"
@@ -367,7 +366,7 @@ type ChangeProposal struct {
 // ChangeWork is the change job, through the command's own typed execution port.
 // Its result is the pull request address, never a URL extracted from output lines.
 func ChangeWork(proposal ChangeProposal,
-	open func(context.Context, ChangeProposal, func(string)) (string, error)) orchestration.JobWork {
+	open func(context.Context, ChangeProposal, func(string)) (string, error)) JobWork {
 	return func(ctx context.Context, line func(string)) (string, error) {
 		return open(ctx, proposal, line)
 	}

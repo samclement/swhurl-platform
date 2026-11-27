@@ -3,7 +3,6 @@ package console
 import (
 	"context"
 	"errors"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -74,7 +73,7 @@ type NewAppRequest struct {
 // NewAppWork creates the repository, or resumes the earlier job's repository,
 // through v2's typed command port and returns its staging pull request address.
 func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead,
-	open func(context.Context, NewAppRequest, func(string)) (string, error)) orchestration.JobWork {
+	open func(context.Context, NewAppRequest, func(string)) (string, error)) JobWork {
 	return func(ctx context.Context, line func(string)) (string, error) {
 		if read.Contract == nil {
 			return "", errors.New("v2/contract/stacks.json: not in the pinned commit")

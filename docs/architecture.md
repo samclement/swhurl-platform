@@ -263,6 +263,18 @@ flowchart TB
   reloader -. restart on Secret change .-> oauth & otelds
 ```
 
+### Console code
+
+The console container runs `swhurl-v2 console`, built from three v2 packages in its [development layers](iteration-2-plan.md#4-development-layers-and-adapters):
+
+| Package | Layer | Owns |
+| --- | --- | --- |
+| `cmd/swhurl-v2` | 3, the command | HTTP handlers, templates, and wiring the adapters and the clock |
+| `console` | 2, the console's use cases | Its flows, the changes it opens, the jobs that run them and their records, and assembling each page from what it read |
+| `pages` | 0, pure | The view models and wording the pages show, computed from values it is given |
+
+Only `console` and `cmd/swhurl-v2` import `pages`, so a view model never becomes another capability's type: a type another capability needs lives with the capability that owns its meaning, as connectivity's offered documents do. `make check-v2` enforces it (rule `layers`).
+
 ### Request path to a signed-in app
 
 ```mermaid

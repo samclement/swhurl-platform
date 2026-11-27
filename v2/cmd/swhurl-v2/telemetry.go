@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/otlp"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/telemetry"
 )
 
@@ -168,7 +168,7 @@ func (t *consoleTelemetry) request(method, route string, status int, took time.D
 
 // job counts a job that ended and records its span, a trace of its own that started when the job did. A job's
 // start writes nothing here: its end carries how long it ran.
-func (t *consoleTelemetry) job(event orchestration.JobEvent) {
+func (t *consoleTelemetry) job(event console.JobEvent) {
 	if t == nil || event.State == "started" {
 		return
 	}

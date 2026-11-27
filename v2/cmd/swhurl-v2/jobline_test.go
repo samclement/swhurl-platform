@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/console"
 )
 
 // A job's lines: the audit words the console has always written, and the fields a dashboard counts. A start has no
@@ -14,14 +14,14 @@ import (
 func TestAJobLineCarriesItsKindOutcomeAndDuration(t *testing.T) {
 	var out bytes.Buffer
 	log := requestLogger(&out, "console")
-	writeJobEvent(log, orchestration.JobEvent{ID: 7, Action: "scale", Target: "hello-ts/staging",
+	writeJobEvent(log, console.JobEvent{ID: 7, Action: "scale", Target: "hello-ts/staging",
 		Identity: "sam@swhurl.com", State: "started"})
-	writeJobEvent(log, orchestration.JobEvent{ID: 7, Action: "scale", Target: "hello-ts/staging",
+	writeJobEvent(log, console.JobEvent{ID: 7, Action: "scale", Target: "hello-ts/staging",
 		Identity: "sam@swhurl.com", State: "succeeded", Link: "https://github.com/owner/repo/pull/42",
 		Duration: 2500 * time.Millisecond})
-	writeJobEvent(log, orchestration.JobEvent{ID: 8, Action: "reconcile", Target: "gw",
+	writeJobEvent(log, console.JobEvent{ID: 8, Action: "reconcile", Target: "gw",
 		Identity: "sam@swhurl.com", State: "failed", Duration: 90 * time.Second})
-	writeJobEvent(log, orchestration.JobEvent{ID: 9, Action: "reconcile", Target: "gw",
+	writeJobEvent(log, console.JobEvent{ID: 9, Action: "reconcile", Target: "gw",
 		Identity: "sam@swhurl.com", State: "interrupted", Duration: 3 * time.Minute})
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")

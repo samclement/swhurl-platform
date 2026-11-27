@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -206,7 +205,7 @@ func (s *consoleServer) jobsOf(ctx context.Context) []pages.Job {
 	if s.data == nil {
 		return nil
 	}
-	return s.withReached(orchestration.ConsoleJobs(ctx, s.data, s.reader, s.now()))
+	return s.withReached(console.ConsoleJobs(ctx, s.data, s.reader, s.now()))
 }
 
 // jobViewsOf is every job as a row shows it.

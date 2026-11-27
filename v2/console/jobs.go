@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"

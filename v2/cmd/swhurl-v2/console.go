@@ -29,7 +29,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 	"github.com/samclement/swhurl-platform/v2/telemetry"
 )
@@ -168,7 +167,7 @@ type consoleServer struct {
 	events consoleEvents
 	// jobs is the same registry as live, for the use cases that start and settle jobs; a server without one keeps no
 	// record and runs nothing.
-	jobs   *orchestration.Jobs
+	jobs   *console.Jobs
 	redact *console.Redactor
 	// requests writes the console's own request and job lines, in one lock so a line is never interleaved; it is nil
 	// when the server keeps no log.
@@ -273,7 +272,7 @@ func (s *consoleServer) startJobs(config consoleConfig) {
 	if config.Data == nil {
 		return
 	}
-	audit := func(event orchestration.JobEvent) {
+	audit := func(event console.JobEvent) {
 		if s.requests != nil {
 			writeJobEvent(s.requests, event)
 		}
@@ -287,7 +286,7 @@ func (s *consoleServer) startJobs(config consoleConfig) {
 	if config.Dev {
 		record.Name = "console-jobs-dev"
 	}
-	s.jobs = orchestration.NewJobs(ctx, orchestration.JobsInputs{
+	s.jobs = console.NewJobs(ctx, console.JobsInputs{
 		Store: record, Owner: config.Owner, Now: config.Now,
 		Sleep: time.Sleep, Redact: s.redact.Redact, Audit: audit})
 	s.live = s.jobs

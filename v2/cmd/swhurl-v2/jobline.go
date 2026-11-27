@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 
-	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/console"
 )
 
 // writeJobEvent writes one job state change: the audit words the console has always logged, and the fields a
 // dashboard counts — the kind of job, its outcome and, once it ended, how long it took.
-func writeJobEvent(log *jsonLog, event orchestration.JobEvent) {
+func writeJobEvent(log *jsonLog, event console.JobEvent) {
 	mark, level := "[AUDIT]", "INFO"
 	if event.State == "failed" || event.State == "interrupted" {
 		mark, level = "[ERROR]", "ERROR"

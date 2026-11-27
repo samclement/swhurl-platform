@@ -33,8 +33,8 @@ var Rules = []Rule{
 	{"approved-modules", "v2 imports only the Go standard library, its own packages and the approved modules in Modules, each from the adapters it was approved for; go.mod requires exactly those modules at their approved versions",
 		"remove the import, or ask the operator to approve the module and add it to Modules (archtest/rules_test.go) with the adapters that may import it",
 		"third-party-modules"},
-	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, a pure package PureDependencies lists for it, or a workflow package WorkflowDependencies lists for it",
-		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down; reuse owner pure verdicts through PureDependencies before requesting a named directional WorkflowDependencies edge; workflow edges must join use-case packages without self edges or cycles",
+	{"layers", "every v2 package has a declared layer (0 pure model, 1 adapters, 2 use cases, 3 commands) and imports only v2 packages in lower layers, a pure package PureDependencies lists for it, or a workflow package WorkflowDependencies lists for it; a package ImportedOnlyBy lists is imported only by the packages listed for it",
+		"declare a new package in Layers (archtest/rules_test.go), or move code so dependencies point down; reuse owner pure verdicts through PureDependencies before requesting a named directional WorkflowDependencies edge; workflow edges must join use-case packages without self edges or cycles; a type another capability needs from a package ImportedOnlyBy limits moves to the capability that owns its meaning",
 		"4-development-layers-and-adapters"},
 	{"pure", "pure packages import only allowlisted standard packages, print nothing and keep no mutable package state",
 		"pass the value in as a parameter (time, identifiers, snapshots) or move the effect into an adapter",
@@ -146,9 +146,9 @@ var Layers = map[string]int{
 	// the offered documents' types.
 	"connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 
-	// The console capability: the kinds of change it opens, and what its pages read (the platform checks, the
-	// instances' status, the units) and the page models built from it. Its other view models still live in pages
-	// and the rest of its flows in orchestration until their tasks move them.
+	// The console capability: the kinds of change it opens, the jobs that run them and keep their records, and what
+	// its pages read (the platform checks, the instances' status, the units) and the page models built from it. Its
+	// other view models still live in pages and its flag and registry operations in orchestration.
 	"console": 2,
 }
 
@@ -185,13 +185,20 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // apps' status as a port the command wires, so it needs no edge. Provisioning owns writing an instance's folder and
 // records: apps' create, edit and SetTeam and delivery's deploy and promote write through it. Apps' create and
 // orchestration's mint also use provisioning's encrypted seed construction; mint keeps its identity workflow. The
-// console holds no files in orchestration; it still runs its jobs through orchestration's registry and reads and
-// writes flags and opens a registry change through orchestration's operations.
+// console holds no files in orchestration and runs its own jobs; it still reads and writes flags and opens a
+// registry change through orchestration's operations.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"provisioning"},
 	"console":       {"orchestration", "health", "apps"},
 	"delivery":      {"provisioning"},
 	"apps":          {"provisioning"},
+}
+
+// ImportedOnlyBy limits, by imported package, which packages may import it even where its layer allows them. pages
+// is the console's view of what it read, worded for a template: only the console's use cases and the command that
+// serves them import it, so a view model never becomes another capability's type (docs/architecture.md#console-code).
+var ImportedOnlyBy = map[string][]string{
+	"pages": {"console", "cmd/swhurl-v2"},
 }
 
 // OrchestrationImports are the packages a use case may not import: arguments, printing and process exit are
@@ -541,6 +548,10 @@ func checkLayers(m *Module, workflows map[string][]string) []Violation {
 				if other, ok := Layers[target]; !ok || (other >= layer && !pureDependency(dir, target) && !workflowDependency(workflows, dir, target)) {
 					found = append(found, Violation{"layers", m.at(file, spec.Pos()),
 						fmt.Sprintf("%s (layer %d) imports %s (layer %s)", dir, layer, target, layerName(target))})
+				}
+				if importers, limited := ImportedOnlyBy[target]; limited && dir != target && !slices.Contains(importers, dir) {
+					found = append(found, Violation{"layers", m.at(file, spec.Pos()),
+						fmt.Sprintf("%s imports %s, which only %s may import", dir, target, strings.Join(importers, " and "))})
 				}
 			}
 		}

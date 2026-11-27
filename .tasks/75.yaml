@@ -1,6 +1,6 @@
 id: 75
 title: Move the console's composition root and page rendering into v2/console, leaving thin HTTP handlers in cmd
-state: ready
+state: active
 scope:
   - v2/console/server.go
   - v2/console/pages.go
@@ -14,6 +14,8 @@ scope:
   - v2/orchestration/console_test.go
   - v2/archtest/rules_test.go
   - v2/archtest/api.txt
+  - v2/orchestration/console_internal_test.go
+  - v2/health/console_test.go
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -24,3 +26,6 @@ notes:
   - at: 2026-11-26T07:29:28.113Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T13:52:17.957Z
+    commit: e3aca48345e3
+    text: "how to split the console server between console and cmd; widen to two test files? -> conductor: option 1 (composition and page models into console, HTTP shell stays in cmd; edges console->{orchestration, health, apps}, orchestration loses health and apps); settled by the task title (thin HTTP handlers in cmd) and 76-78's own handler moves; tests of moved code belong to the task"

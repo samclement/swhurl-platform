@@ -4,6 +4,7 @@ state: active
 scope:
   - v2/recovery/restore.go
   - v2/recovery/restore_test.go
+  - v2/cmd/swhurl-v2/restore_test.go
   - v2/archtest/api.txt
   - docs/operations.md
   - docs/v2-status.md
@@ -16,3 +17,6 @@ notes:
   - at: 2026-11-27T22:44:19.255Z
     commit: 21567fbb7dac
     text: "Approved design: acquire exclusive per-instance ownership before any suspension or scaling using existing primitives. Existing claim refuses with no effects or cleanup ownership. No age-only/absent-pod automatic takeover. Unknown API outcome must not authorize deleting another operation resources. Drain active backup writers boundedly. No new effect adapters/dependencies or general workflow framework; do not weaken archtest baselines. Offline changes only."
+  - at: 2026-11-27T22:54:20.796Z
+    commit: 2e0087f027b6
+    text: May task scope include v2/cmd/swhurl-v2/restore_test.go to change expected first step suspend to claim? -> Operator approved yes. File added to scope; no other scope extension authorized.

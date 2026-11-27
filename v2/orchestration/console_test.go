@@ -63,38 +63,6 @@ func TestFilterTarball(t *testing.T) {
 	}
 }
 
-// A record folder is one instance's three records; the folders are listed in app and environment order, and the
-// documents every compilation takes are shared. An instance without its app record refuses the page's tree.
-func TestRecords(t *testing.T) {
-	tree := map[string][]byte{
-		"v2/testdata/profile.json":             []byte(`{"kind":"profile"}`),
-		"v2-records/calls.json":                []byte(`{"kind":"calls"}`),
-		"platform/egress/allocation.json":      []byte(`{"kind":"allocation"}`),
-		"v2-records/web/staging/instance.json": []byte(`{"application":"web"}`),
-		"v2-records/web/staging/release.json":  []byte(`{"kind":"release"}`),
-		"v2-records/web/app.json":              []byte(`{"team":"shop"}`),
-		"v2-records/api/prod/instance.json":    []byte(`{"application":"api"}`),
-		"v2-records/api/prod/release.json":     []byte(`{"kind":"release"}`),
-		"v2-records/api/app.json":              []byte(`{"team":"core"}`),
-		"v2-records/teams.json":                []byte(`{"teams":{}}`),
-	}
-	records, err := orchestration.Records(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(records.Shared.Profile) != `{"kind":"profile"}` || string(records.Shared.Egress) != `{"kind":"allocation"}` {
-		t.Fatalf("shared documents = %#v", records.Shared)
-	}
-	if len(records.Instances) != 2 || string(records.Instances[0].Instance) != `{"application":"api"}` ||
-		string(records.Instances[1].App) != `{"team":"shop"}` || records.Instances[1].Calls == nil {
-		t.Fatalf("instances = %#v", records.Instances)
-	}
-	delete(tree, "v2-records/api/app.json")
-	if found, err := orchestration.Records(tree); err == nil {
-		t.Fatalf("an instance without its app record was read: %#v", found)
-	}
-}
-
 type source struct {
 	revision string
 	trees    map[string]map[string][]byte

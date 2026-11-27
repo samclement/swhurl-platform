@@ -679,22 +679,42 @@ console: func (RemoveStep) Quote() string
 console: func (RenderStep) Operation() Operation
 console: func (RenderStep) Quote() string
 console: func (Request) Name() string
+console: func (Server) Apps(ctx context.Context, input pages.AppsInput) (pages.AppsPage, error)
+console: func (Server) Catalogue(ctx context.Context, env, kind, team string) (pages.CataloguePage, error)
+console: func (Server) Checks(ctx context.Context) (pages.Checks, error)
+console: func (Server) Dashboards(ctx context.Context) map[string]string
+console: func (Server) Egress(ctx context.Context) (pages.EgressPage, error)
+console: func (Server) Overview(ctx context.Context) (Overview, error)
+console: func (Server) PinnedTree(ctx context.Context) (map[string][]byte, error)
+console: func (Server) Platform(ctx context.Context) (Platform, error)
+console: func (Server) Rows(ctx context.Context) (map[string][]byte, []pages.AppRow, error)
+console: func (Server) Teams(ctx context.Context) (pages.TeamsPage, error)
+console: func (Server) UnitPage(ctx context.Context, name string) (UnitPage, bool, error)
+console: func (Server) Units(ctx context.Context) ([]pages.Unit, error)
 console: func (TeamStep) Operation() Operation
 console: func (TeamStep) Quote() string
 console: func ChangeNamed(kind string) (Change, bool)
 console: func Changes() []Change
+console: func PlatformOf(checks pages.Checks, units []pages.Unit) Platform
+console: func UnitPageOf(unit pages.Unit) UnitPage
 console: func WorkingCopy(dir string) files.Checkout
 console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
+console: type Layer struct {Title, Text string Members []UnitRow}
 console: type Operation string
+console: type Overview struct {Checks pages.Checks AppCount int Units []pages.Unit Problems []pages.Problem Updating []pages.Problem}
+console: type Platform struct {Checks pages.Checks Units []pages.Unit Problems []pages.Problem Updating []pages.Problem Groups []pages.Group Unhealthy []pages.Unit Elsewhere []pages.Unit Layers []Layer Revision string}
 console: type PromoteStep struct {App, Env, Expected string}
 console: type Refusal struct {Subject, Reason string}
 console: type RemoveStep struct {App, Env string}
 console: type RenderStep struct {}
 console: type Request struct {App, Env, Team string Settings []string Calls, Subscriptions, DropCalls, DropSubscriptions []string Allows, Disallows []string Description, Rename, Transport, Image string}
+console: type Server struct {Bundle *orchestration.ConsoleBundle Reader kube.Reader Collector kube.Collector Data kube.Data Compare func(from, to string) ([]string, bool, error) Now func() time.Time Repository string GitHub bool Stacks func(ctx context.Context, apps []string) map[string]string Jobs func(ctx context.Context) []pages.Job}
 console: type Step interface {// Operation is the planned operation the step runs. Operation() Operation // Quote is the line a person could type in a checkout to run the same step. Quote() string}
 console: type TeamStep struct {Change kernel.TeamChange}
+console: type UnitPage struct {Unit pages.Unit Refused string App *pages.Instance Detail string}
+console: type UnitRow struct {pages.UnitRow Refused string Job *pages.Job RefreshURL string}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -1528,7 +1548,6 @@ orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(p
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
-orchestration: func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error)
 orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
 orchestration: func ConsoleDesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
 orchestration: func ConsoleFlagView(environment string, card FlagCard) pages.FlagView
@@ -1540,9 +1559,7 @@ orchestration: func ConsoleSettings(tree map[string][]byte, app, env string) map
 orchestration: func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error)
 orchestration: func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
 orchestration: func ConsoleStacks(tree map[string][]byte) (pages.StackCatalogue, error)
-orchestration: func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, reader kube.Reader, units [][]byte, compare func(from, to string) ([]string, bool, error), source string, now func() time.Time) (observe.Collection, error)
 orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
-orchestration: func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
@@ -1554,7 +1571,6 @@ orchestration: func Mint(inputs MintInputs, destination string, writer files.Wri
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
-orchestration: func Records(tree map[string][]byte) (ConsoleRecords, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
@@ -1577,7 +1593,6 @@ orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
 orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
-orchestration: type ConsoleRecords struct {Shared provisioningrules.Inputs Instances []provisioningrules.Inputs}
 orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
 orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
 orchestration: type DashboardLine struct {Changed bool Text string}

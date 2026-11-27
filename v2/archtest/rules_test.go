@@ -145,8 +145,9 @@ var Layers = map[string]int{
 	// of which calls and event subscriptions connect, and its reading of the resolution and allocation documents.
 	"connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 
-	// The console capability: its interaction flows, starting with the kinds of change it opens. Its view models and
-	// pages still live in pages and its composition in orchestration until their tasks move them.
+	// The console capability: the kinds of change it opens, and what its pages read (the platform checks, the
+	// instances' status, the units) and the page models built from it. Its other view models still live in pages
+	// and the rest of its flows in orchestration until their tasks move them.
 	"console": 2,
 }
 
@@ -178,9 +179,10 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
-// must be declared use-case packages; self edges and cycles are forbidden. The console's composition stays in
-// orchestration: ConsoleChecks invokes health's collector and ConsoleStatus apps' status of every instance;
-// reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
+// must be declared use-case packages; self edges and cycles are forbidden. The console's composition reads the
+// platform checks through health's collector and every instance's status through apps; orchestration's edges to
+// health and apps carried that composition before it moved, and the console slice retires them with the console's
+// orchestration files. Recovery's restore takes apps' status as a port the command wires,
 // so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
 // and delivery's deploy and promote write through it. Apps' create and orchestration's mint also use provisioning's
 // encrypted seed construction; mint keeps its identity workflow. The console capability reaches what it has not
@@ -188,7 +190,7 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // console's orchestration files.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps", "provisioning"},
-	"console":       {"orchestration"},
+	"console":       {"orchestration", "health", "apps"},
 	"delivery":      {"provisioning"},
 	"apps":          {"provisioning"},
 }

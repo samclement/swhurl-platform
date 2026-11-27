@@ -1,4 +1,4 @@
-package health_test
+package console_test
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
+	"github.com/samclement/swhurl-platform/v2/console"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -23,10 +23,10 @@ func TestConsoleChecksRetainsClusterReportAndFailedEvidence(t *testing.T) {
 		healthrules.PlatformUnits: {}, healthrules.PlatformAlerts: {}, healthrules.PlatformProviders: {},
 	}
 	clockCalls := 0
-	checks, err := orchestration.ConsoleChecks(context.Background(), reader, "console", func() time.Time {
+	checks, err := console.Server{Reader: reader, Now: func() time.Time {
 		clockCalls++
 		return time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
-	})
+	}}.Checks(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,10 +56,10 @@ func TestConsoleChecksWrapsRefusalWithoutReport(t *testing.T) {
 	refusal := &kube.Error{Code: kube.RefusedRequest, Subject: "resource", Reason: "unsupported_kind"}
 	reader := kubetest.New(kubetest.Answers{})
 	reader.Refuse = refusal
-	checks, err := orchestration.ConsoleChecks(context.Background(), reader, "console", func() time.Time {
+	checks, err := console.Server{Reader: reader, Now: func() time.Time {
 		t.Fatal("a refused read must not ask the clock")
 		return time.Time{}
-	})
+	}}.Checks(context.Background())
 	if !errors.Is(err, refusal) || !strings.HasPrefix(err.Error(), "platform checks unavailable: ") ||
 		!reflect.DeepEqual(checks, pages.Checks{}) {
 		t.Fatalf("checks %+v, error %v", checks, err)

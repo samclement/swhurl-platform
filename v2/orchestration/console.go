@@ -2,24 +2,12 @@ package orchestration
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
-	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
-	"github.com/samclement/swhurl-platform/v2/adapters/kube"
-	"github.com/samclement/swhurl-platform/v2/apps"
-	deliveryrules "github.com/samclement/swhurl-platform/v2/delivery/rules"
-	"github.com/samclement/swhurl-platform/v2/health"
-	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 // The paths a console page may read from the platform repository: the two documents every instance's compilation
@@ -140,141 +128,6 @@ func (b *ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][
 		b.order = append(b.order, revision)
 	}
 	return b.trees[revision], nil
-}
-
-// ConsoleRecords is the record tree a console request reads: one instance's three records per folder, and the
-// documents every compilation takes.
-type ConsoleRecords struct {
-	Shared    provisioningrules.Inputs
-	Instances []provisioningrules.Inputs
-}
-
-// Records splits a filtered tree into the instances it holds, in app and environment order, as files.Records reads
-// any records tree; each takes the documents every compilation takes.
-func Records(tree map[string][]byte) (ConsoleRecords, error) {
-	found := ConsoleRecords{Shared: provisioningrules.Inputs{Profile: tree[consoleProfile], Calls: tree[consoleCalls],
-		Egress: tree[consoleEgress]}}
-	instances, err := files.Records(tree, kernel.RecordsRoot)
-	if err != nil {
-		return ConsoleRecords{}, err
-	}
-	for _, one := range instances {
-		inputs := found.Shared
-		inputs.App, inputs.Instance, inputs.Release = one.App, one.Instance, one.Release
-		found.Instances = append(found.Instances, inputs)
-	}
-	return found, nil
-}
-
-// ConsoleStatus compares the cluster with the records at one pinned commit. The comparisons are the caller's
-// evidence: a unit whose applied commit is behind is only updating when a complete comparison shows a relevant path.
-func ConsoleStatus(ctx context.Context, inputs ConsoleRecords, revision string, reader kube.Reader, units [][]byte,
-	compare func(from, to string) ([]string, bool, error), source string, now func() time.Time) (observe.Collection, error) {
-	changes, err := consoleChanges(units, revision, compare)
-	if err != nil {
-		return observe.Collection{}, err
-	}
-	status := apps.StatusInputs{Inputs: inputs.Shared, Revision: revision, RecordsRoot: kernel.RecordsRoot,
-		SharedPaths: []string{consoleProfile, consoleCalls, consoleEgress}, Changes: changes, Reader: reader,
-		Source: source, Now: now, MaxAge: 26 * time.Hour}
-	result, err := apps.StatusAll(ctx, status, inputs.Instances)
-	if err != nil {
-		return observe.Collection{}, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	return result, nil
-}
-
-// consoleChanges is one comparison per distinct applied commit, finished or not: a comparison that could not be
-// completed is evidence the revision is not proved unaffected.
-func consoleChanges(units [][]byte, revision string, compare func(from, to string) ([]string, bool, error)) (*deliveryrules.Changes, error) {
-	seen := map[string]bool{}
-	changes := &deliveryrules.Changes{Kind: "v2-changes", Version: 1, Comparisons: []deliveryrules.Comparison{}}
-	for _, unit := range units {
-		applied, err := appliedCommitOf(unit)
-		if err != nil {
-			return nil, err
-		}
-		if applied == "" || applied == revision || seen[applied] {
-			continue
-		}
-		seen[applied] = true
-		changes.Comparisons = append(changes.Comparisons, comparisonOf(applied, revision, compare))
-	}
-	slices.SortFunc(changes.Comparisons, func(a, b deliveryrules.Comparison) int { return strings.Compare(a.From, b.From) })
-	return changes, nil
-}
-
-// appliedCommitOf is the commit one unit's applied Flux revision names.
-func appliedCommitOf(unit []byte) (string, error) {
-	var one struct {
-		Status struct {
-			Applied string `json:"lastAppliedRevision"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(unit, &one); err != nil {
-		return "", fmt.Errorf("invalid Flux unit: %w", err)
-	}
-	return commitOf(one.Status.Applied), nil
-}
-
-// comparisonOf is one ended comparison: complete with its paths, incomplete when GitHub truncated the list, or
-// unavailable when it could not be read or does not contain the commit.
-func comparisonOf(from, to string, compare func(from, to string) ([]string, bool, error)) deliveryrules.Comparison {
-	found := deliveryrules.Comparison{From: from, To: to, Status: "unavailable", Paths: []string{}}
-	if compare == nil {
-		return found
-	}
-	paths, contained, err := compare(from, to)
-	switch {
-	case err != nil:
-	case contained && paths != nil:
-		found.Status, found.Paths = "complete", paths
-	case contained:
-		found.Status = "incomplete"
-	}
-	return found
-}
-
-// commitOf is the commit a Flux revision names (`main@sha1:<commit>` or the commit alone).
-func commitOf(revision string) string {
-	_, after, found := strings.Cut(revision, "@sha1:")
-	if found {
-		revision = after
-	}
-	if len(revision) != 40 || strings.Trim(revision, "0123456789abcdef") != "" {
-		return ""
-	}
-	return revision
-}
-
-// ConsoleUnits reads the Flux units the platform pages list.
-func ConsoleUnits(ctx context.Context, collector kube.Collector) ([][]byte, error) {
-	list, err := collector.ListNamespace(ctx, healthrules.PlatformUnits)
-	if err != nil {
-		return nil, fmt.Errorf("Flux units unavailable: %w", err)
-	}
-	if list.Status != observe.Present {
-		return nil, fmt.Errorf("Flux units unavailable: %s", list.Reason)
-	}
-	return list.Items, nil
-}
-
-// ConsoleChecks runs the platform checks a console page shows: the cluster scope, read through the reader the console
-// was given, with the time the caller supplies.
-func ConsoleChecks(ctx context.Context, reader kube.Reader, source string, now func() time.Time) (pages.Checks, error) {
-	report, err := health.Platform(ctx, health.PlatformInputs{Reader: reader, Source: source, Now: now})
-	if err != nil {
-		return pages.Checks{}, fmt.Errorf("platform checks unavailable: %w", err)
-	}
-	checks := make([]pages.Check, 0, len(report.Checks))
-	for _, check := range report.Checks {
-		entries := make([]pages.Entry, 0, len(check.Entries))
-		for _, entry := range check.Entries {
-			entries = append(entries, pages.Entry{Level: string(entry.Level), Message: entry.Message})
-		}
-		checks = append(checks, pages.Check{Section: check.Section, Entries: entries})
-	}
-	return pages.ChecksOf(checks), nil
 }
 
 // ConsoleSourceOf is the adapter-backed console source: GitHub's tarball at main's commit, and one commit's files

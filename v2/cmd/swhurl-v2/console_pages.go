@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -45,38 +44,18 @@ func (s *consoleServer) catalogue(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	data, err := s.readCatalogue(ctx, query.Get("env"), query.Get("kind"), query.Get("team"))
+	page, err := s.reads().Catalogue(ctx, query.Get("env"), query.Get("kind"), query.Get("team"))
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	data.shell = s.page(r, false)
-	s.render(w, r, http.StatusOK, "catalogue.html", data)
-}
-
-// readCatalogue reads the cluster, the pinned tree and the documents of the environment the page shows, then computes
-// it: only the environment a page shows has its documents decoded.
-func (s *consoleServer) readCatalogue(ctx context.Context, env, kind, team string) (catalogueData, error) {
-	tree, rows, err := s.readRows(ctx)
-	if err != nil {
-		return catalogueData{}, err
-	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
-	if err != nil {
-		return catalogueData{}, err
-	}
-	input := pages.CatalogueInput{Rows: rows, Env: env, Kind: kind, Team: team, Site: site, Github: s.hasGitHub}
-	input.Offers = orchestration.ConsoleOffers(tree, rows, pages.EnvironmentNamed(env))
-	return catalogueData{CataloguePage: pages.CataloguePageOf(input)}, nil
+	s.render(w, r, http.StatusOK, "catalogue.html", catalogueData{shell: s.page(r, false), CataloguePage: page})
 }
 
 // unitData is one Flux unit's page.
 type unitData struct {
 	shell
-	Unit     pages.Unit
-	Refused  string
-	App      *pages.Instance
-	Detail   string
+	console.UnitPage
 	JobViews []jobView
 }
 
@@ -90,39 +69,12 @@ func (s *consoleServer) apps(w http.ResponseWriter, r *http.Request) {
 		Attention: query.Get("show") == "attention", RefreshURL: r.URL.RequestURI()}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	data, err := s.readApps(ctx, input)
+	page, err := s.reads().Apps(ctx, input)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	data.shell = s.page(r, true)
-	s.render(w, r, http.StatusOK, "apps.html", data)
-}
-
-// readApps reads the cluster once and the two remote facts the list links to, then computes the page.
-func (s *consoleServer) readApps(ctx context.Context, input pages.AppsInput) (appsData, error) {
-	tree, rows, err := s.readRows(ctx)
-	if err != nil {
-		return appsData{}, err
-	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
-	if err != nil {
-		return appsData{}, err
-	}
-	input.Rows, input.Site, input.Running = rows, site, s.jobsOf(ctx)
-	if input.View != "map" {
-		// What the list shows decides what it reads: only an app it names has its stack asked for.
-		first := pages.AppsPageOf(input)
-		apps := make([]string, 0, len(first.Apps))
-		for _, app := range first.Apps {
-			apps = append(apps, app.App)
-		}
-		input.Stacks = s.stacksOf(ctx, apps)
-		if s.data != nil {
-			input.Dashboards = orchestration.ConsoleDashboards(ctx, s.data)
-		}
-	}
-	return appsData{AppsPage: pages.AppsPageOf(input)}, nil
+	s.render(w, r, http.StatusOK, "apps.html", appsData{shell: s.page(r, true), AppsPage: page})
 }
 
 // stacksOf is each app's stack (its language), from the swhurl.yaml on its repository's default branch. A failure is
@@ -160,25 +112,12 @@ func (s *consoleServer) egress(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	data, err := s.readEgress(ctx)
+	page, err := s.reads().Egress(ctx)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	data.shell = s.page(r, false)
-	s.render(w, r, http.StatusOK, "egress.html", data)
-}
-
-func (s *consoleServer) readEgress(ctx context.Context) (egressData, error) {
-	tree, rows, err := s.readRows(ctx)
-	if err != nil {
-		return egressData{}, err
-	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
-	if err != nil {
-		return egressData{}, err
-	}
-	return egressData{EgressPage: pages.EgressPageOf(rows, site)}, nil
+	s.render(w, r, http.StatusOK, "egress.html", egressData{shell: s.page(r, false), EgressPage: page})
 }
 
 // teamsData is the Teams page.
@@ -203,53 +142,15 @@ func (s *consoleServer) teams(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "teams.html", data)
 }
 
-// readTeams reads the cluster, the registry and the two remote facts the cards link to.
+// readTeams is the Teams page without its shell, which a team change's refusal shows as well.
 func (s *consoleServer) readTeams(ctx context.Context) (teamsData, error) {
-	tree, rows, err := s.readRows(ctx)
-	if err != nil {
-		return teamsData{}, err
-	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
-	if err != nil {
-		return teamsData{}, err
-	}
-	registry, registryErr := orchestration.ConsoleTeams(tree)
-	data := teamsData{TeamsPage: pages.TeamsPageOf(registry, registryErr == nil, rows, site,
-		s.stacksOf(ctx, appsOf(rows)), s.dashboardsOf(ctx))}
-	if registryErr != nil {
-		data.RegistryError = registryErr.Error()
-	}
-	data.Github = s.hasGitHub
-	for _, job := range s.jobsOf(ctx) {
-		team, isTeam := strings.CutPrefix(job.Unit, "team:")
-		if !isTeam {
-			continue
-		}
-		for i := range data.Teams {
-			if data.Teams[i].Name == team && data.Teams[i].Job == nil {
-				data.Teams[i].Job = &pages.TeamJob{ID: job.ID, Action: job.Action, State: job.State, Link: job.Link}
-			}
-		}
-	}
-	return data, nil
-}
-
-// appsOf is every app the rows name, once each, in name order.
-func appsOf(rows []pages.AppRow) []string {
-	apps := make([]string, 0, len(rows))
-	for _, row := range rows {
-		apps = append(apps, row.Instance.App)
-	}
-	slices.Sort(apps)
-	return slices.Compact(apps)
+	page, err := s.reads().Teams(ctx)
+	return teamsData{TeamsPage: page}, err
 }
 
 // dashboardsOf is each app's HyperDX dashboard, empty when the record cannot be read.
 func (s *consoleServer) dashboardsOf(ctx context.Context) map[string]string {
-	if s.data == nil {
-		return nil
-	}
-	return orchestration.ConsoleDashboards(ctx, s.data)
+	return s.reads().Dashboards(ctx)
 }
 
 // unit serves one Flux unit: what it is, what needs it, its actions and the jobs that ran on it.
@@ -260,7 +161,7 @@ func (s *consoleServer) unit(w http.ResponseWriter, r *http.Request) {
 	name, _ := strings.CutPrefix(r.URL.Path, "/units/")
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	unit, found, err := s.findUnit(ctx, name)
+	page, found, err := s.reads().UnitPage(ctx, name)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
@@ -269,39 +170,9 @@ func (s *consoleServer) unit(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusNotFound, "No Flux unit by that name.")
 		return
 	}
-	data := unitData{Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail,
-		App: unitApp(unit.Name), JobViews: s.jobsOn(ctx, unit.Name)}
-	if data.Detail == "" {
-		data.Detail = "applied " + unit.Revision
-	}
+	data := unitData{UnitPage: page, JobViews: s.jobsOn(ctx, name)}
 	data.shell = s.page(r, false)
 	s.render(w, r, http.StatusOK, "unit.html", data)
-}
-
-// findUnit is one unit of the cluster's units, and whether it is one of them.
-func (s *consoleServer) findUnit(ctx context.Context, name string) (pages.Unit, bool, error) {
-	items, err := orchestration.ConsoleUnits(ctx, s.collector)
-	if err != nil {
-		return pages.Unit{}, false, err
-	}
-	listed, err := pages.Units(items)
-	if err != nil {
-		return pages.Unit{}, false, fmt.Errorf("Flux units unavailable: %w", err)
-	}
-	for _, unit := range listed {
-		if unit.Name == name {
-			return unit, true, nil
-		}
-	}
-	return pages.Unit{}, false, nil
-}
-
-// unitApp is the app instance a unit applies, when it applies one.
-func unitApp(name string) *pages.Instance {
-	if instance, ok := pages.InstanceOf(name); ok {
-		return &instance
-	}
-	return nil
 }
 
 // jobsOn is the console's jobs for one unit, newest first.
@@ -318,40 +189,12 @@ func (s *consoleServer) jobsOn(ctx context.Context, name string) []jobView {
 
 // pinnedTree is the selected files of the commit this request reads: one resolution, one download, cached by SHA.
 func (s *consoleServer) pinnedTree(ctx context.Context) (map[string][]byte, error) {
-	revision, err := s.bundle.Revision(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	return s.bundle.Tree(ctx, revision)
+	return s.reads().PinnedTree(ctx)
 }
 
 // readRows is the cluster and the pinned tree one page shows: resolved once, read once.
 func (s *consoleServer) readRows(ctx context.Context) (map[string][]byte, []pages.AppRow, error) {
-	revision, err := s.bundle.Revision(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	tree, err := s.bundle.Tree(ctx, revision)
-	if err != nil {
-		return nil, nil, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	records, err := orchestration.Records(tree)
-	if err != nil {
-		return nil, nil, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	units, err := orchestration.ConsoleUnits(ctx, s.collector)
-	if err != nil {
-		return nil, nil, err
-	}
-	collection, err := orchestration.ConsoleStatus(ctx, records, revision, s.reader, units, s.compare, "console", s.now)
-	if err != nil {
-		return nil, nil, err
-	}
-	rows, err := orchestration.ConsoleRows(collection)
-	if err != nil {
-		return nil, nil, err
-	}
-	return tree, rows, nil
+	return s.reads().Rows(ctx)
 }
 
 // jobsOf is the console's jobs, newest first: none when its own records cannot be read. The registry this server runs

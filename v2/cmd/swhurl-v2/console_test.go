@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -38,15 +39,15 @@ func TestOverviewIsByteIdentical(t *testing.T) {
 	data := overviewData{
 		shell: shell{Title: "Overview", Path: "/", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/",
 			Assets: "93e3b193821e", AutoRefresh: true, HasGithub: false},
-		Checks: pages.ChecksOf([]pages.Check{{Section: "Flux Kustomizations", Entries: []pages.Entry{
+		Overview: console.Overview{Checks: pages.ChecksOf([]pages.Check{{Section: "Flux Kustomizations", Entries: []pages.Entry{
 			{Level: "ok", Message: "homelab-a"}, {Level: "ok", Message: "homelab-b"}, {Level: "ok", Message: "homelab-c"}}},
 			{Section: "Applications", Entries: []pages.Entry{{Level: "ok", Message: "web/staging"}, {Level: "ok", Message: "my-api/staging"}}},
 			{Section: "Secrets", Entries: []pages.Entry{{Level: "ok", Message: "age key"}, {Level: "ok", Message: "github token"}}}}),
-		AppCount: 2,
-		Units:    []pages.Unit{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
-		Problems: []pages.Problem{
-			{Level: "failing", Text: "my-api/staging is not Ready: <script>x</script>", Link: "/apps/my-api/staging"},
-			{Level: "suspended", Text: "my-api/staging is suspended: Git changes are not applied to it until it is resumed", Link: "/apps/my-api/staging"}},
+			AppCount: 2,
+			Units:    []pages.Unit{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
+			Problems: []pages.Problem{
+				{Level: "failing", Text: "my-api/staging is not Ready: <script>x</script>", Link: "/apps/my-api/staging"},
+				{Level: "suspended", Text: "my-api/staging is suspended: Git changes are not applied to it until it is resumed", Link: "/apps/my-api/staging"}}},
 		PRsError: "No GitHub token is configured, so open pull requests are not listed.",
 	}
 	var rendered bytes.Buffer
@@ -115,31 +116,9 @@ func TestPlatformIsByteIdentical(t *testing.T) {
 		{Section: "App dashboards and alerts", Entries: []pages.Entry{{Level: "ok", Message: "dashboard and alert sync succeeded in the last 5 minutes"}}},
 		{Section: "Notifications", Entries: []pages.Entry{{Level: "ok", Message: "notification checker succeeded in the last 5 minutes"}}},
 	})
-	revision := pages.CommonRevision(listed)
 	data := platformData{
-		shell:  shell{Title: "Platform", Path: "/platform", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/platform", Assets: "93e3b193821e", AutoRefresh: true},
-		Checks: checks, Units: listed, Problems: pages.Problems(checks, listed), Updating: pages.Updating(listed),
-		Groups: pages.CheckGroups(checks), Revision: revision,
-	}
-	for _, unit := range listed {
-		if !unit.Healthy() {
-			data.Unhealthy = append(data.Unhealthy, unit)
-		}
-		if unit.Revision != revision {
-			data.Elsewhere = append(data.Elsewhere, unit)
-		}
-	}
-	for _, layer := range append(pages.Layers, struct{ Prefix, Title, Text string }{Title: pages.OtherLayer}) {
-		view := layerView{Title: layer.Title, Text: layer.Text}
-		for _, unit := range listed {
-			if unit.Layer() == layer.Title {
-				view.Members = append(view.Members, unitRowView{UnitRow: pages.UnitRowOf(unit, revision), RefreshURL: "/platform",
-					Refused: pages.RefusedUnits[unit.Name]})
-			}
-		}
-		if len(view.Members) > 0 {
-			data.Layers = append(data.Layers, view)
-		}
+		shell:    shell{Title: "Platform", Path: "/platform", Identity: "sam@swhurl.com", ReadAt: "09:43", RefreshURL: "/platform", Assets: "93e3b193821e", AutoRefresh: true},
+		Platform: console.PlatformOf(checks, listed),
 	}
 	var rendered bytes.Buffer
 	if err := server.templates["platform.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
@@ -301,11 +280,7 @@ func TestUnitIsByteIdentical(t *testing.T) {
 		}
 	}
 	data := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
-		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"},
-		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
-	if data.Detail == "" {
-		data.Detail = "applied " + unit.Revision
-	}
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"}, UnitPage: console.UnitPageOf(unit)}
 	var rendered bytes.Buffer
 	if err := server.templates["unit.html"].ExecuteTemplate(&rendered, "base", data); err != nil {
 		t.Fatal(err)
@@ -453,8 +428,7 @@ func TestJobRowsRender(t *testing.T) {
 	}
 	unit := listed[0]
 	unitPage := unitData{shell: shell{Title: unit.Name, Path: "/units/" + unit.Name, Identity: "sam@swhurl.com",
-		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"},
-		Unit: unit, Refused: pages.RefusedUnits[unit.Name], Detail: unit.Ready.Detail, App: unitApp(unit.Name)}
+		ReadAt: "09:43", RefreshURL: "/units/" + unit.Name, Assets: "93e3b193821e"}, UnitPage: console.UnitPageOf(unit)}
 	unitPage.JobViews = []jobView{
 		{ID: 61, Action: "reconcile", Identity: "sam@swhurl.com", State: "interrupted", StartedClock: "21:29"},
 		{ID: 62, Action: "reconcile", Identity: "sam@swhurl.com", State: "running", StartedClock: "21:31"},

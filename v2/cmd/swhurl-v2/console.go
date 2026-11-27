@@ -28,6 +28,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 	"github.com/samclement/swhurl-platform/v2/telemetry"
@@ -243,6 +244,13 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 func (s *consoleServer) pin(source orchestration.ConsoleSource) {
 	s.bundle = &orchestration.ConsoleBundle{Source: source}
 	s.evidence = &orchestration.ConsoleEvidence{Bundle: s.bundle}
+}
+
+// reads is what this server's pages read, composed from the server as it stands: the tree pin last chose, the
+// cluster, GitHub's comparisons, and the stacks and jobs this server keeps.
+func (s *consoleServer) reads() console.Server {
+	return console.Server{Bundle: s.bundle, Reader: s.reader, Collector: s.collector, Data: s.data, Compare: s.compare,
+		Now: s.now, Repository: s.repository, GitHub: s.hasGitHub, Stacks: s.stacksOf, Jobs: s.jobsOf}
 }
 
 // startJobs gives the server the registry of jobs it runs: the record its pod keeps and this process's own, so a job
@@ -676,11 +684,7 @@ type pullView struct {
 // overviewData is the Overview page: what needs attention, what is waiting, and what ran.
 type overviewData struct {
 	shell
-	Checks   pages.Checks
-	AppCount int
-	Units    []pages.Unit
-	Problems []pages.Problem
-	Updating []pages.Problem
+	console.Overview
 	PRs      []pullView
 	PRsError string
 	Recent   []jobView
@@ -689,29 +693,7 @@ type overviewData struct {
 // platformData is the Platform page: the units in the order they build on each other, and the checks beside them.
 type platformData struct {
 	shell
-	Checks    pages.Checks
-	Units     []pages.Unit
-	Problems  []pages.Problem
-	Updating  []pages.Problem
-	Groups    []pages.Group
-	Unhealthy []pages.Unit
-	Elsewhere []pages.Unit
-	Layers    []layerView
-	Revision  string
-}
-
-// layerView is one title of the units list and the units under it.
-type layerView struct {
-	Title, Text string
-	Members     []unitRowView
-}
-
-// unitRowView is one row of the units list, with the job running on it when there is one.
-type unitRowView struct {
-	pages.UnitRow
-	Refused    string
-	Job        *jobView
-	RefreshURL string
+	console.Platform
 }
 
 // errorData is the error page.
@@ -762,18 +744,18 @@ func (s *consoleServer) overview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !readable(w, r) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	data, err := s.readOverview(ctx)
+	overview, err := s.reads().Overview(ctx)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
+	data := overviewData{Overview: overview}
+	data.PRs, data.PRsError = s.openPulls(ctx)
 	jobs := s.jobsOf(ctx)
 	data.shell = s.pageWith(r, true, jobs)
 	for _, job := range jobViewsOf(jobs) {
@@ -784,107 +766,19 @@ func (s *consoleServer) overview(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "overview.html", data)
 }
 
-// readOverview is what a page shows to a failed read: Go's own words, never a fallback.
-func (s *consoleServer) readOverview(ctx context.Context) (overviewData, error) {
-	revision, err := s.bundle.Revision(ctx)
-	if err != nil {
-		return overviewData{}, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	tree, err := s.bundle.Tree(ctx, revision)
-	if err != nil {
-		return overviewData{}, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	records, err := orchestration.Records(tree)
-	if err != nil {
-		return overviewData{}, fmt.Errorf("Go status unavailable: %w", err)
-	}
-	units, err := orchestration.ConsoleUnits(ctx, s.collector)
-	if err != nil {
-		return overviewData{}, err
-	}
-	collection, err := orchestration.ConsoleStatus(ctx, records, revision, s.reader, units, s.compare, "console", s.now)
-	if err != nil {
-		return overviewData{}, err
-	}
-	checks, err := orchestration.ConsoleChecks(ctx, s.reader, "console", s.now)
-	if err != nil {
-		return overviewData{}, err
-	}
-	listed, err := pages.Units(units)
-	if err != nil {
-		return overviewData{}, fmt.Errorf("Flux units unavailable: %w", err)
-	}
-	prs, prsErr := s.openPulls(ctx)
-	return overviewData{Checks: checks, AppCount: len(collection.Instances) + len(collection.Removing), Units: listed,
-		Problems: pages.Problems(checks, listed), Updating: pages.Updating(listed), PRs: prs, PRsError: prsErr}, nil
-}
-
 // platform shows the units in the order they build on each other and the checks beside them.
 func (s *consoleServer) platform(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !readable(w, r) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	data, err := s.readPlatform(ctx)
+	platform, err := s.reads().Platform(ctx)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	data.shell = s.page(r, true)
-	s.render(w, r, http.StatusOK, "platform.html", data)
-}
-
-func (s *consoleServer) readPlatform(ctx context.Context) (platformData, error) {
-	units, err := orchestration.ConsoleUnits(ctx, s.collector)
-	if err != nil {
-		return platformData{}, err
-	}
-	listed, err := pages.Units(units)
-	if err != nil {
-		return platformData{}, fmt.Errorf("Flux units unavailable: %w", err)
-	}
-	checks, err := orchestration.ConsoleChecks(ctx, s.reader, "console", s.now)
-	if err != nil {
-		return platformData{}, err
-	}
-	revision := pages.CommonRevision(listed)
-	return platformData{Checks: checks, Units: listed, Problems: pages.Problems(checks, listed),
-		Updating: pages.Updating(listed), Groups: pages.CheckGroups(checks), Revision: revision,
-		Unhealthy: unusual(listed, func(unit pages.Unit) bool { return !unit.Healthy() }),
-		Elsewhere: unusual(listed, func(unit pages.Unit) bool { return unit.Revision != revision }),
-		Layers:    platformLayers(listed, revision)}, nil
-}
-
-// unusual is the units a condition selects, for the two counts the units list's summary states.
-func unusual(units []pages.Unit, condition func(pages.Unit) bool) []pages.Unit {
-	var found []pages.Unit
-	for _, unit := range units {
-		if condition(unit) {
-			found = append(found, unit)
-		}
-	}
-	return found
-}
-
-// platformLayers is the units list's layers, each with its rows: a layer nothing sits in is left out.
-func platformLayers(units []pages.Unit, revision string) []layerView {
-	var found []layerView
-	for _, layer := range append(slices.Clone(pages.Layers), struct{ Prefix, Title, Text string }{Title: pages.OtherLayer}) {
-		view := layerView{Title: layer.Title, Text: layer.Text}
-		for _, unit := range units {
-			if unit.Layer() == layer.Title {
-				view.Members = append(view.Members, unitRowView{UnitRow: pages.UnitRowOf(unit, revision),
-					Refused: pages.RefusedUnits[unit.Name]})
-			}
-		}
-		if len(view.Members) > 0 {
-			found = append(found, view)
-		}
-	}
-	return found
+	s.render(w, r, http.StatusOK, "platform.html", platformData{shell: s.page(r, true), Platform: platform})
 }
 
 // compare is the GitHub comparison the status reads: nil when this console has no token, which leaves every

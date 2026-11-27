@@ -1,6 +1,6 @@
 id: 103
 title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
-state: active
+state: ready
 scope:
   - host/aws-dns-updater.sh
   - tests/host/dns-updater.sh
@@ -17,3 +17,9 @@ notes:
   - at: 2026-11-27T22:48:12.154Z
     commit: ebc85053ba9d
     text: "Pre-existing broken docs/current-state.md:87 link blocks make check; fix here or separately? -> Operator approved option 1: separate one-line documentation repair task pointing to ../v2/console/jobs_test.go; resume task 103 after repair is merged."
+  - at: 2026-11-27T22:48:23.365Z
+    commit: ebc85053ba9d
+    text: "released: blocked only by make check-repo's broken link docs/current-state.md:87 -> ../v2/orchestration/jobs_test.go (moved to v2/console/ by task 86); repair is task 104. Work is complete and uncommitted in this worktree: host/aws-dns-updater.sh (curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com, exit before any aws call), tests/host/dns-updater.sh, tests/fixtures/dns/{curl,aws}, docs/commands.md row. All other checks pass. Resume after task 104 merges: merge main, rerun tk done with the earlier summary. Followup to file then: record_ip swallows aws list failures as an empty old IP, so a failed Route 53 read becomes an UPSERT."
+  - at: 2026-11-27T22:48:23.513Z
+    commit: ebc85053ba9d
+    text: "released: blocked on task 104: pre-existing broken doc link fails make check-repo"

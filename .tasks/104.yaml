@@ -1,10 +1,16 @@
 id: 104
 title: Repair broken current-state evidence link to v2/console/jobs_test.go; one-line documentation fix unblocking task 103
-state: ready
+state: done
 scope:
   - docs/current-state.md
 checks:
   - make check-repo
 after: []
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T22:51:39.735Z
+    commit: 0a78b66e387f
+    text: "done: docs/current-state.md: task 61's job-cases link now points at v2/console/jobs_test.go (moved there by task 86) instead of the missing v2/orchestration path. make check-repo passes. Line 69's plain-text orchestration/jobs_test.go mention left as is: it records where task 59's change was made at the time."
+  - at: 2026-11-27T22:52:30.341Z
+    commit: 0a78b66e387f
+    text: branch dsa/01M8FK45ZP9TFASJ1K6YSYAF30/task-104

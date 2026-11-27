@@ -1,6 +1,6 @@
 id: 70
 title: Move batch deploy into delivery.DeployAll, taking the records reader
-state: ready
+state: active
 scope:
   - v2/delivery/deployall.go
   - v2/delivery/deployall_test.go

@@ -1,0 +1,16 @@
+id: 81
+title: Record tasks 65-72's v2 changes in v2-status, workstreams and current-state so make check-docs passes
+state: ready
+scope:
+  - docs/v2-status.md
+  - docs/workstreams.md
+  - docs/current-state.md
+checks:
+  - make check-docs
+  - make check-repo
+after: []
+reason: null
+notes:
+  - at: 2026-11-27T07:32:21.301Z
+    commit: bc613a7a471c
+    text: "context: make check-docs fails on main after task 72 merged (docs/v2-status.md not updated for 65-72). Changes to record: 65 console promote expects production's revision and quotes --expect; 66 files.ReadArchive/Records/ReadRecords and kernel record paths; 67 kernel.RecordsRoot single records root, pages->kernel edge; 69 deploy/edit/promote read via files.ReadRecords; 72 v2/console change-kind table (slice 6 in progress offline). Nothing verified live."

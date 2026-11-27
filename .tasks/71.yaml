@@ -1,6 +1,6 @@
 id: 71
 title: Put the archive prefix rule and the minimum presigned-URL TTL in recovery/rules, reading the profile once
-state: active
+state: done
 scope:
   - v2/recovery/rules/*.go
   - v2/cmd/swhurl-v2/status.go
@@ -13,4 +13,16 @@ checks:
   - make check-v2
 after: []
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T08:54:03.845Z
+    commit: cebb701034d7
+    text: "done: recovery/rules owns InstanceArchiveQuery (namespace dir under the backup root, confined) and MinReadURLTTL/ValidateReadURLTTL. Command decodes the profile once per run (status lister, restore plan+presign) and hands the use case the documents already read; archiveQueryOf/archiveOf deleted. Offline tests + make check-v2 pass; no live restore run."
+  - at: 2026-11-27T08:54:03.845Z
+    commit: cebb701034d7
+    text: "followup: adapters/s3.ParseURL now has no production caller (only its own test); delete it or give it a use."
+  - at: 2026-11-27T08:54:03.845Z
+    commit: cebb701034d7
+    text: "followup: restore() still re-reads and re-decodes the instance and release via c.instance/c.release after c.inputs read them; decode from inputs instead."
+  - at: 2026-11-27T12:45:31.111Z
+    commit: dab9d0591895
+    text: branch dsa/01M8E2V7GD6HMCBYW64M63EE80/task-71

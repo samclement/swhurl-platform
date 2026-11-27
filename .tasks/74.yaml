@@ -1,6 +1,6 @@
 id: 74
 title: Run the new-app, connection, allow, team and channel kinds through their typed calls, leaving one table as the only kind list
-state: active
+state: ready
 scope:
   - v2/console/steps.go
   - v2/console/steps_test.go
@@ -44,3 +44,6 @@ notes:
   - at: 2026-11-27T08:50:36.130Z
     commit: 11d3328ac063
     text: "where does create's 'app already has records' check live? -> conductor: option 1, files.Checkout.Empty in adapters/files (+test), apps.CreateIn refuses as today, cmd appAbsent deleted; settled by the operator's choices (readers in adapters/files, assembly below cmd) and keeps behaviour unchanged"
+  - at: 2026-11-27T12:45:34.714Z
+    commit: 3620ab9b63aa
+    text: "released: run failed: Claude quota exceeded (five-hour session limit) after 5.07M tokens; partial work kept in its worktree"

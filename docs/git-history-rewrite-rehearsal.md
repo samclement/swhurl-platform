@@ -169,9 +169,11 @@ From the API (`gh api .../pulls?state=all`, `$D/logs/pulls-classified.tsv`), the
   the 8.3 MB that `docs/current-state.md`'s top entry measured. These are swhurl-try-10/staging's only merged PRs in
   that window, and the branch names are the console's scale jobs. That they are jobs 41 and 42 is **inferred**: the
   `console/console-jobs` record was not read.
-- **The console keeps reading the old SHA:** `v2/cmd/swhurl-v2/console_activity.go:354` sets
-  `Commit = MergeCommit`, read from `merge_commit_sha` (`v2/adapters/github/console.go:351`), and
-  `orchestration.mergeTrees` (`v2/orchestration/console_changes.go`) fetches `/tarball/<that SHA>`. A rewrite
+- **The console keeps reading the old SHA:** Activity sets `Commit = MergeCommit` (then in
+  `v2/cmd/swhurl-v2/console_activity.go`, now [`v2/console/activity.go`](../v2/console/activity.go)), read from
+  `merge_commit_sha` (`v2/adapters/github/console.go:351`), and `mergeTrees` (then
+  `v2/orchestration/console_changes.go`, now [`v2/console/changes.go`](../v2/console/changes.go)) reads the
+  files at that SHA (by `/tarball/<that SHA>` when this was written; since §10, by `CommitFiles`). A rewrite
   changes no pull request's `merge_commit_sha`, so Activity would go on asking for `83705c4d` and `ffc3e2cc`.
 - **`refs/pull/*` keep the old commits reachable.**
   - 24 of the 114 refs contain `ca776af5`, and so reach the binary: heads and merges of #47, #60, #95, #97, #98 and
@@ -348,8 +350,10 @@ built on `77fa0904`. The behaviour is described on its canonical page,
 - **Fake and contract** (`githubtest/console_fake.go`): `ConsoleFake.CommitFiles`, with `History` for files at
   older commits; an unknown commit is an error. The shared contract checks a found file, an absent path, an unknown
   commit, a moving name and a path that leaves the tree, for the real adapter's scripted server and the fake.
-- **Orchestration** (`v2/orchestration/console_evidence.go`): `ConsoleSource.Files`, `ConsoleSourceOf.Files` and
-  `ConsoleEvidence`. `ConsoleEvidence` owns the four paths a unit's render takes and builds the render with the
+- **Orchestration** (`v2/orchestration/console_evidence.go`, since moved to
+  [`v2/console/evidence.go`](../v2/console/evidence.go), with the source and bundle as `console.Source`,
+  `console.SourceOf` and `console.Bundle` in [`v2/console/source.go`](../v2/console/source.go)):
+  `ConsoleSource.Files`, `ConsoleSourceOf.Files` and `ConsoleEvidence`. `ConsoleEvidence` owns the four paths a unit's render takes and builds the render with the
   unchanged `ConsoleRenders`. It keeps renders by (commit, unit), at most 240, oldest first, proved absences
   included and failures never. It reads the uncached units of one commit together. A commit whose whole tree
   `ConsoleBundle` holds is answered from it, and nothing is ever inserted into the bundle.

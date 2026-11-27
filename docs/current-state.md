@@ -2,6 +2,30 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The console's code leaves orchestration, offline (27 November 2026)
+
+- **Change:** tasks 73–77, 82 and 83 are merged on `main` (`655d9fe3e1d7`), finishing the
+  [console slice](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)'s moves.
+  Every kind's steps run as typed calls to apps, delivery, provisioning and orchestration's registry change, each
+  quoted line derived from its step, and a change returns its pull request's address (tasks 73, 74, `0f802b2b`,
+  `f49a8753`). `console.Change` is the one kind list; `pages` keeps none.
+- **What moved into `v2/console`:** the composition root and page rendering (task 75, `62a78e4c`), the app and
+  instance pages, their actions and readers (task 76, `e0c116df`), Activity, the change job, the new-app job,
+  publishing and merge evidence (task 77, `519a8721`), the flag and secret handlers' work (task 82, `2ba30e19`),
+  and the pinned tree's source and cache as `console.Bundle`, `Source`, `SourceOf` and `FilterTarball`, with
+  `console.FlagStore` wording the flag audit line the command writes (task 83, `1eae0ac5`). `orchestration`
+  holds no console file, and its workflow edges to `health` and `apps` are retired: `console` → `orchestration`,
+  `health`, `apps` and `orchestration` → `provisioning`.
+- **What stays in `orchestration`:** the job registry (`Jobs`, `NewJobs`, `ConsoleJobs`, `JobWork`), the team
+  registry change, the Flux unit actions, the flag operations and the ordered decoder (`DecodeOrdered`).
+- **Verification:** each task's own checks are in its notes, not re-claimed here; this record ran only
+  `make check-docs` and `make check-repo`.
+- **Not exercised:** nothing live changed; no console page, job, promotion or flag change ran against the
+  cluster or a deployed console. **Remaining:** the Offers types (`pages.Offers`, `OfferedAPI`, `OfferedEvent`)
+  leave `pages` once the operator chooses their owner, connectivity or apps (task 85); then a check lets only
+  `console` and the command import `pages` (task 86). Today `adapters/appsource` (Offers) and
+  `orchestration/jobs.go` (`pages.Job`, `pages.Value`) import it too.
+
 ## Slice 6 begins: the console's change kinds and one records reader, offline (27 November 2026)
 
 - **Change:** the operator approved the [console slice](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)
@@ -29,8 +53,7 @@ What has been verified on the live cluster, and when: current facts first, then 
   and the render checks: 172 platform files and 27 fixture files, 0 differences); each task's own checks are in
   its notes, not re-claimed here.
 - **Not exercised:** nothing live changed; no console promotion, deploy, edit or browser path ran against the
-  cluster. The console's composition, pages, Activity, jobs and handlers remain in `orchestration` and the
-  command. **Next gate:** the slice's remaining moves land offline and are recorded.
+  cluster. The rest of the slice is [recorded above](#the-consoles-code-leaves-orchestration-offline-27-november-2026).
 
 ## Ownership follow-ups and job-test synchronization, offline (22 November 2026)
 
@@ -1098,14 +1121,14 @@ What has been verified on the live cluster, and when: current facts first, then 
 ## Activity reads a merge commit's four files, not its archive (10 November 2026)
 
 - **Deployed and live:** Validate passed on `b89c64c1`, its Deploy job pinned `src-8202b8a2926b1280` (bot commit `2e7ae111`), `make flux-reconcile` reported `platform-console` at it and `make verify-platform` passed (its five warnings are staging images newer than their records). Cold, after deleting the pod at 23:11 UTC so its caches started empty (`console-7f474687c6-vmf2q`, Ready in about a second), timed through a port-forward to the pod: `/jobs/41` took **10.0 s**, then `/jobs/42` 2.4 s, then `/activity` 2.3–2.8 s for four reads that each still showed a row **Unknown** and from the fifth none, with **Nothing is running, nothing waits for you and nothing that failed is left open**, at 2.7 s and then 1.9 s. Before, the same cold path took 18.3 s for the first page and 16.3–17.1 s for a page that fetched an archive. Warm, on the earlier pod of the same image, ten `/activity` loads took 1.66–2.29 s and `/jobs/41` and `/jobs/42` 1.22–1.35 s, about the 1.7–1.8 s before. Every load returned 200. The console logs no per-request timing, so how the first page's 10 s splits between `main`'s whole-tree bundle, which the change keeps, and its merge commit's files is inferred, not measured.
-- **Scope:** Activity's and a job's page's merge-commit evidence ([read performance](console.md#read-performance)). A new read-only call on the console's GitHub port, `CommitFiles`, lists the commit's complete recursive tree and reads only the requested regular-file blobs by id, each id once and at most four at a time, checking each blob's Git id and declared size. A truncated or malformed listing, an unsafe path, any failed, oversized or corrupt blob or a cancelled read returns nothing. `ConsoleSource` gains `Files` (GitHub through `CommitFiles`; `--dev` from the checkout's `git archive`), and the new `orchestration.ConsoleEvidence` reads the four files a unit's render takes and keeps each render by commit and unit (at most 240), proved absences included and failures never. `ChangeReads.Renders` and `Cached` now take each commit's units, so a commit kept for one unit still costs the page's one read for another; the one-merge-commit-per-page rule, the progress states and `main`'s whole-tree bundle are unchanged. A malformed record now refuses only its own unit, where the archive read refused the whole commit.
+- **Scope:** Activity's and a job's page's merge-commit evidence ([read performance](console.md#read-performance)). A new read-only call on the console's GitHub port, `CommitFiles`, lists the commit's complete recursive tree and reads only the requested regular-file blobs by id, each id once and at most four at a time, checking each blob's Git id and declared size. A truncated or malformed listing, an unsafe path, any failed, oversized or corrupt blob or a cancelled read returns nothing. `ConsoleSource` (now `console.Source`, with `ConsoleSourceOf` now `console.SourceOf`) gains `Files` (GitHub through `CommitFiles`; `--dev` from the checkout's `git archive`), and the new `orchestration.ConsoleEvidence` (now `console.ConsoleEvidence` in `v2/console/evidence.go`) reads the four files a unit's render takes and keeps each render by commit and unit (at most 240), proved absences included and failures never. `ChangeReads.Renders` and `Cached` now take each commit's units, so a commit kept for one unit still costs the page's one read for another; the one-merge-commit-per-page rule, the progress states and `main`'s whole-tree bundle are unchanged. A malformed record now refuses only its own unit, where the archive read refused the whole commit.
 - **Why:** the offline experiment measured a median 14.358 s for an 8.3 MB archive and 0.717 s for the tree listing and four blobs ([rehearsal §9](git-history-rewrite-rehearsal.md#9-stage-a-activity-read-experiment-10-november-2026)).
 - **Offline:** `make check-v2` and `make check` passed, with the exported-API baseline in `v2/archtest/api.txt` gaining `Console.CommitFiles`, `ConsoleSource.Files`, `ConsoleSourceOf.Files`, `ConsoleEvidence` and the fake's `CommitFiles` and `History`, and the changed `ChangeReads`, all intended. `go test -race` passed for `adapters/github/...` and `orchestration`, and for the Activity and job page tests in `cmd/swhurl-v2`. The tests cover the adapter (including the shared contract run against the scripted server and the fake), parity with the archive path for every unit and for each of the four files missing, the cache's keys, absences, retries, bound and concurrent use, the page budget, and the Activity and job goldens through the server's own reads with only the cluster injected, plus a `--dev` page that asks GitHub for no tree or file. Details: [rehearsal §10](git-history-rewrite-rehearsal.md#10-stage-b-the-targeted-reader-implemented-offline-10-november-2026).
 - **Not exercised:** a failed tree listing or blob on the deployed console, rate limits and concurrent users.
 
 ## Activity keeps a change it saw and reads history one archive at a time (10 November 2026)
 
-- **Scope:** two fixes in `pages.ProgressOf`, `pages.Progress`'s saved end, `orchestration.mergeTrees` and its new `toFetch`, and `ConsoleBundle.Cached`. A read that fails after a change was seen at its end no longer undoes it: the new `unchecked` progress keeps the row in **Finished**, saying "…; a later read could not check it again", where it used to fall back to **Unknown** in **In progress or waiting for you**. Activity also fetches at most one historical archive per request, newest change first, and a tree the bundle already holds costs no fetch, so one slow archive neither holds the page open nor contends with the others.
+- **Scope:** two fixes in `pages.ProgressOf`, `pages.Progress`'s saved end, `orchestration.mergeTrees` and its new `toFetch`, and `ConsoleBundle.Cached` (all three now in `v2/console`: `changes.go` and `console.Bundle.Cached`). A read that fails after a change was seen at its end no longer undoes it: the new `unchecked` progress keeps the row in **Finished**, saying "…; a later read could not check it again", where it used to fall back to **Unknown** in **In progress or waiting for you**. Activity also fetches at most one historical archive per request, newest change first, and a tree the bundle already holds costs no fetch, so one slow archive neither holds the page open nor contends with the others.
 - **Why one archive:** measured from this host, an 8.3 MB archive of an old commit takes 14.1 s alone and two in parallel take 28.1 s (about 600 kB/s) against the page's 20 s `readTimeout`. Those two are the commits inside the window when the 11 MB `v2/swhurl-v2` binary was committed (`ca776af5`, 26 October, to `58b5fe62`, 3 November), so any batch above one would have fetched them together on every request and left the larger rows unreadable.
 - **Observed before the fix, live:** `/activity` answered in 20.04 s on every request and listed `swhurl-try-10/staging`'s jobs 41 and 42 under **In progress or waiting for you** as **Unknown**, "the target or current render could not be read": the two 8.3 MB trees never finished inside the deadline, and a failed tree read is never cached. Reading `/jobs/41` (16.1 s) and `/jobs/42` (16.2 s) cached both trees, after which `/activity` took 2.0 s, said **Nothing is running, nothing waits for you and nothing that failed is left open**, and showed #42 **Live in staging** ("runs it, with a newer image") and #41 **Superseded** in **Finished**.
 - **Offline:** `make check-v2` and `go test ./...` in `v2/` passed, including `TestAFailedReadKeepsAChangeThatWasSeenAtItsEnd` (the merge tree, `main`'s tree and the cluster unread, with and without a recorded end), the `unchecked` row's sentence and end stage, and `TestActivityReadsOneHistoricalTreePerPage` (one fetch per page, then the next, a tree in hand free, the unreached rows unknown). The exported-API baseline gained `ChangeReads.Cached` and `ConsoleBundle.Cached` in `v2/archtest/api.txt` — the intended change, since only the server knows what its bundle holds.
@@ -1425,7 +1448,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   deployed), `/apps/{app}/staging/promotion` and `/new`, §23 step 1's last pages. `pages/app.go` computes the app
   page (tabs, state, team, desired image, database, hosts, exposure, problems, routes, certificates, connections,
   promotion problem, running job, logs and dashboard links, scale fields, the committed environment, feature flags),
-  the two pending states, the promotion review and the New app form; `orchestration/console_app.go` reads the stack
+  the two pending states, the promotion review and the New app form; `orchestration/console_app.go` (now
+  `console/app.go`) reads the stack
   catalogue from `v2/contract/stacks.json`, the committed HelmRelease's environment in document order, the
   configuration the Scale form starts from, the team registry and the Feature flags card in the template's own words.
   The Feature flags card reads NATS through the console's own seed, opened once and retried at most once a minute;

@@ -83,8 +83,8 @@ What has been verified on the live cluster, and when: current facts first, then 
   duplication deferral; the canonical status page stays within 250 lines. Tests live in provisioning's
   [document cases](../v2/provisioning/rules/documents_test.go), [seed cases](../v2/provisioning/seed_test.go),
   [connectivity cases](../v2/connectivity/rules/declarations_test.go), delivery's
-  [image cases](../v2/delivery/rules/image_test.go) and orchestration's
-  [job cases](../v2/orchestration/jobs_test.go), with Create/Deploy/Mint entry-point regressions.
+  [image cases](../v2/delivery/rules/image_test.go) and the console's
+  [job cases](../v2/console/jobs_test.go), with Create/Deploy/Mint entry-point regressions.
 - **Task 61 verification:** `make check-repo`, `make check-v2`, `make check-docs` and `git diff --check`
   passed on this documentation task tree under a machine lease (run `01M82HAD3FNGDGRE80C4GDRQ3D`).
   Render comparisons checked 172 platform files and 27 fixture files, with zero differences; documentation

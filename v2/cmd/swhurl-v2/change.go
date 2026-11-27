@@ -12,18 +12,22 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
+	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/console"
+	"github.com/samclement/swhurl-platform/v2/delivery"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // A change is the console's one way to open a pull request. It downloads main at one commit, applies its kind's
-// commands to that copy, and publishes only the files its kind derives, so a pull request can carry nothing the
+// steps to that copy, and publishes only the files its kind derives, so a pull request can carry nothing the
 // console did not ask for and nothing it cannot explain. What a kind takes and runs is console's table, what it may
 // carry is pages', and what the operator is told is orchestration's; this file is the command's own: its flags, its
 // working copy, and the order.
 //
-// The console reads its output as the job's log and takes the last line of standard output as the pull request it
-// opened, so every line of progress goes there and only a refusal goes to standard error.
+// Every line of progress goes to standard output, ending with the pull request it opened, and only a refusal goes to
+// standard error; the console reads the lines as the job's log and takes the address openChange answers.
 
 const (
 	// consoleTokenEnv and consoleRepositoryEnv are where a change reads its credential and its repository. Never an
@@ -123,28 +127,34 @@ func (r *request) changeNamed() []string {
 
 // change opens the pull request one kind of change asks for.
 func (c cli) change(r request) int {
-	spec := r.spec
+	_, status := c.openChange(r.spec)
+	return status
+}
+
+// openChange opens the pull request one kind of change asks for, and answers its address: empty for a dry run, which
+// opens none.
+func (c cli) openChange(spec *changeSpec) (string, int) {
 	change, found := console.ChangeNamed(spec.kind)
 	if !found {
-		return fail(c.diagnostic, fmt.Errorf("invalid: kind: %q is not a change the console opens", spec.kind))
+		return "", fail(c.diagnostic, fmt.Errorf("invalid: kind: %q is not a change the console opens", spec.kind))
 	}
 	if change.Team() != (spec.team != "") || (!change.Team() && !change.Allows(spec.env)) {
-		return fail(c.diagnostic, fmt.Errorf("invalid: env: %s does not name %q", spec.kind, spec.env))
+		return "", fail(c.diagnostic, fmt.Errorf("invalid: env: %s does not name %q", spec.kind, spec.env))
 	}
 	if err := change.CheckFlags(spec.given()); err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
 	repository, status := c.changeRepository(spec)
 	if status != 0 {
-		return status
+		return "", status
 	}
 	token := c.environment(consoleTokenEnv)
 	if token == "" || len(token) > consoleTokenMaxLength {
-		return fail(c.diagnostic, errors.New("invalid: token: "+consoleTokenEnv+" is not set"))
+		return "", fail(c.diagnostic, errors.New("invalid: token: "+consoleTokenEnv+" is not set"))
 	}
 	revision, dir, status := c.changeCopy(spec, repository, token)
 	if status != 0 {
-		return status
+		return "", status
 	}
 	defer os.RemoveAll(dir)
 	return c.changeApplied(change, spec, dir, revision, repository, token)
@@ -196,25 +206,26 @@ func (c cli) changeCopy(spec *changeSpec, repository, token string) (string, str
 	return revision, dir, 0
 }
 
-// changeApplied runs the kind's commands in the working copy and publishes what they wrote, in the order the operator
-// reads them: what each command said, what the change carries, and the pull request it opened.
-func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revision, repository, token string) int {
+// changeApplied runs the kind's steps in the working copy and publishes what they wrote, in the order the operator
+// reads them: what each step did, what the change carries, and the pull request it opened.
+func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revision, repository, token string) (string, int) {
 	before, err := files.Snapshot(dir)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
-	steps, err := c.changeSteps(change.ConsoleChange, spec, newChangeTree(dir), revision)
+	tree := console.WorkingCopy(dir)
+	steps, err := c.changeSteps(change.ConsoleChange, spec, tree)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
 	for _, step := range steps {
-		if status := c.runChangeStep(step); status != 0 {
-			return status
+		if status := c.runChangeStep(step, tree, revision); status != 0 {
+			return "", status
 		}
 	}
 	after, err := files.Snapshot(dir)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
 	publisher := c.publisher
 	if publisher == nil {
@@ -222,22 +233,63 @@ func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revisio
 	}
 	commands := make([]string, 0, len(steps))
 	for _, step := range steps {
-		commands = append(commands, step.display)
+		commands = append(commands, step.Quote())
 	}
-	_, err = orchestration.Publish(context.Background(), orchestration.PublishInputs{
+	published, err := orchestration.Publish(context.Background(), orchestration.PublishInputs{
 		Change: change.ConsoleChange, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
 		Before: before, After: after, Commands: commands, Preface: spec.preface, Repository: repository,
 		Token: token, DryRun: spec.dryRun,
 	}, publisher, func(line string) { fmt.Fprintln(c.out, line) })
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
-	return 0
+	return published.URL, 0
 }
 
-// runChangeStep runs one of v2's own commands on the working copy, and shows what it said where it said it. A refusal
-// is the whole of what the step wrote, on the diagnostic, so the console shows v2's own words and not a paraphrase.
-func (c cli) runChangeStep(step changeStep) int {
+// runChangeStep runs one step on the working copy: a typed step as one call, which prints its one line, and a command
+// as v2 runs it. A refusal is v2's own words, on the diagnostic, not a paraphrase.
+func (c cli) runChangeStep(step console.Step, tree files.Checkout, revision string) int {
+	command, isCommand := step.(commandStep)
+	if !isCommand {
+		summary, err := runTyped(step, tree, revision, c.writer)
+		if err != nil {
+			return c.failure(err)
+		}
+		fmt.Fprintln(c.out, summary)
+		return 0
+	}
+	return c.runCommandStep(command)
+}
+
+// runTyped is one record kind's step as the call its capability owns, and the line it reports.
+func runTyped(step console.Step, tree files.Checkout, revision string, writer files.Writer) (string, error) {
+	switch step := step.(type) {
+	case console.EditStep:
+		setting, err := apps.ParseSetting(step.Setting)
+		if err != nil {
+			return "", err
+		}
+		if setting.AppLevel() {
+			result, err := apps.SetTeamIn(tree, step.App, setting.Team, writer)
+			return result.Summary(), err
+		}
+		result, err := apps.EditIn(tree, step.App, step.Env, setting, writer)
+		return result.Summary(), err
+	case console.RemoveStep:
+		result, err := apps.RemoveIn(tree, step.App, step.Env, writer)
+		return result.Summary(), err
+	case console.PromoteStep:
+		result, err := delivery.PromoteIn(tree, step.App, step.Env, kernel.InstanceRevision(step.Expected), writer)
+		return result.Summary(), err
+	case console.RenderStep:
+		result, err := provisioning.Render(tree, revision, writer)
+		return result.Summary(), err
+	}
+	return "", fmt.Errorf("invalid: step: %s has no call", step.Operation())
+}
+
+// runCommandStep runs one of v2's own commands on the working copy, and shows what it said where it said it.
+func (c cli) runCommandStep(step commandStep) int {
 	var shown bytes.Buffer
 	quiet := c
 	quiet.out, quiet.diagnostic = &shown, &shown

@@ -234,16 +234,11 @@ func (s *consoleServer) changeWork(spec *changeSpec) orchestration.JobWork {
 // openChange runs one change: it downloads the pinned commit, applies the change in a working copy of its own, publishes
 // what its kind owns and opens the pull request. A refusal is the whole of what the command wrote, in v2's words.
 func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line func(string)) (string, error) {
-	opened := ""
 	var refusal strings.Builder
-	c := s.command(&refusal, func(text string) {
-		if url, isPull := strings.CutPrefix(text, "Opened "); isPull {
-			opened = strings.TrimSpace(url)
-		}
-		line(text)
-	})
+	c := s.command(&refusal, line)
 	c.stdin = strings.NewReader(input)
-	if status := c.change(request{command: "change", spec: spec}); status != 0 {
+	opened, status := c.openChange(spec)
+	if status != 0 {
 		return "", errors.New(strings.TrimSpace(refusal.String()))
 	}
 	return opened, nil

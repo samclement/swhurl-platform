@@ -5,6 +5,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/helm"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"github.com/samclement/swhurl-platform/v2/provisioning"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 type policyDocument struct {
@@ -13,21 +15,17 @@ type policyDocument struct {
 	Instances []orchestration.PolicyResult `json:"instances"`
 }
 
-// policy uses exactly render's whole-tree readers, resolution and team/channel validation, without a writer.
+// policy uses exactly render's whole-tree decision, resolution and team/channel validation, without a writer.
 func (c cli) policy(r request) int {
-	rendered, status := c.renderTree(r, provisionalRevision)
-	if status != 0 {
-		return status
-	}
-	rendered, status = c.withNotify(r, rendered)
-	if status != 0 {
-		return status
+	tree, err := provisioning.DecideTree(r.checkout(), provisioningrules.ProvisionalRevision)
+	if err != nil {
+		return c.failure(err)
 	}
 	renderer := c.charts
 	if renderer == nil {
 		renderer = helm.New()
 	}
-	results, err := orchestration.CheckPolicy(rendered.instances, r.chart, renderer)
+	results, err := orchestration.CheckPolicy(tree.Instances, r.chart, renderer)
 	if err != nil {
 		return c.failure(err)
 	}

@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 // eventInstance is one instance's record pair as render holds it.
-func eventInstance(t *testing.T, application string, events, release map[string]any) snapshotInstance {
+func eventInstance(t *testing.T, application string, events, release map[string]any) connectivityrules.Records {
 	t.Helper()
-	records := map[string]json.RawMessage{}
+	records := map[string][]byte{}
 	for role, value := range map[string]any{
 		"instance": map[string]any{"schemaVersion": 1, "application": application, "environment": "staging",
 			"events": events},
@@ -27,35 +28,36 @@ func eventInstance(t *testing.T, application string, events, release map[string]
 		}
 		records[role] = data
 	}
-	return snapshotInstance{Application: application, Environment: "staging", Records: records}
+	return connectivityrules.Records{Application: application, Environment: "staging", Instance: records["instance"],
+		Release: records["release"]}
 }
 
 // eventSnapshot is the records with a publisher, a subscriber, a publisher that publishes nothing, and a name no
 // instance answers to: the resolver connects the first two, leaves the third's event refused for its own
 // publisher to answer and the fourth waiting.
-func eventSnapshot(t *testing.T) snapshot {
+func eventSnapshot(t *testing.T) []connectivityrules.Records {
 	t.Helper()
-	return snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+	return []connectivityrules.Records{
 		eventInstance(t, "orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
 			map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
 		eventInstance(t, "notifier", map[string]any{
 			"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
 			"subscriptions": []any{"orders.created", "absent.created"}}, map[string]any{"schemaVersion": 1}),
 		eventInstance(t, "quiet", map[string]any{}, map[string]any{"schemaVersion": 1}),
-	}}
+	}
 }
 
 // The resolution records the connected subscription with every name a consumer, a stream and a permission need, and
 // reports the one whose publisher no instance answers to as waiting rather than refused.
 func TestResolutionRecordsSubscriptions(t *testing.T) {
-	document, err := resolutionOf(eventSnapshot(t))
+	document, err := connectivityrules.Resolve(strings.Repeat("a", 40), eventSnapshot(t))
 	if err != nil {
 		t.Fatalf("resolution: %v", err)
 	}
 	if len(document.Subscriptions) != 1 {
 		t.Fatalf("subscriptions: %+v", document.Subscriptions)
 	}
-	want := subscriptionDocument{Subscriber: "notifier", Publisher: "orders", Event: "created",
+	want := kernel.ConnectionsSubscription{Subscriber: "notifier", Publisher: "orders", Event: "created",
 		Environment: "staging", Stream: "staging-orders", Consumer: "notifier_created",
 		Subject: "staging.orders.created", Object: "orders-created"}
 	if document.Subscriptions[0] != want {
@@ -70,14 +72,14 @@ func TestResolutionRecordsSubscriptions(t *testing.T) {
 // A release states what it publishes — an absent list is none — so a subscription to an event it does not publish
 // is refused rather than left waiting for something that can never arrive.
 func TestResolutionRefusesAnEventItsPublisherDoesNotPublish(t *testing.T) {
-	pinned := snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+	pinned := []connectivityrules.Records{
 		eventInstance(t, "quiet", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
 			map[string]any{"schemaVersion": 1}),
 		eventInstance(t, "notifier", map[string]any{
 			"key":           "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI",
 			"subscriptions": []any{"quiet.created"}}, map[string]any{"schemaVersion": 1}),
-	}}
-	if _, err := resolutionOf(pinned); err == nil || !strings.Contains(err.Error(), "not_published") {
+	}
+	if _, err := connectivityrules.Resolve(strings.Repeat("a", 40), pinned); err == nil || !strings.Contains(err.Error(), "not_published") {
 		t.Fatalf("resolution: %v", err)
 	}
 }
@@ -211,13 +213,13 @@ func TestProfileStatesThePlatformsBroker(t *testing.T) {
 // a subscription it grants itself and the user list gives it the consumer's permission.
 func TestOwnRecordsStateTheBrokerIdentity(t *testing.T) {
 	key := "UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI"
-	pinned := snapshot{Revision: strings.Repeat("a", 40), Instances: []snapshotInstance{
+	pinned := []connectivityrules.Records{
 		eventInstance(t, "orders", map[string]any{"key": "UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G"},
 			map[string]any{"schemaVersion": 1, "publishes": []any{"created"}}),
 		eventInstance(t, "notifier", map[string]any{"key": key, "subscriptions": []any{"orders.created"}},
 			map[string]any{"schemaVersion": 1}),
-	}}
-	document, err := resolutionOf(pinned)
+	}
+	document, err := connectivityrules.Resolve(strings.Repeat("a", 40), pinned)
 	if err != nil {
 		t.Fatalf("resolution: %v", err)
 	}
@@ -232,7 +234,12 @@ func TestOwnRecordsStateTheBrokerIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, rendered, err := renderUsers(pinned, profile)
+	users, err := connectivityrules.EventUsers(pinned)
+	if err != nil {
+		t.Fatalf("users: %v", err)
+	}
+	rendered, err := kernel.RenderUsers(kernel.NATSUsers{ControllerKey: profile.NATS.ControllerKey,
+		ConsoleKey: profile.NATS.ConsoleKey, Instances: users})
 	if err != nil {
 		t.Fatalf("users: %v", err)
 	}

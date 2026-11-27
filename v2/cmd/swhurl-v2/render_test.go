@@ -185,9 +185,9 @@ func TestRenderWritesEveryDerivedFile(t *testing.T) {
 	if len(connections.Calls) != 1 || connections.Calls[0] != (kernel.Call{Callee: "demo-orders", Port: 8080}) {
 		t.Errorf("the resolution connects %+v for demo-shop/staging", connections.Calls)
 	}
-	var resolution resolutionDocument
+	var resolution kernel.ConnectionsDocument
 	if err := json.Unmarshal(data, &resolution); err != nil || resolution.Revision != renderRevision ||
-		len(resolution.Pairs) != 1 || resolution.Pairs[0] != (pairDocument{"demo-shop", "demo-orders", "staging", 8080}) {
+		len(resolution.Pairs) != 1 || resolution.Pairs[0] != (kernel.ConnectionsPair{Caller: "demo-shop", Callee: "demo-orders", Environment: "staging", Port: 8080}) {
 		t.Errorf("calls.json is %s (%v)", data, err)
 	}
 }

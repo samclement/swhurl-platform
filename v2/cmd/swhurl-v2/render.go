@@ -5,34 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
-	"io/fs"
-	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
-	"slices"
-	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
-	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/provisioning"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // render: every file v2 derives from its records, from the tree they live in.
 
 const (
-	callsFile      = "calls.json"
-	allocationPath = "platform/egress/allocation.json"
-	platformFolder = "platform"
-	// provisionalRevision stands in for the commit a check was not given: the documents a compilation takes name one,
-	// and a check compares neither document's revision.
-	provisionalRevision = "0000000000000000000000000000000000000000"
+	callsFile      = connectivityrules.ResolutionRecordName
+	allocationPath = provisioningrules.AllocationPath
+	// provisionalRevision stands in for the commit a check was not given.
+	provisionalRevision = provisioningrules.ProvisionalRevision
 	renderNote          = "every file v2 derives from its records, rendered offline; nothing is applied to the cluster"
 	renderCheckNote     = "a check: the rendered files were compared with the ones under --out and nothing was written"
 )
 
+// commitRevision is a full commit, as a command that records one is given it.
 var commitRevision = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // renderDocument is the report: what a write did to each file, or which files a check found different.
@@ -47,17 +39,6 @@ type renderDocument struct {
 	Note        string          `json:"note"`
 }
 
-// rendering is one whole-tree render, decided before anything is written: the two documents that state the revision
-// they were read at, the platform's other files, and each instance's compilation inputs with the files they render.
-type rendering struct {
-	callsPath  string
-	resolution resolutionDocument
-	allocation kernel.EgressDocument
-	platform   []kernel.File
-	instances  []provisioningrules.Inputs
-	compiled   []kernel.File
-}
-
 // render renders every file v2 derives from the records under --records and writes them under --out, or with --check
 // compares them with what --out holds and writes nothing.
 func (c cli) render(r request) int {
@@ -68,29 +49,28 @@ func (c cli) render(r request) int {
 	if c.appTreeRefused(r.out) {
 		return 2
 	}
-	callsPath, err := underOut(r.out, filepath.Join(r.records, callsFile))
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	rendered, status := c.renderTree(r, revision)
-	if status != 0 {
-		return status
-	}
-	if rendered, status = c.withNotify(r, rendered); status != 0 {
-		return status
-	}
-	rendered.callsPath = callsPath
 	if r.check {
-		return c.checkRendered(r, rendered)
+		return c.checkRendered(r)
 	}
-	return c.writeRendered(r, rendered)
+	result, err := provisioning.Render(r.checkout(), revision, c.writer)
+	if err != nil && result.Written == nil {
+		return c.failure(err)
+	}
+	fmt.Fprintln(c.diagnostic, result.Summary())
+	if status := c.emitRender(r, nonNilOutcomes(result.Written), []string{}); status != 0 {
+		return status
+	}
+	if err != nil {
+		return c.failure(err)
+	}
+	return 0
 }
 
 // renderRevision is the commit the documents record: required for a write, which states it, and stood in for when a
 // check, which compares no revision, is given none.
 func (c cli) renderRevision(r request) (string, int) {
 	switch {
-	case r.revision != "" && !commitRevision.MatchString(r.revision):
+	case r.revision != "" && !provisioningrules.CommitRevision(r.revision):
 		return "", fail(c.diagnostic, errors.New("invalid: revision: expected_a_full_commit"))
 	case r.revision != "":
 		return r.revision, 0
@@ -100,392 +80,20 @@ func (c cli) renderRevision(r request) (string, int) {
 	return "", fail(c.diagnostic, errors.New("invalid: revision: required"))
 }
 
-// renderTree reads every instance folder and decides every file: a record anything refuses stops the run here.
-func (c cli) renderTree(r request, revision string) (rendering, int) {
-	profileData, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return rendering{}, status
-	}
-	profile, err := kernel.DecodeProfile(profileData)
-	if err != nil {
-		return rendering{}, fail(c.diagnostic, err)
-	}
-	folders, status := c.renderFolders(r)
-	if status != 0 {
-		return rendering{}, status
-	}
-	previous, status := c.renderPrevious(r)
-	if status != 0 {
-		return rendering{}, status
-	}
-	pinned := snapshotOf(revision, folders)
-	rendered, err := renderPlatform(pinned, previous, profile)
-	if err != nil {
-		return rendering{}, fail(c.diagnostic, err)
-	}
-	if err := rendered.compileInstances(profileData, folders); err != nil {
-		return rendering{}, fail(c.diagnostic, err)
-	}
-	registration, status := c.unitRegistration(r.out, profile, folders)
-	if status != 0 {
-		return rendering{}, status
-	}
-	rendered.platform = append(rendered.platform, registration...)
-	return rendered, 0
-}
-
-// compileInstances compiles every instance folder against the rendering's resolution and allocation.
-func (r *rendering) compileInstances(profile []byte, folders []recordsEdit) error {
-	calls, err := encodeResolution(r.resolution)
-	if err != nil {
-		return err
-	}
-	egress, err := connectivityrules.EncodeEgressDocument(r.allocation)
-	if err != nil {
-		return err
-	}
-	for _, one := range folders {
-		inputs := provisioningrules.Inputs{Instance: one.instance, Release: one.release, App: one.app, Profile: profile,
-			Calls: calls, Egress: egress, EventsSecret: one.secret, Offers: one.offers}
-		written, err := instanceRender(inputs)
-		if err != nil {
-			return fmt.Errorf("%s/%s: %w", one.application, one.environment, err)
-		}
-		r.instances = append(r.instances, inputs)
-		r.compiled = append(r.compiled, written...)
-	}
-	return nil
-}
-
-// unitRegistration is the unit root's kustomization listing every instance's unit, each one the records hold added
-// after the entries already there; none when the tree under --out has no such file. Without its line a merged unit is
-// never applied, and its namespace never made, so render writes it rather than leave it to a hand edit.
-func (c cli) unitRegistration(out string, profile kernel.PlatformProfile, folders []recordsEdit) ([]kernel.File, int) {
-	path := kernel.UnitRegistrationPath(profile)
-	document, status := c.readPresent(filepath.Join(out, filepath.FromSlash(path)), "unit registration")
-	if status != 0 || document == nil {
-		return nil, status
-	}
-	entries := make([]string, 0, len(folders))
-	for _, one := range folders {
-		entries = append(entries, filepath.Base(kernel.UnitPath(one.application, one.environment, profile)))
-	}
-	slices.Sort(entries)
-	registered, err := kernel.WithEntries(document, entries)
-	if err != nil {
-		return nil, fail(c.diagnostic, fmt.Errorf("%s: %w", path, err))
-	}
-	return []kernel.File{{Path: path, Document: registered}}, 0
-}
-
-// renderFolders is every instance folder under the records tree, app by app and environment by environment, each
-// read whole and checked to hold the instance and release its path names.
-func (c cli) renderFolders(r request) ([]recordsEdit, int) {
-	entries, err := os.ReadDir(r.records)
-	if err != nil {
-		fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", r.records)
-		return nil, 1
-	}
-	folders := []recordsEdit{}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		environments, err := appEnvironments(r.records, entry.Name())
-		if err != nil {
-			fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", filepath.Join(r.records, entry.Name()))
-			return nil, 1
-		}
-		for _, environment := range environments {
-			one, status := c.recordsEdit(r.out, r.records, entry.Name(), environment)
-			if status != 0 {
-				return nil, status
-			}
-			described := recordInstance{application: one.application, environment: one.environment,
-				instance: one.instance, release: one.release}
-			if status := c.describeRecords(&described); status != 0 {
-				return nil, status
-			}
-			folders = append(folders, one)
-		}
-	}
-	return folders, 0
-}
-
-// renderPrevious is the allocation whose ports are kept: the one --previous names, else the one under --out, else none.
-func (c cli) renderPrevious(r request) (kernel.EgressDocument, int) {
-	path := r.previous
-	if path == "" {
-		path = filepath.Join(r.out, allocationPath)
-		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-			return kernel.EgressDocument{}, 0
-		}
-	}
-	return c.allocation(path, "previous allocation")
-}
-
-// snapshot is the records tree as the platform's helpers take it: every instance's pair, in v2's own shape. It is
-// render's own value and never a file: the tree under --records is the only input.
-type snapshot struct {
-	Revision  string
-	Instances []snapshotInstance
-}
-
-// snapshotInstance is one instance's records, as the resolution, the allocation and the platform files read them.
-type snapshotInstance struct {
-	Application, Environment string
-	Records                  map[string]json.RawMessage
-}
-
-// snapshotOf is the records tree as the platform's helpers take it.
-func snapshotOf(revision string, folders []recordsEdit) snapshot {
-	pinned := snapshot{Revision: revision, Instances: make([]snapshotInstance, 0, len(folders))}
-	for _, one := range folders {
-		pinned.Instances = append(pinned.Instances, snapshotInstance{Application: one.application,
-			Environment: one.environment, Records: map[string]json.RawMessage{
-				"instance": one.instance, "release": one.release, "app": one.app}})
-	}
-	return pinned
-}
-
-// renderPlatform decides the platform's documents from the records: the resolution, the allocation, and the files
-// rendered from them and from the records — the proxy, the auth folder, NATS's users and Reloader's values.
-func renderPlatform(pinned snapshot, previous kernel.EgressDocument, profile kernel.PlatformProfile) (rendering, error) {
-	resolution, err := resolutionOf(pinned)
-	if err != nil {
-		return rendering{}, err
-	}
-	allocation, err := allocationAt(pinned, previous, profile)
-	if err != nil {
-		return rendering{}, err
-	}
-	proxy, err := kernel.RenderProxy(allocation.Instances, profile)
-	if err != nil {
-		return rendering{}, err
-	}
-	_, auth, err := renderAuth(pinned, profile)
-	if err != nil {
-		return rendering{}, err
-	}
-	_, users, err := renderUsers(pinned, profile)
-	if err != nil {
-		return rendering{}, err
-	}
-	_, reloader, err := renderReloader(pinned, profile)
-	if err != nil {
-		return rendering{}, err
-	}
-	rendered := rendering{resolution: resolution, allocation: allocation}
-	for _, set := range []kernel.ResourceSet{proxy, auth, users, reloader} {
-		for _, file := range set.Files {
-			rendered.platform = append(rendered.platform, kernel.File{Path: platformFolder + "/" + file.Path,
-				Document: file.Document})
-		}
-	}
-	return rendered, nil
-}
-
-// withNotify adds what the team registry renders to the platform's files, once every app record and every grant
-// names a registered team and each registered channel, and no other, has its Secret: render writes the list of
-// channel Secrets and never a Secret, so a list naming a missing file, or a file nothing lists, is refused here.
-func (c cli) withNotify(r request, rendered rendering) (rendering, int) {
-	data, status := c.read(filepath.Join(r.records, kernel.TeamsRecordName), "teams")
-	if status != 0 {
-		return rendering{}, status
-	}
-	registry, err := kernel.DecodeTeams(data)
-	if err != nil {
-		return rendering{}, fail(c.diagnostic, fmt.Errorf("%s: %w", kernel.TeamsRecordName, err))
-	}
-	for _, inputs := range rendered.instances {
-		if err := teamsOf(registry, inputs); err != nil {
-			return rendering{}, fail(c.diagnostic, err)
-		}
-	}
-	if err := channelSecretsAgree(r.out, registry); err != nil {
-		return rendering{}, fail(c.diagnostic, err)
-	}
-	notify, err := kernel.RenderNotify(registry)
-	if err != nil {
-		return rendering{}, fail(c.diagnostic, err)
-	}
-	for _, file := range notify.Files {
-		rendered.platform = append(rendered.platform, kernel.File{Path: platformFolder + "/" + file.Path,
-			Document: file.Document})
-	}
-	return rendered, 0
-}
-
-// teamsOf refuses an instance whose app names, or whose grants admit, a team the registry does not hold, naming it.
-func teamsOf(registry kernel.TeamRegistry, inputs provisioningrules.Inputs) error {
-	app, err := kernel.DecodeApp(inputs.App)
-	if err != nil {
-		return err
-	}
-	spec, err := kernel.DecodeInstance(inputs.Instance)
-	if err != nil {
-		return err
-	}
-	if err := kernel.CheckTeams(registry, []kernel.AppSpec{app}, []kernel.InstanceSpec{spec}); err != nil {
-		return fmt.Errorf("%s/%s: %w (register it with swhurl-v2 team --action add)", spec.Application,
-			spec.Environment, err)
-	}
-	return nil
-}
-
-// channelSecretsAgree is whether the channels folder holds exactly one Secret file per registered channel.
-func channelSecretsAgree(out string, registry kernel.TeamRegistry) error {
-	folder := platformFolder + "/" + kernel.ChannelsFolder
-	entries, err := os.ReadDir(filepath.Join(out, filepath.FromSlash(folder)))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return &files.Error{Code: files.IO, Path: folder, Reason: "cannot read the channels folder"}
-	}
-	present := map[string]bool{}
-	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".sops.yaml") {
-			present[folder+"/"+entry.Name()] = true
-		}
-	}
-	for _, channel := range registry.Channels() {
-		path := platformFolder + "/" + kernel.ChannelSecretPath(channel.Name)
-		if !present[path] {
-			return fmt.Errorf("invalid: channels: %s is missing: give the team its channel with swhurl-v2 team "+
-				"--action channel", path)
-		}
-		delete(present, path)
-	}
-	if len(present) > 0 {
-		return fmt.Errorf("invalid: channels: %s is no team's channel: remove it", slices.Sorted(maps.Keys(present))[0])
-	}
-	return nil
-}
-
-// instanceRender is the files one instance's folder holds once compiled: the compilation with its seed and the
-// documents it publishes, as CompileInto writes them.
-func instanceRender(inputs provisioningrules.Inputs) ([]kernel.File, error) {
-	_, written, err := provisioning.Complete(inputs)
-	return written, err
-}
-
-// documents is the two documents that record a revision, at the revisions given, and the platform's other files. The
-// two are the files `resolve` and `egress` print, so each ends in the newline their output does.
-func (r rendering) documents(callsRevision, allocationRevision string) ([]kernel.File, error) {
-	resolution, allocation := r.resolution, r.allocation
-	resolution.Revision, allocation.Revision = callsRevision, allocationRevision
-	calls, err := encodeResolution(resolution)
-	if err != nil {
-		return nil, err
-	}
-	egress, err := connectivityrules.EncodeEgressDocument(allocation)
-	if err != nil {
-		return nil, err
-	}
-	return append([]kernel.File{{Path: r.callsPath, Document: append(calls, '\n')},
-		{Path: allocationPath, Document: append(egress, '\n')}}, r.platform...), nil
-}
-
-// writeRendered writes the platform's files in one write and then every instance's folder, which CompileInto writes
-// and prunes. Nothing is written until every file has been decided.
-func (c cli) writeRendered(r request, rendered rendering) int {
-	platform, err := rendered.documents(rendered.resolution.Revision, rendered.allocation.Revision)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	outcomes, err := c.writer.Write(r.out, platform)
-	for _, inputs := range rendered.instances {
-		if err != nil {
-			break
-		}
-		var result provisioning.Result
-		result, err = provisioning.CompileInto(inputs, r.out, c.writer)
-		outcomes = append(outcomes, result.Written...)
-	}
-	fmt.Fprintln(c.diagnostic, writtenSummary(outcomes))
-	if status := c.emitRender(r, nonNilOutcomes(outcomes), []string{}); status != 0 {
-		return status
-	}
+// checkRendered compares every rendered file with the one under --out, and fails when any differs.
+func (c cli) checkRendered(r request) int {
+	checked, err := provisioning.CheckRender(r.checkout())
 	if err != nil {
 		return c.failure(err)
 	}
-	return 0
-}
-
-// checkRendered compares every rendered file with the one under --out. The resolution and the allocation are
-// compared at the revision the file on disk records, so only their content can differ.
-func (c cli) checkRendered(r request, rendered rendering) int {
-	platform, err := rendered.documents(recordedRevision(r.out, rendered.callsPath),
-		recordedRevision(r.out, allocationPath))
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	checked := append(platform, rendered.compiled...)
-	differences := []string{}
-	for _, file := range checked {
-		same, err := sameOnDisk(r.out, file)
-		if err != nil {
-			return c.failure(err)
-		}
-		if !same {
-			differences = append(differences, file.Path)
-		}
-	}
-	summary := fmt.Sprintf("render: %d file(s) checked, %d differ", len(checked), len(differences))
-	if len(differences) > 0 {
-		summary += ": " + strings.Join(differences, ", ")
-	}
-	fmt.Fprintln(c.diagnostic, summary)
-	if status := c.emitRender(r, []files.Outcome{}, differences); status != 0 {
+	fmt.Fprintln(c.diagnostic, checked.Summary())
+	if status := c.emitRender(r, []files.Outcome{}, checked.Differences); status != 0 {
 		return status
 	}
-	if len(differences) > 0 {
+	if len(checked.Differences) > 0 {
 		return 1
 	}
 	return 0
-}
-
-// recordedRevision is the revision a document on disk records, or the provisional one when there is none to read:
-// a missing or unreadable file differs whatever revision it is compared at.
-func recordedRevision(out, path string) string {
-	data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(path)))
-	if err != nil {
-		return provisionalRevision
-	}
-	var recorded struct{ Revision string }
-	if json.Unmarshal(data, &recorded) != nil || !commitRevision.MatchString(recorded.Revision) {
-		return provisionalRevision
-	}
-	return recorded.Revision
-}
-
-// sameOnDisk is whether the file under out holds exactly the rendered bytes. A missing file differs; a path the
-// writer would refuse, or a file that cannot be read, is an error rather than a difference.
-func sameOnDisk(out string, file kernel.File) (bool, error) {
-	base, err := filepath.Abs(out)
-	if err != nil {
-		return false, &files.Error{Code: files.IO, Path: "destination", Reason: "cannot resolve the destination"}
-	}
-	target, err := files.Target(base, file.Path)
-	if err != nil {
-		return false, err
-	}
-	existing, err := os.ReadFile(target)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return false, nil
-	case err != nil:
-		return false, &files.Error{Code: files.IO, Path: file.Path, Reason: "cannot read the existing file"}
-	}
-	return bytes.Equal(existing, file.Document), nil
-}
-
-// writtenSummary is the one stderr line of a write: how many files each outcome has.
-func writtenSummary(outcomes []files.Outcome) string {
-	counts := map[string]int{}
-	for _, outcome := range outcomes {
-		counts[outcome.State]++
-	}
-	return fmt.Sprintf("render: %d written, %d unchanged, %d removed", counts[files.Written], counts[files.Unchanged],
-		counts[files.Removed])
 }
 
 // emitRender writes the report to stdout.

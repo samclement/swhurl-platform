@@ -17,8 +17,8 @@ import (
 
 // A new app repository is one command: render the stack's template, create the public repository with its first
 // commit, add the image webhook and wait for the first image, then the ordinary publication for `create`, each
-// `edit` and `render`. The console reads the lines as the job's log and takes the last one as the pull request it
-// opened, so every line of progress goes to standard output and only a refusal goes to standard error.
+// `edit` and `render`. Every line of progress goes to standard output and only a refusal goes to standard error; the
+// console reads the lines as the job's log and takes the address openAppRepo answers.
 //
 // The credentials are the environment's, never arguments: CONSOLE_TOKEN opens the staging pull request,
 // APP_REPOS_TOKEN creates the repository and writes its first commit, and IMAGE_WEBHOOK_TOKEN signs the webhook.
@@ -30,38 +30,43 @@ const (
 
 // appRepo makes the repository, waits for its first image and opens the staging pull request.
 func (c cli) appRepo(r request) int {
+	_, status := c.openAppRepo(r)
+	return status
+}
+
+// openAppRepo is appRepo, answering the staging pull request's address: empty for a dry run, which opens none.
+func (c cli) openAppRepo(r request) (string, int) {
 	spec := r.spec
 	if spec == nil || spec.app == "" || r.appType == "" || spec.requestedBy == "" {
-		return fail(c.diagnostic, errors.New("invalid: app-repo needs --app, --type and --requested-by"))
+		return "", fail(c.diagnostic, errors.New("invalid: app-repo needs --app, --type and --requested-by"))
 	}
 	contract, err := c.readFile(r.contractPath)
 	if err != nil {
-		return fail(c.diagnostic, fmt.Errorf("invalid: --contract: %s", r.contractPath))
+		return "", fail(c.diagnostic, fmt.Errorf("invalid: --contract: %s", r.contractPath))
 	}
 	repository, status := c.changeRepository(spec)
 	if status != 0 {
-		return status
+		return "", status
 	}
 	inputs, status := c.appRepoInputs(r, contract, repository)
 	if status != 0 {
-		return status
+		return "", status
 	}
 	// Copier renders into this folder, and the rendered tree is read from it before the first commit is written, so
 	// it lives exactly as long as this command.
 	defer os.RemoveAll(inputs.Work)
 	found, err := orchestration.AppRepo(context.Background(), inputs)
 	if err != nil {
-		return fail(c.diagnostic, err)
+		return "", fail(c.diagnostic, err)
 	}
 	if spec.dryRun {
 		fmt.Fprintf(c.out, "Dry run: would create https://github.com/%s and open its staging pull request; nothing was written\n",
 			found.Repository)
-		return 0
+		return "", 0
 	}
 	name := spec.app
-	r.spec = &changeSpec{kind: "new", app: name, env: "staging", settings: spec.settings, image: found.Image,
-		preface: appPreface(found), requestedBy: spec.requestedBy, repository: repository}
-	return c.change(r)
+	return c.openChange(&changeSpec{kind: "new", app: name, env: "staging", settings: spec.settings, image: found.Image,
+		preface: appPreface(found), requestedBy: spec.requestedBy, repository: repository})
 }
 
 // appRepoInputs is what the use case needs: the contract, the tokens, the work folder, and the effects it uses.

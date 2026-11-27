@@ -1,6 +1,9 @@
 package delivery
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/delivery/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -100,4 +103,73 @@ func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Pro
 	result.Compilation, result.Release, result.Changed = compiled, request.candidate, true
 	result.Written, err = provisioning.WriteCompiled(destination, compiled, documents, writer)
 	return result, err
+}
+
+// PromoteIn promotes one app's instance in the checkout to the release its staging selects, if the instance's record
+// is still the expected revision: the two instances' records, the staging documents production inherits, and the
+// documents the checkout names.
+func PromoteIn(checkout files.Checkout, application, environment string, expected kernel.InstanceRevision,
+	writer files.Writer) (Promotion, error) {
+	inputs, err := promotionIn(checkout, application, environment)
+	if err != nil {
+		return Promotion{}, err
+	}
+	inputs.Expected = expected
+	return Promote(inputs, checkout.Root, writer)
+}
+
+// promotionIn reads one promotion's documents from the checkout, each instance checked to be the one its folder names.
+func promotionIn(checkout files.Checkout, application, environment string) (PromoteInputs, error) {
+	inputs := PromoteInputs{}
+	var err error
+	if inputs.Profile, err = files.Read(checkout.Profile, "profile"); err != nil {
+		return PromoteInputs{}, err
+	}
+	if inputs.Calls, err = files.Optional(checkout.Calls, "calls"); err != nil {
+		return PromoteInputs{}, err
+	}
+	if inputs.Egress, err = files.Optional(checkout.Egress, "egress"); err != nil {
+		return PromoteInputs{}, err
+	}
+	records, err := checkout.Instances()
+	if err != nil {
+		return PromoteInputs{}, err
+	}
+	staging, err := promoted(records, application, deployEnvironment)
+	if err != nil {
+		return PromoteInputs{}, err
+	}
+	target, err := promoted(records, application, environment)
+	if err != nil {
+		return PromoteInputs{}, err
+	}
+	inputs.StagingInstance, inputs.StagingRelease = staging.Instance, staging.Release
+	inputs.Instance, inputs.Release, inputs.App = target.Instance, target.Release, target.App
+	inputs.Offers, err = files.ReadOffers(filepath.Join(checkout.Records, application, deployEnvironment,
+		files.OffersFolder))
+	return inputs, err
+}
+
+// promoted is one of a promotion's two instances, checked to hold what its folder names.
+func promoted(records []files.InstanceRecords, application, environment string) (files.InstanceRecords, error) {
+	record, err := files.Find(records, application, environment)
+	if err != nil {
+		return files.InstanceRecords{}, err
+	}
+	_, _, err = provisioningrules.FolderHolds(application, environment, record.Instance, record.Release)
+	return record, err
+}
+
+// Summary is the promotion's one line: what production selects now, and what changed.
+func (p Promotion) Summary() string {
+	commit := p.Staging.Source.Commit
+	if len(commit) > 12 {
+		commit = commit[:12]
+	}
+	if !p.Changed {
+		return fmt.Sprintf("%s/%s: production already selects %s at %s", p.Instance.Application,
+			p.Instance.Environment, p.Staging.Artifact.Digest, commit)
+	}
+	return fmt.Sprintf("%s/%s: %s -> %s at %s", p.Instance.Application, p.Instance.Environment,
+		p.Before.Artifact.Digest, p.Staging.Artifact.Digest, commit)
 }

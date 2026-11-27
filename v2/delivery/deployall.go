@@ -2,12 +2,12 @@ package delivery
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // deployEnvironment is the one environment a batch delivers to: production takes a release only by promotion.
@@ -92,25 +92,14 @@ func describeStaging(records []files.InstanceRecords) ([]stagingRecords, error) 
 // describeRecords reads what a delivery needs before it runs: the instance's own name and revision, and the image
 // its registry is addressed by.
 func describeRecords(record files.InstanceRecords) (stagingRecords, error) {
-	spec, err := kernel.DecodeInstance(record.Instance)
+	spec, release, err := provisioningrules.FolderHolds(record.Application, record.Environment, record.Instance,
+		record.Release)
 	if err != nil {
 		return stagingRecords{}, err
-	}
-	if spec.Application != record.Application || spec.Environment != record.Environment {
-		return stagingRecords{}, fmt.Errorf("invalid: records: %s/%s holds %s/%s", record.Application,
-			record.Environment, spec.Application, spec.Environment)
 	}
 	revision, err := spec.Revision()
 	if err != nil {
 		return stagingRecords{}, err
-	}
-	release, err := kernel.DecodeRelease(record.Release)
-	if err != nil {
-		return stagingRecords{}, err
-	}
-	if release.Application != record.Application {
-		return stagingRecords{}, fmt.Errorf("invalid: records: %s/%s holds a release for %s", record.Application,
-			record.Environment, release.Application)
 	}
 	return stagingRecords{records: record, revision: revision, image: release.Artifact.Image}, nil
 }

@@ -158,13 +158,14 @@ var Layers = map[string]int{
 // and recovery's archive verdict, using kernel's shared app vocabulary; delivery's promotion rule refines
 // kernel's release selection; incident raises faults from delivery's deployment health verdict; provisioning
 // assembles an instance's records and connectivity's reading of its documents into kernel's compiler and
-// declaration; connectivity reads its documents into kernel's model types (docs/iteration-2-plan.md#capability-map).
+// declaration; connectivity reads its documents into kernel's model types and writes the resolution its own call and
+// event resolvers decide (docs/iteration-2-plan.md#capability-map).
 var PureDependencies = map[string][]string{
 	"observe":            {"recovery/rules", "delivery/rules"},
 	"health/rules":       {"observe", "recovery/rules", "kernel"},
 	"delivery/rules":     {"kernel"},
 	"provisioning/rules": {"kernel", "connectivity/rules"},
-	"connectivity/rules": {"kernel"},
+	"connectivity/rules": {"kernel", "connectivity/rules/calls", "connectivity/rules/events"},
 	"pages":              {"kernel"},
 
 	"notifications/rules/incident": {"delivery/rules"},

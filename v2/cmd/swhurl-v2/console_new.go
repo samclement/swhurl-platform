@@ -114,24 +114,19 @@ func (s *consoleServer) resumeJob(w http.ResponseWriter, r *http.Request) {
 func (s *consoleServer) newAppWork(chosen pages.NewAppChoices, finishing bool, identity string,
 	read newAppRead) orchestration.JobWork {
 	return func(ctx context.Context, line func(string)) (string, error) {
-		opened := ""
 		var refusal strings.Builder
 		contract, err := read.contractFile()
 		if err != nil {
 			return "", err
 		}
 		defer os.Remove(contract)
-		c := s.command(&refusal, func(text string) {
-			if url, isPull := strings.CutPrefix(text, "Opened "); isPull {
-				opened = strings.TrimSpace(url)
-			}
-			line(text)
-		})
+		c := s.command(&refusal, line)
 		one := request{command: "app-repo", contractPath: contract, appType: chosen.Type,
 			stack: chosen.Stack, resume: finishing, hookHost: read.hookHost,
 			spec: &changeSpec{app: chosen.Name, description: chosen.Description, settings: chosen.Flags,
 				requestedBy: identity, repository: s.repository}}
-		if status := c.appRepo(one); status != 0 {
+		opened, status := c.openAppRepo(one)
+		if status != 0 {
 			return "", errors.New(strings.TrimSpace(refusal.String()))
 		}
 		return opened, nil

@@ -10,6 +10,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // deploy records: every v2-owned staging instance, from the tree its records live in.
@@ -20,7 +21,7 @@ const (
 	releaseFile  = kernel.ReleaseRecordName
 	appFile      = kernel.AppRecordName
 	stagingDir   = "staging"
-	offersFolder = "offers"
+	offersFolder = files.OffersFolder
 )
 
 // Every delivery's outcome: what the report states and how the exit status reads it.
@@ -215,37 +216,24 @@ func (c cli) readInstance(root, name, environment string, apps map[string][]byte
 	return one, 0
 }
 
-// describedRecord is one instance's records as a delivery takes them, described before anything runs.
-func (c cli) describedRecord(record files.InstanceRecords) (recordInstance, int) {
-	one := recordInstance{application: record.Application, environment: record.Environment,
-		instance: record.Instance, release: record.Release, app: record.App}
-	if status := c.describeRecords(&one); status != 0 {
-		return recordInstance{}, status
+// optional reads a document a command may be given, if it names one: an absent name is no document rather than a
+// failure, and the use case's own decoder refuses what it needs.
+func (c cli) optional(path, what string) ([]byte, int) {
+	if path == "" {
+		return nil, 0
 	}
-	return one, 0
+	return c.read(path, what)
 }
 
 // describeRecords reads what a delivery needs before it runs: the instance's own name and revision, and the image
 // its registry is addressed by.
 func (c cli) describeRecords(one *recordInstance) int {
-	spec, err := kernel.DecodeInstance(one.instance)
+	spec, release, err := provisioningrules.FolderHolds(one.application, one.environment, one.instance, one.release)
 	if err != nil {
 		return fail(c.diagnostic, err)
-	}
-	if spec.Application != one.application || spec.Environment != one.environment {
-		return fail(c.diagnostic, fmt.Errorf("invalid: records: %s/%s holds %s/%s", one.application,
-			one.environment, spec.Application, spec.Environment))
 	}
 	if one.revision, err = spec.Revision(); err != nil {
 		return fail(c.diagnostic, err)
-	}
-	release, err := kernel.DecodeRelease(one.release)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
-	if release.Application != one.application {
-		return fail(c.diagnostic, fmt.Errorf("invalid: records: %s/%s holds a release for %s", one.application,
-			one.environment, release.Application))
 	}
 	one.image = release.Artifact.Image
 	return 0

@@ -73,23 +73,37 @@ adapters/files/filestest: func Contract(t *testing.T, open func(*testing.T) (fil
 adapters/files/filestest: func New() *Fake
 adapters/files/filestest: type Fake struct {Contents map[string][]byte Writes int Files []kernel.File Prunes int Removals int PruneResult []files.Outcome RemoveResult []files.Outcome Fail error}
 adapters/files: const IO = "io"
+adapters/files: const OffersFolder = "offers"
 adapters/files: const RefusedDestination = "refused_destination"
 adapters/files: const Removed = "removed"
 adapters/files: const Unchanged = "unchanged"
 adapters/files: const Written = "written"
 adapters/files: func (*Error) Error() string
+adapters/files: func (Checkout) Folder(record InstanceRecords) (InstanceFolder, error)
+adapters/files: func (Checkout) Folders() ([]InstanceFolder, error)
+adapters/files: func (Checkout) Holds(file kernel.File) (bool, error)
+adapters/files: func (Checkout) Instances() ([]InstanceRecords, error)
+adapters/files: func (Checkout) Names(relative string) ([]string, error)
+adapters/files: func (Checkout) Present(relative, what string) ([]byte, error)
+adapters/files: func (Checkout) Relative(path string) (string, error)
 adapters/files: func (Disk) Prune(dir, folder string, rendered []string) ([]Outcome, error)
 adapters/files: func (Disk) Remove(dir, path string) ([]Outcome, error)
 adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
+adapters/files: func Find(records []InstanceRecords, application, environment string) (InstanceRecords, error)
 adapters/files: func New() Writer
+adapters/files: func Optional(path, what string) ([]byte, error)
+adapters/files: func Read(path, what string) ([]byte, error)
 adapters/files: func ReadArchive(content []byte, prefixed bool, keep func(file string) bool) ([]TreeFile, error)
+adapters/files: func ReadOffers(folder string) ([]kernel.File, error)
 adapters/files: func ReadRecords(dir string) ([]InstanceRecords, error)
 adapters/files: func Records(tree map[string][]byte, root string) ([]InstanceRecords, error)
 adapters/files: func Snapshot(dir string) ([]TreeFile, error)
 adapters/files: func Target(base, relative string) (string, error)
 adapters/files: func Unpack(dir string, tree []TreeFile) error
+adapters/files: type Checkout struct {Root, Records string Profile, Calls, Egress, Previous string}
 adapters/files: type Disk struct {}
 adapters/files: type Error struct {Code string Path string Reason string}
+adapters/files: type InstanceFolder struct {InstanceRecords InstancePath string EventsSecret []byte Offers []kernel.File}
 adapters/files: type InstanceRecords struct {Application, Environment string App, Instance, Release []byte}
 adapters/files: type Outcome struct {Path string `json:"path"` State string `json:"state"`}
 adapters/files: type TreeFile struct {Path string Executable bool Body []byte}
@@ -481,10 +495,18 @@ adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, 
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
 apps: func (*Refusal) Error() string
+apps: func (Edition) Summary() string
+apps: func (Removal) Summary() string
+apps: func (Setting) AppLevel() bool
+apps: func (TeamChange) Summary() string
 apps: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
 apps: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
+apps: func EditIn(checkout files.Checkout, application, environment string, setting Setting, writer files.Writer) (Edition, error)
+apps: func ParseSetting(setting string) (Setting, error)
 apps: func Remove(inputs RemovalInputs, destination string, writer files.Writer) (Removal, error)
+apps: func RemoveIn(checkout files.Checkout, application, environment string, writer files.Writer) (Removal, error)
 apps: func SetTeam(inputs TeamInputs, destination string, writer files.Writer) (TeamChange, error)
+apps: func SetTeamIn(checkout files.Checkout, application, team string, writer files.Writer) (TeamChange, error)
 apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
 apps: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
@@ -496,6 +518,7 @@ apps: type Refusal struct {Subject, Reason string}
 apps: type Registration struct {Path string Document []byte}
 apps: type Removal struct {Application, Environment string Written []files.Outcome Removed []files.Outcome Notes []string}
 apps: type RemovalInputs struct {Instance, Release []byte Calls [][]byte Records, Compiled, Unit string AppRecord string LastEnvironment bool AuthFile string UnitRegistration Registration AuthRegistration Registration}
+apps: type Setting struct {Name string Team string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
 apps: type StatusInputs struct {provisioningrules.Inputs Revision string RecordsRoot string SharedPaths []string Changes *deliveryrules.Changes Reader kube.Reader Source string Now func() time.Time MaxAge time.Duration Archive func(ctx context.Context, namespace string) (rules.ArchiveList, error)}
 apps: type TeamChange struct {Application string Before kernel.AppSpec After kernel.AppSpec Instances []kernel.InstanceSpec Written []files.Outcome}
 apps: type TeamInputs struct {App []byte AppPath string Team string Instances []InstanceInputs}
@@ -614,12 +637,19 @@ connectivity/rules/events: type Declaration struct {Application, Environment str
 connectivity/rules/events: type Error struct {Application, Environment, Field, Reason string}
 connectivity/rules/events: type Resolved struct {Connected []Subscription Pending []string}
 connectivity/rules/events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
+connectivity/rules: const ResolutionRecordName = "calls.json"
+connectivity/rules: func Allocation(revision string, instances []Records, previous kernel.EgressDocument, backupHost string) (kernel.EgressDocument, error)
 connectivity/rules: func ConnectionsOf(data []byte, application, environment string) (kernel.Connections, error)
 connectivity/rules: func DecodeConnectionsDocument(data []byte) (kernel.ConnectionsDocument, error)
 connectivity/rules: func DecodeEgressDocument(data []byte) (kernel.EgressDocument, error)
+connectivity/rules: func EncodeConnectionsDocument(document kernel.ConnectionsDocument) ([]byte, error)
 connectivity/rules: func EncodeEgressDocument(document kernel.EgressDocument) ([]byte, error)
+connectivity/rules: func EventUsers(instances []Records) ([]kernel.NATSUser, error)
+connectivity/rules: func EventsKey(instance []byte) string
 connectivity/rules: func InstanceEgress(document []byte, application, environment string) (*kernel.Egress, error)
+connectivity/rules: func Resolve(revision string, instances []Records) (kernel.ConnectionsDocument, error)
 connectivity/rules: func SubscribersOf(data []byte, application, environment string) ([]string, error)
+connectivity/rules: type Records struct {Application, Environment string Instance, Release, App []byte}
 connectivity: func (*Refusal) Error() string
 connectivity: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 connectivity: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
@@ -631,10 +661,24 @@ console: const Remove Operation = "remove"
 console: const Render Operation = "render"
 console: const Team Operation = "team"
 console: func (Change) CheckFlags(stated map[string]bool) error
+console: func (EditStep) Operation() Operation
+console: func (EditStep) Quote() string
+console: func (PromoteStep) Operation() Operation
+console: func (PromoteStep) Quote() string
+console: func (RemoveStep) Operation() Operation
+console: func (RemoveStep) Quote() string
+console: func (RenderStep) Operation() Operation
+console: func (RenderStep) Quote() string
 console: func ChangeNamed(kind string) (Change, bool)
 console: func Changes() []Change
+console: func WorkingCopy(dir string) files.Checkout
 console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
+console: type EditStep struct {App, Env, Setting string}
 console: type Operation string
+console: type PromoteStep struct {App, Env, Expected string}
+console: type RemoveStep struct {App, Env string}
+console: type RenderStep struct {}
+console: type Step interface {// Operation is the planned operation the step runs. Operation() Operation // Quote is the line a person could type in a checkout to run the same step. Quote() string}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -780,10 +824,12 @@ delivery: const FluxWaitInfo FluxWaitLevel = "info"
 delivery: const FluxWaitOK FluxWaitLevel = "ok"
 delivery: const FluxWaitWarn FluxWaitLevel = "warn"
 delivery: func (*Refusal) Error() string
+delivery: func (Promotion) Summary() string
 delivery: func DeployAll(ctx context.Context, inputs DeployAllInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer) ([]InstanceDeploy, error)
 delivery: func DeployImage(ctx context.Context, inputs DeployInputs, images registry.Reader, destination string, writer files.Writer) (Deploy, error)
 delivery: func FluxWait(ctx context.Context, inputs FluxWaitInputs) (bool, error)
 delivery: func Promote(inputs PromoteInputs, destination string, writer files.Writer) (Promotion, error)
+delivery: func PromoteIn(checkout files.Checkout, application, environment string, expected kernel.InstanceRevision, writer files.Writer) (Promotion, error)
 delivery: type Deploy struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec Compilation kernel.Compilation Written []files.Outcome Changed bool}
 delivery: type DeployAllInputs struct {Records []files.InstanceRecords Profile, Calls, Egress []byte}
 delivery: type DeployInputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte Expected kernel.InstanceRevision}
@@ -1820,19 +1866,37 @@ producer: type Field struct {Name any Value any}
 producer: type Flag struct {Name string Declaration Object}
 producer: type Object []Field
 producer: type Source struct {Runtime Object Telemetry bool Database string DatabaseSizeMiB, MemoryMiB json.Number Secrets []any Description, APIPath, APIFile, EventsFile string Flags Object}
+provisioning/rules: const AllocationPath = platformFolder + "/egress/allocation.json"
+provisioning/rules: const ChannelsFolder = platformFolder + "/" + kernel.ChannelsFolder
+provisioning/rules: const ProvisionalRevision = "0000000000000000000000000000000000000000"
+provisioning/rules: func (Tree) Documents(callsRevision, allocationRevision string) ([]kernel.File, error)
+provisioning/rules: func CommitRevision(revision string) bool
 provisioning/rules: func Compile(inputs Inputs) (kernel.Compilation, error)
 provisioning/rules: func Declare(inputs Inputs) (Declaration, error)
 provisioning/rules: func Documents(calls, egressDocument []byte, application, environment string) (kernel.Connections, *kernel.Egress, error)
+provisioning/rules: func FolderHolds(application, environment string, instance, release []byte) (kernel.InstanceSpec, kernel.ReleaseBundle, error)
+provisioning/rules: func RecordedRevision(document []byte) string
+provisioning/rules: func RenderTree(inputs TreeInputs) (Tree, error)
 provisioning/rules: type Declaration struct {Application, Environment string Declared kernel.Declared}
+provisioning/rules: type Folder struct {Application, Environment string Instance, Release, App, EventsSecret []byte Offers []kernel.File}
 provisioning/rules: type Inputs struct {Instance, Release, App, Profile []byte Calls, Egress []byte EventsSecret []byte Offers []kernel.File}
+provisioning/rules: type Tree struct {CallsPath string Resolution kernel.ConnectionsDocument Allocation kernel.EgressDocument Platform []kernel.File Instances []Inputs}
+provisioning/rules: type TreeInputs struct {Revision string Profile []byte Folders []Folder Previous []byte Teams []byte ChannelSecrets []string UnitRegistration []byte CallsPath string}
 provisioning: func (*Refusal) Error() string
+provisioning: func (Checked) Summary() string
+provisioning: func (Rendered) Summary() string
+provisioning: func CheckRender(checkout files.Checkout) (Checked, error)
 provisioning: func CompileInto(inputs rules.Inputs, destination string, writer files.Writer) (Result, error)
 provisioning: func Complete(inputs rules.Inputs) (kernel.Compilation, []kernel.File, error)
+provisioning: func DecideTree(checkout files.Checkout, revision string) (rules.Tree, error)
 provisioning: func EncryptedSeed(spec kernel.InstanceSpec, pair kernel.UserKey, profile kernel.PlatformProfile, encrypter sops.Encrypter) ([]byte, error)
 provisioning: func InstanceDocuments(spec kernel.InstanceSpec, release kernel.ReleaseBundle, compiled kernel.Compilation, offers []kernel.File) ([]kernel.File, error)
 provisioning: func RecordFiles(root, application, environment string, app, release, instance, eventsSecret []byte, offers []kernel.File) []kernel.File
+provisioning: func Render(checkout files.Checkout, revision string, writer files.Writer) (Rendered, error)
 provisioning: func WriteCompiled(destination string, compiled kernel.Compilation, written []kernel.File, writer files.Writer) ([]files.Outcome, error)
+provisioning: type Checked struct {Files int Differences []string}
 provisioning: type Refusal struct {Subject, Reason string}
+provisioning: type Rendered struct {Written []files.Outcome}
 provisioning: type Result struct {Compilation kernel.Compilation Written []files.Outcome}
 recovery/rules: const BackupAbsent = "absent"
 recovery/rules: const BackupCurrent = "current"

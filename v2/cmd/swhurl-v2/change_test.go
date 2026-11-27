@@ -229,45 +229,33 @@ func TestChangeCLIRefusesWhatItCannotDo(t *testing.T) {
 	}
 }
 
-// A promotion expects the revision production's record states, the instance it changes, and quotes it.
+// A promotion expects the revision production's record states, the instance it changes.
 func TestChangeStepsPromote(t *testing.T) {
 	dir := t.TempDir()
 	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
 	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
-	tree := newChangeTree(dir)
+	tree := console.WorkingCopy(dir)
 	change, _ := pages.ConsoleChangeNamed("v2-promote")
-	steps, err := cli{}.changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"},
-		tree, changeRevision)
+	steps, err := cli{}.changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"}, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steps) != 2 || steps[0].command != "promote" || steps[1].command != "render" {
+	promote, isPromote := steps[0].(console.PromoteStep)
+	if len(steps) != 2 || !isPromote || steps[1] != (console.RenderStep{}) {
 		t.Fatalf("a promotion runs %v", steps)
 	}
 	revision, err := mustDecodeInstance(t, dir, "demo-orders/prod/instance.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if steps[0].request.expected != string(revision) {
-		t.Errorf("the promotion expects %q, want production's %q", steps[0].request.expected, revision)
-	}
-	if !strings.Contains(steps[0].display, " --expect="+string(revision)+" ") {
-		t.Errorf("the quoted promotion is %q", steps[0].display)
-	}
-	if steps[0].request.env != "prod" || steps[0].request.app != "demo-orders" {
-		t.Errorf("the promotion changes %s/%s", steps[0].request.app, steps[0].request.env)
-	}
-	if steps[1].request.revision != changeRevision {
-		t.Errorf("the render reads %q", steps[1].request.revision)
-	}
-	if !strings.HasSuffix(steps[1].display, "--revision @base") {
-		t.Errorf("the quoted render is %q", steps[1].display)
+	if promote != (console.PromoteStep{App: "demo-orders", Env: "prod", Expected: string(revision)}) {
+		t.Errorf("the promotion is %+v, want production's %q", promote, revision)
 	}
 	if err := os.Remove(dir + "/v2-records/demo-orders/prod/instance.json"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := (cli{}).changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"},
-		tree, changeRevision); err == nil || !strings.Contains(err.Error(), "demo-orders/prod") {
+		tree); err == nil || !strings.Contains(err.Error(), "demo-orders/prod") {
 		t.Errorf("a promotion without production's record gave %v", err)
 	}
 }
@@ -316,7 +304,7 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
 	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
 	writeCallingRecord(t, dir, "demo-caller", "demo-orders")
-	tree := newChangeTree(dir)
+	tree := console.WorkingCopy(dir)
 	covered := map[string]bool{}
 	for _, spec := range []changeSpec{
 		{kind: "new", app: "example", env: "staging", image: "ghcr.io/owner/example:1",
@@ -341,7 +329,7 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 		if !found {
 			t.Fatalf("%s is not a kind", spec.kind)
 		}
-		steps, err := cli{}.changeSteps(change.ConsoleChange, &spec, tree, changeRevision)
+		steps, err := cli{}.changeSteps(change.ConsoleChange, &spec, tree)
 		if err != nil {
 			t.Fatalf("%s: %v", spec.kind, err)
 		}
@@ -350,11 +338,13 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 			t.Errorf("%s runs %v, but plans %v", spec.kind, ran, planned)
 		}
 		for _, step := range steps {
-			quoted := quotedRequest(t, step.display, tree, changeRevision)
-			want := step.request
-			want.command = step.command
-			if !reflect.DeepEqual(quoted, want) {
-				t.Errorf("%s: the line %q is\n %+v\nbut the step runs\n %+v", spec.kind, step.display, quoted, want)
+			quoted := quotedRequest(t, step.Quote(), tree.Root, changeRevision)
+			if want := stepRequest(step, tree, changeRevision); !reflect.DeepEqual(quoted, want) {
+				t.Errorf("%s: the line %q is\n %+v\nbut the step runs\n %+v", spec.kind, step.Quote(), quoted, want)
+			}
+			if step.Operation() == console.Render && !reflect.DeepEqual(quoted.checkout(),
+				files.Checkout{Root: tree.Root, Records: tree.Records, Profile: tree.Profile}) {
+				t.Errorf("%s: the quoted render reads %+v", spec.kind, quoted.checkout())
 			}
 		}
 	}
@@ -386,13 +376,37 @@ func writeCallingRecord(t *testing.T, dir, app, callee string) {
 	}
 }
 
-// stepCommands is the command each step runs, in order.
-func stepCommands(steps []changeStep) []string {
+// stepCommands is the operation each step runs, in order.
+func stepCommands(steps []console.Step) []string {
 	ran := make([]string, 0, len(steps))
 	for _, step := range steps {
-		ran = append(ran, step.command)
+		ran = append(ran, string(step.Operation()))
 	}
 	return ran
+}
+
+// stepRequest is the command line a step is the same call as: a typed step's command makes its call from these flags
+// (request.checkout and the step's own fields), and a command step runs its request as it is.
+func stepRequest(step console.Step, tree files.Checkout, revision string) request {
+	switch step := step.(type) {
+	case console.EditStep:
+		return request{command: "edit", records: tree.Records, app: step.App, env: step.Env, change: step.Setting,
+			profile: tree.Profile, out: tree.Root, callFile: tree.Calls, egressFile: tree.Egress}
+	case console.RemoveStep:
+		return request{command: "remove", records: tree.Records, app: step.App, env: step.Env, profile: tree.Profile,
+			callFile: tree.Calls, out: tree.Root}
+	case console.PromoteStep:
+		return request{command: "promote", records: tree.Records, app: step.App, env: step.Env, profile: tree.Profile,
+			expected: step.Expected, out: tree.Root, callFile: tree.Calls, egressFile: tree.Egress}
+	case console.RenderStep:
+		return request{command: "render", records: tree.Records, profile: tree.Profile, out: tree.Root,
+			revision: revision}
+	case commandStep:
+		r := step.request
+		r.command = step.command
+		return r
+	}
+	return request{}
 }
 
 // followsPlan is whether commands run only planned operations and never one planned before another that already ran.
@@ -411,7 +425,7 @@ func followsPlan(commands []string, planned []console.Operation) bool {
 
 // quotedRequest is the request a quoted line parses to in the working copy: its paths under the copy's root and @base
 // as the commit the change was applied to. The flags' own bookkeeping is not part of what the line asks for.
-func quotedRequest(t *testing.T, line string, tree changeTree, revision string) request {
+func quotedRequest(t *testing.T, line, root, revision string) request {
 	t.Helper()
 	words := strings.Fields(line)
 	if len(words) < 2 || words[0] != "swhurl-v2" {
@@ -423,7 +437,7 @@ func quotedRequest(t *testing.T, line string, tree changeTree, revision string) 
 	}
 	for _, path := range []*string{&r.records, &r.profile, &r.out, &r.callFile, &r.egressFile} {
 		if *path != "" {
-			*path = filepath.Join(tree.dir, *path)
+			*path = filepath.Join(root, *path)
 		}
 	}
 	if r.revision == "@base" {
@@ -436,24 +450,25 @@ func quotedRequest(t *testing.T, line string, tree changeTree, revision string) 
 // A team's channel change carries its transport on the command line and its address on standard input, and never
 // quotes the address.
 func TestChangeStepsChannel(t *testing.T) {
-	tree := newChangeTree(t.TempDir())
+	tree := console.WorkingCopy(t.TempDir())
 	steps, err := cli{}.changeSteps(channelChange(t, "team-channel-set"),
-		&changeSpec{kind: "team-channel-set", team: "payments"}, tree, changeRevision)
+		&changeSpec{kind: "team-channel-set", team: "payments"}, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steps) != 1 || steps[0].request.action != "channel" || steps[0].request.team != "payments" {
+	set, isCommand := steps[0].(commandStep)
+	if len(steps) != 1 || !isCommand || set.request.action != "channel" || set.request.team != "payments" {
 		t.Fatalf("a channel change runs %v", steps)
 	}
-	if strings.Contains(steps[0].display, "address") || !strings.Contains(steps[0].display, "--transport=ntfy") {
-		t.Errorf("the quoted channel change is %q", steps[0].display)
+	if strings.Contains(set.Quote(), "address") || !strings.Contains(set.Quote(), "--transport=ntfy") {
+		t.Errorf("the quoted channel change is %q", set.Quote())
 	}
 	steps, err = cli{}.changeSteps(channelChange(t, "team-channel-remove"),
-		&changeSpec{kind: "team-channel-remove", team: "payments"}, tree, changeRevision)
+		&changeSpec{kind: "team-channel-remove", team: "payments"}, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steps) != 1 || steps[0].request.action != "drop-channel" {
+	if drop, isCommand := steps[0].(commandStep); len(steps) != 1 || !isCommand || drop.request.action != "drop-channel" {
 		t.Errorf("dropping a channel runs %v", steps)
 	}
 }
@@ -571,6 +586,33 @@ func TestChangeCLICreatesANewApp(t *testing.T) {
 	for path := range carried {
 		if strings.HasPrefix(path, "v2-records/demo-orders/") || strings.Contains(path, "/demo-orders/") {
 			t.Errorf("the change carried another app's file %q", path)
+		}
+	}
+}
+
+// A change answers the pull request it opened, which is the link the console's job keeps, and a dry run answers none.
+func TestOpenChangeAnswersThePullRequest(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		source, publisher := changeSources(t)
+		var stdout, diagnostic bytes.Buffer
+		c := cli{out: &stdout, diagnostic: &diagnostic, readFile: os.ReadFile, writer: files.Disk{},
+			consoleSource: source, publisher: publisher, stdin: strings.NewReader(""),
+			getenv: func(name string) string {
+				return map[string]string{consoleTokenEnv: "fixture-token", consoleRepositoryEnv: "owner/repo"}[name]
+			}}
+		opened, status := c.openChange(&changeSpec{kind: "v2-scale", app: "demo-orders", env: "staging",
+			settings: []string{"replicas=3"}, requestedBy: "operator@example.test", dryRun: dryRun})
+		want := githubtest.PublisherScenario().PullURL
+		if dryRun {
+			want = ""
+		}
+		if status != 0 || opened != want {
+			t.Errorf("dry run %v: opened %q (%d), want %q: %s", dryRun, opened, status, want, &diagnostic)
+		}
+		// each typed step reports its one line, and no command's report reaches the job's log
+		if !strings.Contains(stdout.String(), "demo-orders/staging replicas: ") ||
+			!strings.Contains(stdout.String(), "render: ") || strings.Contains(stdout.String(), `"kind"`) {
+			t.Errorf("dry run %v printed:\n%s", dryRun, &stdout)
 		}
 	}
 }

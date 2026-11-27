@@ -20,3 +20,6 @@ notes:
   - at: 2026-11-26T07:29:27.955Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T07:16:39.194Z
+    commit: 725cb56e1c4f
+    text: "operator (task 72 decision): the one-kind-list goal is met only when task 77 moves the pages half into console; until then a test keeps pages and console listing the same kinds"

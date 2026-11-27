@@ -23,3 +23,6 @@ notes:
   - at: 2026-11-26T07:29:27.625Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T07:16:38.985Z
+    commit: 725cb56e1c4f
+    text: "Where does the change-kind table live while pages still reads branches? -> operator: option 1, split by reader: pages keeps branch facts, console/change.go holds flags and planned operations keyed by kind, a test keeps the kind lists equal; the pages half moves into console with Activity (task 77)"

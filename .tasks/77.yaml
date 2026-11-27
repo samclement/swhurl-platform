@@ -31,3 +31,6 @@ notes:
   - at: 2026-11-26T07:29:28.441Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T07:16:39.429Z
+    commit: 725cb56e1c4f
+    text: "operator (task 72 decision): move pages' ConsoleChange kind list into console here, ending the two-list split"

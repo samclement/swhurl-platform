@@ -624,6 +624,17 @@ connectivity: func (*Refusal) Error() string
 connectivity: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 connectivity: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 connectivity: type Refusal struct {Subject, Reason string}
+console: const Create Operation = "create"
+console: const Edit Operation = "edit"
+console: const Promote Operation = "promote"
+console: const Remove Operation = "remove"
+console: const Render Operation = "render"
+console: const Team Operation = "team"
+console: func (Change) CheckFlags(stated map[string]bool) error
+console: func ChangeNamed(kind string) (Change, bool)
+console: func Changes() []Change
+console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
+console: type Operation string
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"

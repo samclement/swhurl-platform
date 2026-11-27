@@ -145,6 +145,10 @@ var Layers = map[string]int{
 	// pure resolvers of which calls and event subscriptions connect, and its reading of the resolution and allocation
 	// documents.
 	"connectivity": 2, "connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
+
+	// The console capability: its interaction flows, starting with the kinds of change it opens. Its view models and
+	// pages still live in pages and its composition in orchestration until their tasks move them.
+	"console": 2,
 }
 
 // PureDependencies are the pure-to-pure imports allowed, by importer: each is a pure type or decision whose owner
@@ -170,7 +174,7 @@ var PureDependencies = map[string][]string{
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
 // to OrchestrationImports and OrchestrationCalls, and import another use-case package only through
 // a named directional edge in WorkflowDependencies.
-var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning", "connectivity"}
+var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning", "connectivity", "console"}
 
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
@@ -179,9 +183,12 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // reconsider these edges in the console slice. Recovery's restore takes apps' status as a port the command wires,
 // so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
 // and delivery's deploy and promote write through it. Apps' create and orchestration's mint also use provisioning's
-// encrypted seed construction; mint keeps its identity workflow.
+// encrypted seed construction; mint keeps its identity workflow. The console capability reaches what it has not
+// moved yet, such as publishing a change, through orchestration; the edge goes when the console slice retires the
+// console's orchestration files.
 var WorkflowDependencies = map[string][]string{
 	"orchestration": {"health", "apps", "provisioning"},
+	"console":       {"orchestration"},
 	"delivery":      {"provisioning"},
 	"apps":          {"provisioning"},
 }

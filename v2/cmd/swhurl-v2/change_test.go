@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/registry"
 	"github.com/samclement/swhurl-platform/v2/adapters/registry/registrytest"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops/sopstest"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -307,12 +309,15 @@ func TestChangeCLIPromote(t *testing.T) {
 }
 
 // Every line a change quotes is the request it runs: parsed as the command's own flags, with the working copy's paths
-// and the @base it stands for put back, a quoted line is exactly what the step does.
+// and the @base it stands for put back, a quoted line is exactly what the step does. And every kind runs only the
+// operations console's table plans for it, in their planned order.
 func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 	dir := t.TempDir()
 	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
 	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
+	writeCallingRecord(t, dir, "demo-caller", "demo-orders")
 	tree := newChangeTree(dir)
+	covered := map[string]bool{}
 	for _, spec := range []changeSpec{
 		{kind: "new", app: "example", env: "staging", image: "ghcr.io/owner/example:1",
 			settings: []string{"team=demo", "exposure=authenticated-web", "replicas=2"}},
@@ -321,6 +326,7 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 		{kind: "v2-expose", app: "demo-orders", env: "prod", settings: []string{"exposure=public-web"}},
 		{kind: "v2-team", app: "demo-orders", env: "staging", settings: []string{"team=payments"}},
 		{kind: "v2-connect", app: "demo-orders", env: "staging", calls: []string{"demo-shop"}},
+		{kind: "v2-disconnect", app: "demo-caller", env: "staging", dropCalls: []string{"demo-orders"}},
 		{kind: "v2-allow", app: "demo-orders", env: "staging", allows: []string{"demo-shop"}},
 		{kind: "v2-remove", app: "demo-orders", env: "staging"},
 		{kind: "v2-promote", app: "demo-orders", env: "staging"},
@@ -331,13 +337,17 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 		{kind: "team-channel-set", team: "payments", transport: "ntfy"},
 		{kind: "team-channel-remove", team: "payments"},
 	} {
-		change, found := pages.ConsoleChangeNamed(spec.kind)
+		change, found := console.ChangeNamed(spec.kind)
 		if !found {
 			t.Fatalf("%s is not a kind", spec.kind)
 		}
-		steps, err := cli{}.changeSteps(change, &spec, tree, changeRevision)
+		steps, err := cli{}.changeSteps(change.ConsoleChange, &spec, tree, changeRevision)
 		if err != nil {
 			t.Fatalf("%s: %v", spec.kind, err)
+		}
+		covered[spec.kind] = true
+		if ran, planned := stepCommands(steps), change.Operations; !followsPlan(ran, planned) {
+			t.Errorf("%s runs %v, but plans %v", spec.kind, ran, planned)
 		}
 		for _, step := range steps {
 			quoted := quotedRequest(t, step.display, tree, changeRevision)
@@ -348,6 +358,55 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 			}
 		}
 	}
+	for _, change := range console.Changes() {
+		if !covered[change.Name] {
+			t.Errorf("%s is a kind no case runs", change.Name)
+		}
+	}
+}
+
+// writeCallingRecord puts a staging record for app in a working copy's records, calling callee, for a disconnect.
+func writeCallingRecord(t *testing.T, dir, app, callee string) {
+	t.Helper()
+	record := map[string]any{}
+	if err := json.Unmarshal(fixture(t, "staging.json"), &record); err != nil {
+		t.Fatal(err)
+	}
+	record["application"], record["calls"] = app, []string{callee}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(dir, "v2-records", app, "staging")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "instance.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stepCommands is the command each step runs, in order.
+func stepCommands(steps []changeStep) []string {
+	ran := make([]string, 0, len(steps))
+	for _, step := range steps {
+		ran = append(ran, step.command)
+	}
+	return ran
+}
+
+// followsPlan is whether commands run only planned operations and never one planned before another that already ran.
+func followsPlan(commands []string, planned []console.Operation) bool {
+	at := 0
+	for _, command := range commands {
+		for at < len(planned) && string(planned[at]) != command {
+			at++
+		}
+		if at == len(planned) {
+			return false
+		}
+	}
+	return len(commands) > 0
 }
 
 // quotedRequest is the request a quoted line parses to in the working copy: its paths under the copy's root and @base

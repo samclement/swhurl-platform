@@ -6,23 +6,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
-	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 // A change is the console's one way to open a pull request. It downloads main at one commit, applies its kind's
 // commands to that copy, and publishes only the files its kind derives, so a pull request can carry nothing the
-// console did not ask for and nothing it cannot explain. What a kind may carry, and what the operator is told, are
-// pages' and orchestration's decisions; this file is the command's own: its flags, its working copy, and the order.
+// console did not ask for and nothing it cannot explain. What a kind takes and runs is console's table, what it may
+// carry is pages', and what the operator is told is orchestration's; this file is the command's own: its flags, its
+// working copy, and the order.
 //
 // The console reads its output as the job's log and takes the last line of standard output as the pull request it
 // opened, so every line of progress goes there and only a refusal goes to standard error.
@@ -39,8 +37,8 @@ const (
 )
 
 // changeSpec is what a change's flags state: which kind of pull request, whom it is for, and the values its kind
-// takes. It is a pointer in the request because only a change reads it, and the shape check keeps a kind from reaching
-// a command with a value that would mean something else there.
+// takes. It is a pointer in the request because only a change reads it, and its kind's CheckFlags keeps a kind from
+// reaching a command with a value that would mean something else there.
 type changeSpec struct {
 	kind, app, env, team                               string
 	settings                                           []string
@@ -70,31 +68,6 @@ func (s *changeSpec) given() map[string]bool {
 		"image": s.image != "", "preface": s.preface != "",
 	}
 	return stated
-}
-
-// changeShape is what one kind's change states: the flags it may carry, the ones it must, and whether it needs one of
-// a group. It is the kind-to-flags table, so a caller's mistake is refused in the change's own words instead of
-// reaching a command that would answer with its whole usage text.
-type changeShape struct {
-	takes, needs, any []string
-}
-
-// changeShapes is every kind the console opens, and what each one's flags mean.
-var changeShapes = map[string]changeShape{
-	"new":                 {takes: []string{"set", "image", "preface"}, needs: []string{"set", "image"}},
-	"v2-scale":            {takes: []string{"set"}, needs: []string{"set"}},
-	"v2-expose":           {takes: []string{"set"}, needs: []string{"set"}},
-	"v2-team":             {takes: []string{"set"}, needs: []string{"set"}},
-	"v2-connect":          {takes: []string{"call", "subscribe"}, any: []string{"call", "subscribe"}},
-	"v2-disconnect":       {takes: []string{"drop-call", "drop-subscription"}, any: []string{"drop-call", "drop-subscription"}},
-	"v2-allow":            {takes: []string{"allow", "disallow"}, any: []string{"allow", "disallow"}},
-	"v2-remove":           {},
-	"v2-promote":          {},
-	"team-add":            {takes: []string{"description"}},
-	"team-edit":           {takes: []string{"description", "rename"}},
-	"team-remove":         {},
-	"team-channel-set":    {takes: []string{"transport"}},
-	"team-channel-remove": {},
 }
 
 // repeated is a flag the operator may give more than once, in order.
@@ -151,14 +124,14 @@ func (r *request) changeNamed() []string {
 // change opens the pull request one kind of change asks for.
 func (c cli) change(r request) int {
 	spec := r.spec
-	change, found := pages.ConsoleChangeNamed(spec.kind)
+	change, found := console.ChangeNamed(spec.kind)
 	if !found {
 		return fail(c.diagnostic, fmt.Errorf("invalid: kind: %q is not a change the console opens", spec.kind))
 	}
 	if change.Team() != (spec.team != "") || (!change.Team() && !change.Allows(spec.env)) {
 		return fail(c.diagnostic, fmt.Errorf("invalid: env: %s does not name %q", spec.kind, spec.env))
 	}
-	if err := shaped(spec.kind, spec); err != nil {
+	if err := change.CheckFlags(spec.given()); err != nil {
 		return fail(c.diagnostic, err)
 	}
 	repository, status := c.changeRepository(spec)
@@ -175,29 +148,6 @@ func (c cli) change(r request) int {
 	}
 	defer os.RemoveAll(dir)
 	return c.changeApplied(change, spec, dir, revision, repository, token)
-}
-
-// shaped refuses a change that states a flag its kind does not take, or omits one it needs.
-func shaped(kind string, spec *changeSpec) error {
-	shape, known := changeShapes[kind]
-	if !known {
-		return fmt.Errorf("invalid: kind: %q has no flags yet", kind)
-	}
-	stated := spec.given()
-	for _, flag := range slices.Sorted(maps.Keys(stated)) {
-		if stated[flag] && !slices.Contains(shape.takes, flag) {
-			return fmt.Errorf("invalid: --%s: %s does not take it", flag, kind)
-		}
-	}
-	for _, flag := range shape.needs {
-		if !stated[flag] {
-			return fmt.Errorf("invalid: --%s: %s needs it", flag, kind)
-		}
-	}
-	if len(shape.any) > 0 && !slices.ContainsFunc(shape.any, func(flag string) bool { return stated[flag] }) {
-		return fmt.Errorf("invalid: %s needs one of --%s", kind, strings.Join(shape.any, ", --"))
-	}
-	return nil
 }
 
 // changeRepository is the repository to open the pull request on: the flag, or the console's own environment.
@@ -248,12 +198,12 @@ func (c cli) changeCopy(spec *changeSpec, repository, token string) (string, str
 
 // changeApplied runs the kind's commands in the working copy and publishes what they wrote, in the order the operator
 // reads them: what each command said, what the change carries, and the pull request it opened.
-func (c cli) changeApplied(change pages.ConsoleChange, spec *changeSpec, dir, revision, repository, token string) int {
+func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revision, repository, token string) int {
 	before, err := files.Snapshot(dir)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
-	steps, err := c.changeSteps(change, spec, newChangeTree(dir), revision)
+	steps, err := c.changeSteps(change.ConsoleChange, spec, newChangeTree(dir), revision)
 	if err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -275,7 +225,7 @@ func (c cli) changeApplied(change pages.ConsoleChange, spec *changeSpec, dir, re
 		commands = append(commands, step.display)
 	}
 	_, err = orchestration.Publish(context.Background(), orchestration.PublishInputs{
-		Change: change, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
+		Change: change.ConsoleChange, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
 		Before: before, After: after, Commands: commands, Preface: spec.preface, Repository: repository,
 		Token: token, DryRun: spec.dryRun,
 	}, publisher, func(line string) { fmt.Fprintln(c.out, line) })

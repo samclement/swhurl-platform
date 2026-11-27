@@ -328,7 +328,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
 | notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
-| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | console code in `cmd/swhurl-v2`, `orchestration/console*.go`, parts of `pages` |
+| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | `console/` the change-kind table (each kind's flags and planned operations); the rest of the console code in `cmd/swhurl-v2`, `orchestration/console*.go` and `pages`, including each kind's branch facts |
 
 Two ownership contracts matter more than the directory names:
 
@@ -3034,7 +3034,7 @@ and effects unchanged and its existing tests moved with the code they test.
 | 3 | notifications | incident, heartbeat and notify workflows | code moved, offline |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | code moved; delivery currentness reported without a duplicate parser, offline |
 | 5 | connectivity, provisioning, apps | compilation and writers, declaration changes, app lifecycle and status; restore sequencing in recovery | complete offline; status uses delivery’s shared verdict, observation Version 6 |
-| next | console | view models, presentation and interaction flows, currently composed in `orchestration` | separate slice awaiting operator approval of scope and offline acceptance |
+| 6 | console | view models, presentation and interaction flows, currently composed in `orchestration`; `swhurl-v2 change` first | approved 26 November 2026; in progress offline: `v2/console` holds the change-kind table |
 
 **Slice 1: recovery.**
 
@@ -3233,9 +3233,23 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
   revision cannot waive unhealthy facts; [delivery's cases](../v2/delivery/rules/health_test.go) preserve incident's
   rollback semantics. All evidence is
   [offline](current-state.md#slice-5-complete-status-provisioning-connectivity-and-apps-lifecycle-offline-22-november-2026).
-  **Next gate:** operator approval of the separate console capability slice and its offline acceptance.
   Slice 5 and its [ownership follow-ups](current-state.md#ownership-follow-ups-and-job-test-synchronization-offline-22-november-2026)
-  are complete offline, not verified live. The console slice remains unapproved.
+  are complete offline, not verified live.
+
+**Slice 6: console (approved 26 November 2026).** It starts with `swhurl-v2 change`, the console's one way to
+open a pull request.
+
+- **The change-kind table.** `console.Changes` is one row per kind: pages' branch facts for it (name, title,
+  environments, target environment, both environments, owned paths), the flags it takes, needs or needs one of
+  (`CheckFlags`, from the command's former `changeShapes`), and the operations it runs, in order (`create`, `edit`,
+  `remove`, `promote`, `render`, `team`). The command reads a kind only through it.
+- **Branch facts stay in `pages` for now.** Activity and the app page read branches in `pages`, which is layer 0
+  and cannot import `console`, so the table looks each kind's row up in `pages.ConsoleChanges` rather than
+  re-typing it, and a test holds both to the same kinds in the same order. The list moves into `console` when
+  Activity does.
+- **Checks.** `console` is layer 2 and listed in `Orchestration`, with the edge `console` → `orchestration` in
+  `WorkflowDependencies`. The command's quoted-line test also requires every kind's steps to run only its planned
+  operations, in their order, and covers every kind. `swhurl-v2 change`'s flags, refusals and output are unchanged.
 
 ### Ownership follow-up contracts (approved 22 November 2026)
 
@@ -3266,7 +3280,8 @@ The architecture now permits only reviewed, named, directional workflow dependen
 all workflow imports and pushing shared business sequencing into commands or duplicate implementations.
 The [ownership and dependency contract](#capability-map) and the existing `layers` rule are canonical;
 `WorkflowDependencies` contains `orchestration` → `health`, `apps`, `provisioning`; `delivery` → `provisioning`;
-and `apps` → `provisioning`. The first two orchestration edges keep `ConsoleChecks` and `ConsoleStatus`
+`apps` → `provisioning`; and `console` → `orchestration`, while the console slice moves the console's composition
+out of orchestration. The first two orchestration edges keep `ConsoleChecks` and `ConsoleStatus`
 composition in a workflow rather than in the CLI or duplicate implementations; reconsider them when console
 moves. Orchestration also uses provisioning's records-root constant and `EncryptedSeed` for seed minting;
 apps' Create uses the same seed construction. Apps and delivery reuse provisioning's record and instance-folder

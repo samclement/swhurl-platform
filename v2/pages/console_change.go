@@ -13,7 +13,9 @@ import (
 // command that opens the pull request, Activity's reading of a branch, and the rule that a change carries only what
 // its own kind derives. It lives here, in the console's data layer, because this is the lowest layer the command and
 // the pages share; a branch name is permanent — Activity reads the branches the console opened before this table
-// existed — so a kind keeps the name it was first pushed under.
+// existed — so a kind keeps the name it was first pushed under. The command reads each kind through console's table
+// (v2/console/change.go), which adds the flags the kind takes and the operations it runs; a kind lives in both, and
+// console's test holds them to the same list.
 
 // The repository's own layout, as a console change carries it.
 const (

@@ -1,9 +1,11 @@
 id: 82
 title: Move the console's flag and secret handlers into v2/console
-state: ready
+state: active
 scope:
   - v2/console/*.go
   - v2/cmd/swhurl-v2/console_secrets.go
+  - v2/cmd/swhurl-v2/console_app.go
+  - v2/cmd/swhurl-v2/console_change.go
   - v2/cmd/swhurl-v2/console.go
   - v2/cmd/swhurl-v2/console_flags_test.go
   - v2/cmd/swhurl-v2/console_secrets_test.go
@@ -14,4 +16,7 @@ checks:
 after:
   - 77
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T18:04:05.756Z
+    commit: cfb85bc9a6a8
+    text: "May task 82 edit console_app.go and console_change.go to move flag code? -> operator: go ahead. Scope widened to v2/cmd/swhurl-v2/console_app.go and v2/cmd/swhurl-v2/console_change.go; complete planned flag-handler move, not redactor-only."

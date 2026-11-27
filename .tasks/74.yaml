@@ -18,6 +18,8 @@ scope:
   - v2/orchestration/registry.go
   - v2/orchestration/registry_test.go
   - v2/archtest/api.txt
+  - v2/cmd/swhurl-v2/change_test.go
+  - v2/console/change_test.go
 checks:
   - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/
   - make check-v2
@@ -34,3 +36,6 @@ notes:
   - at: 2026-11-27T08:48:09.722Z
     commit: cebb701034d7
     text: "create/team steps: shared use cases below cmd (widen scope) or cmd-local glue? -> conductor: widen (option 1); settled by the operator's task-73 decision: direct use-case calls, input assembly below cmd, no duplicated assembly. Scope adds create/team (+tests), v2/apps/*.go, orchestration/registry(.go,_test.go), archtest/api.txt (shared with running task 71; a merge conflict there goes to the operator)."
+  - at: 2026-11-27T08:49:44.970Z
+    commit: 50236db83d91
+    text: "add change_test.go and console/change_test.go to scope? -> conductor: yes; tests of in-scope code belong to the task"

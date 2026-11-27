@@ -1,6 +1,6 @@
 id: 85
 title: Move Offers/OfferedAPI out of pages into the operator-chosen capability package without behaviour changes
-state: ready
+state: done
 scope:
   - v2/pages/*.go
   - v2/connectivity/*.go
@@ -26,3 +26,15 @@ notes:
   - at: 2026-11-27T19:42:08.899Z
     commit: c5580535ae48
     text: Offers owner and scope? -> operator approved connectivity/rules. Move document types there; keep wording/rendering helpers in pages. Scope adds v2/connectivity/rules/*.go, v2/archtest/rules_test.go (explicit pages -> connectivity/rules pure dependency), docs/iteration-2-plan.md (resolve ownership wording). No new apps/rules package, no behaviour change. This answers the earlier DO NOT CLAIM ownership gate.
+  - at: 2026-11-27T19:46:51.240Z
+    commit: 838dabf6b07d
+    text: "done: Offers, OfferedAPI, OfferedEvent, Operation and Value/ValueKind/ValueField (with APIText/EventText) moved from pages to new v2/connectivity/rules/offers.go; pages keeps wording (member became a pages-local func); appsource, console, tests updated; archtest allows pages->connectivity/rules, api.txt regenerated; plan wording updated. Offline only; not verified live."
+  - at: 2026-11-27T19:46:51.240Z
+    commit: 838dabf6b07d
+    text: "followup: docs/workstreams.md (v2 row), docs/v2-status.md (gate, slice row, migration line) still say Offers waits on the operator's choice of owner; update them and add a dated docs/current-state.md entry for the move (outside task 85 scope)."
+  - at: 2026-11-27T19:46:51.240Z
+    commit: 838dabf6b07d
+    text: "followup: Remaining gate: architecture check that only console and cmd/swhurl-v2 import pages."
+  - at: 2026-11-27T19:48:34.352Z
+    commit: 838dabf6b07d
+    text: branch dsa/01M8F8FBVKTHP83P8DY5T1XP87/task-85

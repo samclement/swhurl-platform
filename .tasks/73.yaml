@@ -33,6 +33,22 @@ scope:
   - v2/adapters/files/*.go
   - v2/archtest/rules_test.go
   - v2/archtest/budgets.json
+  - v2/cmd/swhurl-v2/resolve.go
+  - v2/cmd/swhurl-v2/resolve_test.go
+  - v2/cmd/swhurl-v2/egress.go
+  - v2/cmd/swhurl-v2/egress_test.go
+  - v2/cmd/swhurl-v2/auth.go
+  - v2/cmd/swhurl-v2/auth_test.go
+  - v2/cmd/swhurl-v2/users.go
+  - v2/cmd/swhurl-v2/users_test.go
+  - v2/cmd/swhurl-v2/reloader.go
+  - v2/cmd/swhurl-v2/reloader_test.go
+  - v2/cmd/swhurl-v2/events_test.go
+  - v2/cmd/swhurl-v2/deploy_records.go
+  - v2/cmd/swhurl-v2/deploy_records_test.go
+  - v2/provisioning/rules/*.go
+  - v2/connectivity/rules/*.go
+  - v2/connectivity/rules/*/*.go
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -49,3 +65,6 @@ notes:
   - at: 2026-11-27T07:49:12.803Z
     commit: c00f1aead0f0
     text: "Shape of task 73? -> operator: option 3 as one task: change runner calls use cases directly (apps.Edit, apps.SetTeam, apps.Remove, delivery.Promote, and a render use case in delivery or provisioning, not a cmd function); edit/remove/promote/render commands become assemble inputs -> typed call -> print; input assembly moves onto shared readers below cmd (like files.ReadRecords) so v2/console (layer 2) never imports cmd; appRepo returns the PR URL so console_new stops scraping; change prints a one-line summary. Scope widened by the conductor accordingly."
+  - at: 2026-11-27T08:17:25.741Z
+    commit: e134969f0795
+    text: "Where do render's pure decisions go? -> operator: option 2: resolution and allocation (with their encoders) into connectivity/rules beside its decoders; provisioning/rules keeps the platform files (proxy, auth, users, reloader, notify), team checks and snapshot, and composes; use cases provisioning.Render and provisioning.CheckRender; an adapters/files reader assembles inputs. Scope widened by the conductor."

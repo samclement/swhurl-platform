@@ -1,6 +1,6 @@
 id: 86
 title: Enforce that only console and cmd import pages and document its architecture layer
-state: active
+state: done
 scope:
   - v2/archtest/rules_test.go
   - v2/archtest/api.txt
@@ -26,3 +26,30 @@ notes:
   - at: 2026-11-27T19:56:28.221Z
     commit: 29739a876044
     text: "May task 86 update docs/v2-status.md for required check-docs? -> operator approved bounded scope addition: record pages boundary completed offline and check-required change inventory. Next gate pending operator choice unless an already-approved gate exists; do not invent or approve a further migration. No live verification claim."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "done: Moved orchestration/jobs.go(+test) to console; rule layers gains ImportedOnlyBy: pages only by console and cmd/swhurl-v2 (production source; probe import in health caught). api.txt updated; architecture.md 'Console code' section; v2-status records pages boundary complete offline. archtest, check-v2, check-docs pass. Nothing live."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "followup: docs/workstreams.md and the v2-status Gate line still name the done 'Offers leaves pages … only console and command import pages' gate; next gate is the operator's choice (the two must change together)."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "followup: docs/iteration-2-plan.md Guardrails row for `layers` does not mention ImportedOnlyBy (pages importable only by console and cmd/swhurl-v2)."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "followup: archtest/checks_test.go has no fixture test for ImportedOnlyBy; only the live-module TestLayers covers it."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "followup: v2/apps/status_state_test.go imports pages (StateOf, AppsPageOf); test files are outside the restriction."
+  - at: 2026-11-27T19:57:11.317Z
+    commit: d5c096f103ba
+    text: "followup: docs/v2-status.md Uncommitted lists task 86's paths; reset to none on commit."
+  - at: 2026-11-27T19:59:17.938Z
+    commit: d5c096f103ba
+    text: "Post-done: docs/v2-status.md line 5 reset from 'Uncommitted: `v2/archtest`, `v2/cmd/swhurl-v2`, `v2/console`, `v2/orchestration`, `v2/pages`' to 'Uncommitted: none'; nothing else changed. Contract (v2/workstreams/history.go uncommittedProblems): 'none' must match a clean git status under the v2 row's paths, so on this dirty tree make check-docs necessarily fails with exactly one error (Uncommitted says none, but v2 has uncommitted work). The other check-docs error (v2 paths changed without docs/v2-status.md) is gone. Valid pre-commit: cd v2 && go test ./archtest/ (re-run, passes), make check-v2 (passed earlier; this edit touches no v2 file). Requires the committed clean tree: make check-docs; conductor should run it after committing."
+  - at: 2026-11-27T20:00:30.352Z
+    commit: 30de69950765
+    text: "Final verification on committed task branch 30de6995, worktree clean (git status --short empty): make check-docs under machine lease exited 0, '0 error(s), 0 warning(s)'. The Uncommitted: none contract holds on the clean tree. No edits, commits or main checks."
+  - at: 2026-11-27T20:01:30.793Z
+    commit: fb7c419f2305
+    text: branch dsa/01M8F8VB3S2ZG9DBJZFY4FQQRD/task-86

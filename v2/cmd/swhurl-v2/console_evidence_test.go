@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -61,7 +60,7 @@ func githubServer(t *testing.T) (*consoleServer, *githubtest.ConsoleFake) {
 	fake.Commit, fake.Archive = mainCommit, tarOf(webProdFiles(), "owner-repo-abc/")
 	fake.History = map[string]map[string]string{mergedCommit: webProdFiles()}
 	server.github, server.appRepos = fake, true
-	server.pin(orchestration.ConsoleSourceOf{Console: fake, Repository: "owner/repo", Token: "tok"})
+	server.pin(console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"})
 	return server, fake
 }
 

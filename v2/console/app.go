@@ -44,7 +44,7 @@ func (s Server) AppRow(ctx context.Context, instance pages.Instance) (map[string
 // AppPage is one deployed instance's page from the tree and rows its request read, the jobs it shows and the flag
 // store's card for what the instance declares.
 func (s Server) AppPage(ctx context.Context, instance pages.Instance, tree map[string][]byte, rows []pages.AppRow,
-	jobs []pages.Job, cards FlagCards) (pages.AppPage, error) {
+	jobs []pages.Job) (pages.AppPage, error) {
 	site, err := Site(tree, s.Repository)
 	if err != nil {
 		return pages.AppPage{}, err
@@ -55,7 +55,7 @@ func (s Server) AppPage(ctx context.Context, instance pages.Instance, tree map[s
 		registry, teamsError = map[string]pages.TeamInfo{}, registryErr.Error()
 	}
 	declaration, problem := orchestration.FlagDeclaration(tree[FlagDocument(instance)])
-	card, writable := cards(ctx, instance, declaration, problem)
+	card, writable := s.Flags(ctx, instance, declaration, problem)
 	variables, variablesKnown := DesiredVariables(tree, instance.App, instance.Env)
 	connectable := pages.ConnectableTo(rows, Offers(tree, rows, instance.Env), instance.Env, instance.App)
 	return pages.AppPageOf(pages.AppInput{Instance: instance, Rows: rows, Site: site,

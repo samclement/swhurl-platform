@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"
@@ -17,12 +17,11 @@ const (
 	consoleCalls   = kernel.RecordsRoot + "/calls.json"
 	consoleEgress  = "platform/egress/allocation.json"
 	consoleApps    = "v2-apps/instances"
-	consoleStacks  = "v2/contract/stacks.json"
 )
 
 // selected is whether a page may read one repository path.
 func selected(file string) bool {
-	if file == consoleProfile || file == consoleCalls || file == consoleEgress || file == consoleStacks {
+	if file == consoleProfile || file == consoleCalls || file == consoleEgress || file == stacksPath {
 		return true
 	}
 	if strings.HasPrefix(file, kernel.RecordsRoot+"/") {
@@ -58,9 +57,9 @@ func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error) {
 	return found, nil
 }
 
-// ConsoleSource is where a console reads its pinned tree: GitHub at main's commit, or the operator's own checkout
+// Source is where a console reads its pinned tree: GitHub at main's commit, or the operator's own checkout
 // under --dev. Revision is resolved once per request and never falls back to a moving branch.
-type ConsoleSource interface {
+type Source interface {
 	Revision(ctx context.Context) (string, error)
 	Tree(ctx context.Context, revision string) (map[string][]byte, error)
 	// Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the
@@ -68,9 +67,9 @@ type ConsoleSource interface {
 	Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
 }
 
-// ConsoleBundle serves one source's trees, keeping at most 60 commits' bytes in the order they were read.
-type ConsoleBundle struct {
-	Source ConsoleSource
+// Bundle serves one source's trees, keeping at most 60 commits' bytes in the order they were read.
+type Bundle struct {
+	Source Source
 	// Max is how many commits are kept; zero is sixty.
 	Max int
 
@@ -80,18 +79,18 @@ type ConsoleBundle struct {
 }
 
 // Revision resolves the source's pinned commit.
-func (b *ConsoleBundle) Revision(ctx context.Context) (string, error) {
+func (b *Bundle) Revision(ctx context.Context) (string, error) {
 	return b.Source.Revision(ctx)
 }
 
 // Cached is whether one commit's tree is already in hand: a page's bounded reads are spent on the ones it must fetch.
-func (b *ConsoleBundle) Cached(revision string) bool {
+func (b *Bundle) Cached(revision string) bool {
 	_, found := b.Held(revision)
 	return found
 }
 
 // Held is one commit's tree when it is in hand, without reading it.
-func (b *ConsoleBundle) Held(revision string) (map[string][]byte, bool) {
+func (b *Bundle) Held(revision string) (map[string][]byte, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	found, ok := b.trees[revision]
@@ -99,7 +98,7 @@ func (b *ConsoleBundle) Held(revision string) (map[string][]byte, bool) {
 }
 
 // Tree is one commit's selected files, from the cache or read once. A failed read is never kept.
-func (b *ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error) {
+func (b *Bundle) Tree(ctx context.Context, revision string) (map[string][]byte, error) {
 	b.mu.Lock()
 	if found, ok := b.trees[revision]; ok {
 		b.mu.Unlock()
@@ -130,21 +129,21 @@ func (b *ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][
 	return b.trees[revision], nil
 }
 
-// ConsoleSourceOf is the adapter-backed console source: GitHub's tarball at main's commit, and one commit's files
+// SourceOf is the adapter-backed console source: GitHub's tarball at main's commit, and one commit's files
 // by blob.
-type ConsoleSourceOf struct {
+type SourceOf struct {
 	Console    github.Console
 	Repository string
 	Token      string
 }
 
 // Revision resolves main's commit.
-func (s ConsoleSourceOf) Revision(ctx context.Context) (string, error) {
+func (s SourceOf) Revision(ctx context.Context) (string, error) {
 	return s.Console.Revision(ctx, s.Repository, s.Token)
 }
 
 // Tree downloads and filters one commit's tarball.
-func (s ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error) {
+func (s SourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error) {
 	tarball, err := s.Console.Tarball(ctx, s.Repository, s.Token, revision)
 	if err != nil {
 		return nil, err
@@ -157,6 +156,6 @@ func (s ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string]
 }
 
 // Files reads the paths at one commit from its complete tree listing, and nothing else: no tarball, no other commit.
-func (s ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error) {
+func (s SourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error) {
 	return s.Console.CommitFiles(ctx, s.Repository, s.Token, revision, paths)
 }

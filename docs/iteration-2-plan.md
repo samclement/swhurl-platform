@@ -328,7 +328,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
 | notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
-| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | `console/` the change-kind table (each kind's flags and planned operations); the rest of the console code in `cmd/swhurl-v2`, `orchestration/console*.go` and `pages`, including each kind's branch facts |
+| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | `console/`: the change-kind table (each kind's flags and planned operations), the pinned tree's source and cache (`Bundle`, `Source`, `SourceOf`, `FilterTarball`), the page readers, actions, jobs' work, flag store with its audit line, and Activity's evidence; thin HTTP handlers in `cmd/swhurl-v2/console*.go`; each kind's branch facts and the page models in `pages`; the job registry in `orchestration/jobs.go` |
 
 Two ownership contracts matter more than the directory names:
 
@@ -3034,7 +3034,7 @@ and effects unchanged and its existing tests moved with the code they test.
 | 3 | notifications | incident, heartbeat and notify workflows | code moved, offline |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | code moved; delivery currentness reported without a duplicate parser, offline |
 | 5 | connectivity, provisioning, apps | compilation and writers, declaration changes, app lifecycle and status; restore sequencing in recovery | complete offline; status uses delivery’s shared verdict, observation Version 6 |
-| 6 | console | view models, presentation and interaction flows, currently composed in `orchestration`; `swhurl-v2 change` first | approved 26 November 2026; in progress offline: `v2/console` holds the change-kind table |
+| 6 | console | view models, presentation and interaction flows; `swhurl-v2 change` first | approved 26 November 2026; in progress offline: `v2/console` holds the change-kind table and the console's composition, and `orchestration` holds no console file |
 
 **Slice 1: recovery.**
 
@@ -3204,8 +3204,8 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
   Provisioning owns optional-document validation, offers placement/refusals, record files and instance-folder
   writes/pruning. Connectivity owns calls/events resolution, optional-document readers and declaration deltas
   used by `swhurl-v2 change`. Kernel retains document types, lifecycle rules and resource generation.
-- **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus` and interaction flows) stays in
-  `orchestration` for a separately approved console slice; it is not unfinished slice-5 scope.
+- **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus` and interaction flows) stayed in
+  `orchestration` for the separately approved console slice, which has since moved it into `console`.
 - **Checks.** `provisioning/rules` and `connectivity/rules` (including calls/events) are pure; `apps` and
   `provisioning` are layer-2 use-case packages, and connectivity has none. Pure dependencies include
   `provisioning/rules` → `connectivity/rules` → `kernel` and incident → `delivery/rules`.
@@ -3254,8 +3254,8 @@ open a pull request.
   and cannot import `console`, so the table looks each kind's row up in `pages.ConsoleChanges` rather than
   re-typing it, and a test holds both to the same kinds in the same order. The list moves into `console` when
   Activity does.
-- **Checks.** `console` is layer 2 and listed in `Orchestration`, with the edge `console` → `orchestration` in
-  `WorkflowDependencies`. The command's quoted-line test also requires every kind's steps to run only its planned
+- **Checks.** `console` is layer 2 and listed in `Orchestration`, with the edges `console` → `orchestration`,
+  `health` and `apps` in `WorkflowDependencies`. The command's quoted-line test also requires every kind's steps to run only its planned
   operations, in their order, and covers every kind. `swhurl-v2 change`'s flags, refusals and output are unchanged.
 
 ### Ownership follow-up contracts (approved 22 November 2026)
@@ -3286,11 +3286,12 @@ open a pull request.
 The architecture now permits only reviewed, named, directional workflow dependencies, rather than forbidding
 all workflow imports and pushing shared business sequencing into commands or duplicate implementations.
 The [ownership and dependency contract](#capability-map) and the existing `layers` rule are canonical;
-`WorkflowDependencies` contains `orchestration` → `health`, `apps`, `provisioning`; `delivery` → `provisioning`;
-`apps` → `provisioning`; and `console` → `orchestration`, while the console slice moves the console's composition
-out of orchestration. The first two orchestration edges keep `ConsoleChecks` and `ConsoleStatus`
-composition in a workflow rather than in the CLI or duplicate implementations; reconsider them when console
-moves. Orchestration also uses provisioning's records-root constant and `EncryptedSeed` for seed minting;
+`WorkflowDependencies` contains `orchestration` → `provisioning`; `delivery` → `provisioning`;
+`apps` → `provisioning`; and `console` → `orchestration`, `health`, `apps`. The console's edges to health and
+apps keep its composition (the platform checks and every instance's status) in a workflow rather than in the CLI
+or duplicate implementations; orchestration's former edges to them went with the console's orchestration files.
+Console still reaches orchestration for the job registry, the flag operations and the registry change.
+Orchestration uses provisioning's records-root constant and `EncryptedSeed` for seed minting;
 apps' Create uses the same seed construction. Apps and delivery reuse provisioning's record and instance-folder
 writers. The reverses and all unlisted peer imports remain forbidden.
 `PureDependencies` separately records the reviewed pure owners; all other layer restrictions stay unchanged.

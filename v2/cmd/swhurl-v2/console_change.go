@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -179,8 +178,8 @@ func (l lineWriter) Write(body []byte) (int, error) {
 }
 
 // changeFlag sets or clears one feature flag's override for an instance. It is not a pull request: the override is
-// written to NATS at once, which is why it also writes one audit line, and the page it returns to shows what is stored
-// rather than what was asked.
+// written to NATS at once, which is why the flag store also writes one audit line, and the page it returns to shows
+// what is stored rather than what was asked.
 func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 	instance, known := pages.Named(r.PathValue("app"), r.PathValue("env"))
 	if !known {
@@ -200,13 +199,12 @@ func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	done, problem, status := s.flags.Change(ctx, instance, tree, console.FlagChange{Name: name,
-		Set: first(fields, "action") == "set", Value: first(fields, "value")})
+	problem, status := s.flags.Change(ctx, instance, tree, console.FlagChange{Name: name,
+		Set: first(fields, "action") == "set", Value: first(fields, "value"), Identity: identityOf(r)})
 	if problem != "" {
 		s.failure(w, r, status, problem)
 		return
 	}
-	s.audit("%s flag %s/%s %s %s", identityOf(r), instance.App, instance.Env, name, done)
 	http.Redirect(w, r, "/apps/"+instance.App+"/"+instance.Env+"?flag="+name+"#flags", http.StatusSeeOther)
 }
 
@@ -234,15 +232,6 @@ func first(fields map[string][]string, name string) string {
 		return values[0]
 	}
 	return ""
-}
-
-// audit writes one line to the console's log: a change that is not a pull request, and a job's own start and end, so
-// the pod's log says what the console did.
-func (s *consoleServer) audit(format string, args ...any) {
-	if s.log == nil {
-		return
-	}
-	fmt.Fprintf(s.log, "[AUDIT] "+format+"\n", args...)
 }
 
 // teamJobActions are the job names a team's changes run as, as the console has always named them: the Activity page

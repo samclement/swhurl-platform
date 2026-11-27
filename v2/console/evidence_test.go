@@ -13,7 +13,6 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -58,7 +57,7 @@ var evidenceUnits = []string{"web/prod", "web/staging", "api/prod", "gone/prod",
 func archived(t *testing.T, files map[string]string) map[string]pages.Render {
 	t.Helper()
 	fake := &githubtest.ConsoleFake{Commit: evidenceCommit, Archive: archive(files)}
-	bundle := &orchestration.ConsoleBundle{Source: orchestration.ConsoleSourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}}
+	bundle := &console.Bundle{Source: console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}}
 	tree, err := bundle.Tree(context.Background(), evidenceCommit)
 	if err != nil {
 		t.Fatal(err)
@@ -79,8 +78,8 @@ func targeted(files map[string]string) (*console.ConsoleEvidence, *githubtest.Co
 		}
 	}
 	fake := &githubtest.ConsoleFake{Commit: evidenceCommit, Files: regular, Archive: archive(files)}
-	source := orchestration.ConsoleSourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}
-	return &console.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: source}}, fake
+	source := console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}
+	return &console.ConsoleEvidence{Bundle: &console.Bundle{Source: source}}, fake
 }
 
 // The targeted read finds what the archive path finds for every unit it is asked for, one at a time or together,
@@ -170,7 +169,7 @@ func TestConsoleEvidenceRefusesOnlyTheUnitAskedFor(t *testing.T) {
 
 func mustFilter(t *testing.T, files map[string]string) map[string][]byte {
 	t.Helper()
-	tree, err := orchestration.FilterTarball(archive(files), true)
+	tree, err := console.FilterTarball(archive(files), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +185,7 @@ func evidenceOver(max int, trees map[string]map[string]string) (*console.Console
 			held.trees[commit][file] = []byte(body)
 		}
 	}
-	return &console.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: held}, Max: max}, held
+	return &console.ConsoleEvidence{Bundle: &console.Bundle{Source: held}, Max: max}, held
 }
 
 func (s *source) taken() []string {

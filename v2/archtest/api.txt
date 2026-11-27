@@ -669,10 +669,14 @@ console: const Team Operation = "team"
 console: func (*ActivityFacts) Pull(ctx context.Context, client github.Console, repository, token string, number int) (pages.Pull, error)
 console: func (*ActivityFacts) Reach(job pages.Job, now time.Time)
 console: func (*ActivityFacts) WithReached(jobs []pages.Job) []pages.Job
+console: func (*Bundle) Cached(revision string) bool
+console: func (*Bundle) Held(revision string) (map[string][]byte, bool)
+console: func (*Bundle) Revision(ctx context.Context) (string, error)
+console: func (*Bundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
 console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 console: func (*FlagStore) Card(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
-console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (done, problem string, status int)
+console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (problem string, status int)
 console: func (*Redactor) Add(secret string)
 console: func (*Redactor) Redact(text string) string
 console: func (*Refusal) Error() string
@@ -698,7 +702,7 @@ console: func (RenderStep) Operation() Operation
 console: func (RenderStep) Quote() string
 console: func (Request) Name() string
 console: func (Server) AppChange(ctx context.Context, instance pages.Instance, one Change, change string, fields map[string][]string, identity string) (*ChangeProposal, string, int)
-console: func (Server) AppPage(ctx context.Context, instance pages.Instance, tree map[string][]byte, rows []pages.AppRow, jobs []pages.Job, cards FlagCards) (pages.AppPage, error)
+console: func (Server) AppPage(ctx context.Context, instance pages.Instance, tree map[string][]byte, rows []pages.AppRow, jobs []pages.Job) (pages.AppPage, error)
 console: func (Server) AppRow(ctx context.Context, instance pages.Instance) (map[string][]byte, []pages.AppRow, *pages.AppRow, error)
 console: func (Server) Apps(ctx context.Context, input pages.AppsInput) (pages.AppsPage, error)
 console: func (Server) Catalogue(ctx context.Context, env, kind, team string) (pages.CataloguePage, error)
@@ -715,6 +719,9 @@ console: func (Server) RowsByInstance(ctx context.Context) (map[string]*pages.Ap
 console: func (Server) Teams(ctx context.Context) (pages.TeamsPage, error)
 console: func (Server) UnitPage(ctx context.Context, name string) (UnitPage, bool, error)
 console: func (Server) Units(ctx context.Context) ([]pages.Unit, error)
+console: func (SourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
+console: func (SourceOf) Revision(ctx context.Context) (string, error)
+console: func (SourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 console: func (TeamStep) Operation() Operation
 console: func (TeamStep) Quote() string
 console: func ActivityOf(ctx context.Context, jobs []pages.Job, reads ChangeReads) Activity
@@ -729,6 +736,7 @@ console: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads Change
 console: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
 console: func ConsoleTeamInput(file string) bool
 console: func DesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
+console: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 console: func FlagDocument(instance pages.Instance) string
 console: func FlagView(environment string, card orchestration.FlagCard) pages.FlagView
 console: func JobPageOf(ctx context.Context, jobs []pages.Job, id int, reads ChangeReads, canCreate bool) (JobPage, bool)
@@ -754,17 +762,18 @@ console: func UnitWork(cluster orchestration.Cluster, now func() time.Time, acti
 console: func WorkingCopy(dir string) files.Checkout
 console: type Activity struct {Moving, Ended []ChangeView PRsError string}
 console: type ActivityFacts struct {}
+console: type Bundle struct {Source Source Max int}
 console: type Change struct {Name string Title string Envs []string TargetEnv string BothEnvs bool Takes, Needs, Any []string Operations []Operation}
 console: type ChangeJobView struct {ID int Title, Label, Link, Unit string Identity, State, PullLink string StartedAt, StartedClock, Ago string Finished bool FinishedClock, Took string Running bool Lines []string}
 console: type ChangeProposal struct {Request Kind, Identity, Repository string Address string}
 console: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
 console: type ChangeView struct {ID string Track pages.Track Open bool Job *ChangeJobView PR *OpenPullView}
-console: type ConsoleEvidence struct {Bundle *orchestration.ConsoleBundle Max int}
+console: type ConsoleEvidence struct {Bundle *Bundle Max int}
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
 console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
-console: type FlagChange struct {Name string Set bool Value string}
-console: type FlagStore struct {Seed string URL string Open func(ctx context.Context, url, seed, inbox string) (nats.KV, error) Now func() time.Time}
+console: type FlagChange struct {Name string Set bool Value string Identity string}
+console: type FlagStore struct {Seed string URL string Open func(ctx context.Context, url, seed, inbox string) (nats.KV, error) Now func() time.Time Audit func(line string)}
 console: type JobPage struct {Job ChangeJobView Track pages.Track Stage pages.Stage PR *OpenPullView CanResume bool}
 console: type Layer struct {Title, Text string Members []UnitRow}
 console: type NewAppRead struct {Contract []byte Catalogue pages.StackCatalogue Teams map[string]pages.TeamInfo Connectable pages.Connectable TeamsError string HookHost string}
@@ -781,7 +790,9 @@ console: type Refusal struct {Subject, Reason string}
 console: type RemoveStep struct {App, Env string}
 console: type RenderStep struct {}
 console: type Request struct {App, Env, Team string Settings []string Calls, Subscriptions, DropCalls, DropSubscriptions []string Allows, Disallows []string Description, Rename, Transport, Image string}
-console: type Server struct {Bundle *orchestration.ConsoleBundle Reader kube.Reader Collector kube.Collector Data kube.Data Compare func(from, to string) ([]string, bool, error) Now func() time.Time Repository string GitHub bool Stacks func(ctx context.Context, apps []string) map[string]string Jobs func(ctx context.Context) []pages.Job}
+console: type Server struct {Bundle *Bundle Reader kube.Reader Collector kube.Collector Data kube.Data Compare func(from, to string) ([]string, bool, error) Now func() time.Time Repository string GitHub bool Stacks func(ctx context.Context, apps []string) map[string]string Jobs func(ctx context.Context) []pages.Job Flags FlagCards}
+console: type Source interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
+console: type SourceOf struct {Console github.Console Repository string Token string}
 console: type Step interface {// Operation is the planned operation the step runs. Operation() Operation // Quote is the line a person could type in a checkout to run the same step. Quote() string}
 console: type TeamStep struct {Change kernel.TeamChange}
 console: type UnitPage struct {Unit pages.Unit Refused string App *pages.Instance Detail string}
@@ -1588,19 +1599,12 @@ orchestration: const FluxResume FluxAction = "resume"
 orchestration: const FluxSuspend FluxAction = "suspend"
 orchestration: const NoFlagsProblem = "This console has no NATS key (console-nats Secret), so overrides cannot be read or set."
 orchestration: const StaleDays = 14
-orchestration: func (*ConsoleBundle) Cached(revision string) bool
-orchestration: func (*ConsoleBundle) Held(revision string) (map[string][]byte, bool)
-orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
-orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func (*Jobs) Drain(timeout time.Duration) bool
 orchestration: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
 orchestration: func (*Jobs) Reach(ctx context.Context, id int)
 orchestration: func (*Jobs) Recent(ctx context.Context) []pages.Job
 orchestration: func (*Jobs) Start(ctx context.Context, action, target, identity string, resume map[string]any, work JobWork) (pages.Job, error)
 orchestration: func (*Refusal) Error() string
-orchestration: func (ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
-orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
-orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
 orchestration: func (OrderedValue) Member(name string) OrderedValue
 orchestration: func (OrderedValue) Text() string
 orchestration: func (RegistryOutcome) Summary() string
@@ -1622,7 +1626,6 @@ orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor
 orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
 orchestration: func DecodeOrdered(data []byte) (OrderedValue, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
-orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
 orchestration: func Flags(ctx context.Context, store nats.KV, environment, application string, flags []producer.Flag, declarationProblem string, now time.Time) FlagCard
 orchestration: func Flux(ctx context.Context, inputs FluxInputs) error
@@ -1651,9 +1654,6 @@ orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.I
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
-orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
-orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
-orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
 orchestration: type DashboardLine struct {Changed bool Text string}
 orchestration: type DashboardOptions struct {FromRecords bool Records []RecordedInstance DryRun bool}
 orchestration: type DashboardPorts struct {Reader kube.Reader Data kube.Data ClickStack clickstack.Opener}

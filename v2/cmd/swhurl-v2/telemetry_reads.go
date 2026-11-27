@@ -5,8 +5,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/telemetry"
 )
 
@@ -256,11 +256,11 @@ func (g tracedGitHub) Pull(ctx context.Context, repository, token string, number
 
 // tracedSource is the pinned tree's source, with a span per read: the bundle's cache answers without one.
 type tracedSource struct {
-	inner orchestration.ConsoleSource
+	inner console.Source
 	trace *consoleTelemetry
 }
 
-func (t *consoleTelemetry) traceSource(s orchestration.ConsoleSource) orchestration.ConsoleSource {
+func (t *consoleTelemetry) traceSource(s console.Source) console.Source {
 	if t == nil || s == nil {
 		return s
 	}

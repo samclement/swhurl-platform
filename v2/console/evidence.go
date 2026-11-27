@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -22,7 +21,7 @@ const keptEvidence = 240
 // nothing, so the next page reads again. It never adds to Bundle's trees, which stay whole: a commit whose tree
 // Bundle already holds is answered from it, and Bundle's source does every read.
 type ConsoleEvidence struct {
-	Bundle *orchestration.ConsoleBundle
+	Bundle *Bundle
 	// Max is how many renders are kept, the oldest going first; zero is keptEvidence.
 	Max int
 

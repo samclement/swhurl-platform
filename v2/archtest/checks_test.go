@@ -123,35 +123,39 @@ func TestWorkflowDependencies(t *testing.T) {
 }
 
 // Exercise the approved production registry, not just a hypothetical local exception. The console's
-// composition may call health; neither the reverse edge nor other peers gain permission.
+// composition may call health; orchestration, which no longer holds it, may not, and neither the reverse edge nor
+// other peers gain permission.
 func TestHealthWorkflowDependency(t *testing.T) {
 	m := fixture(t, map[string]string{
-		"orchestration/console.go": "package orchestration\n\nimport \"example.com/v2/health\"\n",
-		"orchestration/other.go":   "package orchestration\n\nimport \"example.com/v2/recovery\"\n",
-		"health/reverse.go":        "package health\n\nimport \"example.com/v2/orchestration\"\n",
-		"health/peer.go":           "package health\n\nimport \"example.com/v2/recovery\"\n",
-		"health/down.go":           "package health\n\nimport (\n\"example.com/v2/health/rules\"\n\"example.com/v2/adapters/kube\"\n)\n",
-		"health/rules/up.go":       "package rules\n\nimport \"example.com/v2/health\"\n",
-		"cmd/swhurl-v2/verify.go":  "package main\n\nimport \"example.com/v2/health\"\n",
+		"console/checks.go":       "package console\n\nimport \"example.com/v2/health\"\n",
+		"orchestration/other.go":  "package orchestration\n\nimport \"example.com/v2/recovery\"\n",
+		"orchestration/checks.go": "package orchestration\n\nimport \"example.com/v2/health\"\n",
+		"health/reverse.go":       "package health\n\nimport \"example.com/v2/orchestration\"\n",
+		"health/peer.go":          "package health\n\nimport \"example.com/v2/recovery\"\n",
+		"health/down.go":          "package health\n\nimport (\n\"example.com/v2/health/rules\"\n\"example.com/v2/adapters/kube\"\n)\n",
+		"health/rules/up.go":      "package rules\n\nimport \"example.com/v2/health\"\n",
+		"cmd/swhurl-v2/verify.go": "package main\n\nimport \"example.com/v2/health\"\n",
 	})
 	expect(t, checkLayers(m, WorkflowDependencies),
 		"layers health/peer.go:3: health (layer 2) imports recovery (layer 2)",
 		"layers health/reverse.go:3: health (layer 2) imports orchestration (layer 2)",
 		"layers health/rules/up.go:3: health/rules (layer 0) imports health (layer 2)",
+		"layers orchestration/checks.go:3: orchestration (layer 2) imports health (layer 2)",
 		"layers orchestration/other.go:3: orchestration (layer 2) imports recovery (layer 2)")
-	if !slices.Contains(lines(checkLayers(m, nil)), "layers orchestration/console.go:3: orchestration (layer 2) imports health (layer 2)") {
+	if !slices.Contains(lines(checkLayers(m, nil)), "layers console/checks.go:3: console (layer 2) imports health (layer 2)") {
 		t.Fatal("the console edge must require explicit permission")
 	}
 }
 
-// The console's composition may call apps' status; the reverse edge and apps' peers gain no permission, and
-// apps reaches provisioning's compilation as a pure package, not through orchestration. Apps' create writes its
-// records through provisioning; edit and SetTeam re-render through it, and provisioning does not reach back.
+// The console's composition may call apps' status; orchestration, which no longer holds it, the reverse edge and
+// apps' peers gain no permission, and apps reaches provisioning's compilation as a pure package, not through
+// orchestration. Apps' create writes its records through provisioning; edit and SetTeam re-render through it, and provisioning does not reach back.
 // Removal uses connectivity's pure relationship verdicts and the file adapter, not a peer workflow.
 // Recovery's restore is given apps' status by the command, so recovery importing apps is refused.
 func TestAppsWorkflowDependency(t *testing.T) {
 	m := fixture(t, map[string]string{
-		"orchestration/console.go":    "package orchestration\n\nimport \"example.com/v2/apps\"\n",
+		"console/status.go":           "package console\n\nimport \"example.com/v2/apps\"\n",
+		"orchestration/status.go":     "package orchestration\n\nimport \"example.com/v2/apps\"\n",
 		"apps/reverse.go":             "package apps\n\nimport \"example.com/v2/orchestration\"\n",
 		"apps/peer.go":                "package apps\n\nimport \"example.com/v2/delivery\"\n",
 		"recovery/observe.go":         "package recovery\n\nimport \"example.com/v2/apps\"\n",
@@ -168,10 +172,11 @@ func TestAppsWorkflowDependency(t *testing.T) {
 	expect(t, checkLayers(m, WorkflowDependencies),
 		"layers apps/peer.go:3: apps (layer 2) imports delivery (layer 2)",
 		"layers apps/reverse.go:3: apps (layer 2) imports orchestration (layer 2)",
+		"layers orchestration/status.go:3: orchestration (layer 2) imports apps (layer 2)",
 		"layers provisioning/back.go:3: provisioning (layer 2) imports apps (layer 2)",
 		"layers provisioning/rules/up.go:3: provisioning/rules (layer 0) imports apps (layer 2)",
 		"layers recovery/observe.go:3: recovery (layer 2) imports apps (layer 2)")
-	if !slices.Contains(lines(checkLayers(m, nil)), "layers orchestration/console.go:3: orchestration (layer 2) imports apps (layer 2)") {
+	if !slices.Contains(lines(checkLayers(m, nil)), "layers console/status.go:3: console (layer 2) imports apps (layer 2)") {
 		t.Fatal("the console edge must require explicit permission")
 	}
 	if !slices.Contains(lines(checkLayers(m, nil)), "layers apps/edit.go:3: apps (layer 2) imports provisioning (layer 2)") {

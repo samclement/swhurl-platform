@@ -116,7 +116,7 @@ func (s *consoleServer) pending(w http.ResponseWriter, r *http.Request, instance
 // readApp is one instance's page and the changes that made it.
 func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tree map[string][]byte,
 	rows []pages.AppRow, jobs []pages.Job) (appData, error) {
-	page, err := s.reads().AppPage(ctx, instance, tree, rows, jobs, s.flags.Card)
+	page, err := s.reads().AppPage(ctx, instance, tree, rows, jobs)
 	if err != nil {
 		return appData{}, err
 	}

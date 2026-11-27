@@ -10,7 +10,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/console"
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -72,7 +71,7 @@ func TestPageReadFailures(t *testing.T) {
 		t.Fatalf("checks ran after the units failed: %v", cluster.Reads)
 	}
 	cluster = kubetest.New(kubetest.Answers{})
-	server := console.Server{Bundle: &orchestration.ConsoleBundle{Source: unresolved{}}, Collector: cluster, Reader: cluster}
+	server := console.Server{Bundle: &console.Bundle{Source: unresolved{}}, Collector: cluster, Reader: cluster}
 	if _, err := server.Overview(context.Background()); err == nil ||
 		err.Error() != "Go status unavailable: github: rate limited" {
 		t.Fatalf("overview error = %v", err)

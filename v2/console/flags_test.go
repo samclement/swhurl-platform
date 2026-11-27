@@ -73,8 +73,9 @@ func TestTheFlagCardWithoutAKey(t *testing.T) {
 	}
 }
 
-// A change says what the store holds after it, or why it was not made and with which status: a store that cannot
-// be opened is the broker's failure, a value the declaration refuses is the form's.
+// A change made audits who made it and what the store holds after it; one not made says why and with which status,
+// and audits nothing: a store that cannot be opened is the broker's failure, a value the declaration refuses is the
+// form's.
 func TestAFlagChangeSaysWhatTheStoreHolds(t *testing.T) {
 	tree := map[string][]byte{console.FlagDocument(flagInstance): []byte(
 		`{"theme": {"type": "string", "default": "plain", "enum": ["plain", "dark"]}}`)}
@@ -83,13 +84,15 @@ func TestAFlagChangeSaysWhatTheStoreHolds(t *testing.T) {
 		name    string
 		opens   []error
 		change  console.FlagChange
-		done    string
+		audit   string
 		problem string
 		status  int
 		writes  int
 	}{
-		{"set", []error{nil}, console.FlagChange{Name: "theme", Set: true, Value: "dark"}, `= "dark"`, "", 0, 1},
-		{"clear", []error{nil}, console.FlagChange{Name: "theme"}, "cleared", "", 0, 1},
+		{"set", []error{nil}, console.FlagChange{Name: "theme", Set: true, Value: "dark", Identity: "sam@swhurl.com"},
+			"[AUDIT] sam@swhurl.com flag demo-shop/staging theme = \"dark\"", "", 0, 1},
+		{"clear", []error{nil}, console.FlagChange{Name: "theme", Identity: "sam@swhurl.com"},
+			"[AUDIT] sam@swhurl.com flag demo-shop/staging theme cleared", "", 0, 1},
 		{"refused value", []error{nil}, console.FlagChange{Name: "theme", Set: true, Value: "loud"}, "",
 			"theme: ", http.StatusBadRequest, 0},
 		{"undeclared", []error{nil}, console.FlagChange{Name: "shout", Set: true, Value: "x"}, "",
@@ -100,10 +103,12 @@ func TestAFlagChangeSaysWhatTheStoreHolds(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fake := natstest.New()
 			store, _, _ := flagStore(t, fake, test.opens...)
-			done, problem, status := store.Change(context.Background(), flagInstance, tree, test.change)
-			if done != test.done || !strings.HasPrefix(problem, test.problem) || (problem == "") != (test.problem == "") ||
-				status != test.status || len(fake.Writes) != test.writes {
-				t.Fatalf("%q, %q, %d, %d writes", done, problem, status, len(fake.Writes))
+			var audit strings.Builder
+			store.Audit = func(line string) { audit.WriteString(line) }
+			problem, status := store.Change(context.Background(), flagInstance, tree, test.change)
+			if audit.String() != test.audit || !strings.HasPrefix(problem, test.problem) ||
+				(problem == "") != (test.problem == "") || status != test.status || len(fake.Writes) != test.writes {
+				t.Fatalf("%q, %q, %d, %d writes", audit.String(), problem, status, len(fake.Writes))
 			}
 		})
 	}

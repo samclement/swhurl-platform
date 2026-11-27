@@ -120,8 +120,8 @@ type consoleConfig struct {
 	NatsURL    string
 	Now        func() time.Time
 	// Owner is the pod this process is: the owner a job's record names, so a pod that replaces it knows which jobs
-	// were cut short. Log receives one audit line for each job's start and end, as a pod's log should. Secrets are
-	// kept out of every job line and record; the console's tokens are the ones it starts with.
+	// were cut short. Log receives one audit line for each job's start and end and each flag change made, as a pod's
+	// log should. Secrets are kept out of every job line and record; the console's tokens are the ones it starts with.
 	Owner   string
 	Log     io.Writer
 	Secrets []string
@@ -134,7 +134,7 @@ type consoleConfig struct {
 
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
 type consoleServer struct {
-	bundle     *orchestration.ConsoleBundle
+	bundle     *console.Bundle
 	evidence   *console.ConsoleEvidence // merge commits' renders for Activity, read through bundle's source
 	reader     kube.Reader
 	writer     kube.Writer
@@ -170,8 +170,6 @@ type consoleServer struct {
 	// record and runs nothing.
 	jobs   *orchestration.Jobs
 	redact *console.Redactor
-	// log receives the console's audit lines: a flag change, and each job's start and end.
-	log io.Writer
 	// requests writes the console's own request and job lines, in one lock so a line is never interleaved; it is nil
 	// when the server keeps no log.
 	requests *jsonLog
@@ -190,7 +188,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		data: config.Data, now: config.Now,
 		appConsole: trace.traceGitHub(github.NewConsole(nil)), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		reposToken: config.ReposToken, hookToken: config.HookToken,
-		flags: flagStoreOf(config), redact: &console.Redactor{}, log: config.Log,
+		flags: flagStoreOf(config), redact: &console.Redactor{},
 		stacks:   map[string]stackEntry{},
 		events:   consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second},
 		requests: consoleLog(config.Log, config.Now)}
@@ -213,7 +211,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		server.pin(trace.traceSource(localConsole{snapshots: snapshots, root: "."}))
 		server.identity = devIdentity
 	} else {
-		server.pin(trace.traceSource(orchestration.ConsoleSourceOf{Console: server.github, Repository: config.Repository,
+		server.pin(trace.traceSource(console.SourceOf{Console: server.github, Repository: config.Repository,
 			Token: config.Token}))
 	}
 	static, err := fs.Sub(consoleFiles, "console/static")
@@ -232,7 +230,8 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 }
 
 // flagStoreOf is the console's flag store, signing in at the broker's in-cluster address unless the environment
-// names another. A failed sign-in is logged as well as shown on the card.
+// names another. A failed sign-in is logged as well as shown on the card, and each change made is audited in the
+// console's log.
 func flagStoreOf(config consoleConfig) *console.FlagStore {
 	url := config.NatsURL
 	if url == "" {
@@ -245,13 +244,18 @@ func flagStoreOf(config consoleConfig) *console.FlagStore {
 		}
 		return store, err
 	}
-	return &console.FlagStore{Seed: config.NatsSeed, URL: url, Open: open, Now: config.Now}
+	audit := func(line string) {
+		if config.Log != nil {
+			fmt.Fprintln(config.Log, line)
+		}
+	}
+	return &console.FlagStore{Seed: config.NatsSeed, URL: url, Open: open, Now: config.Now, Audit: audit}
 }
 
 // pin is the source every tree this server reads comes from: main's whole trees in bundle, and beside them the
 // merge commits' evidence Activity follows a change by, read through the same source.
-func (s *consoleServer) pin(source orchestration.ConsoleSource) {
-	s.bundle = &orchestration.ConsoleBundle{Source: source}
+func (s *consoleServer) pin(source console.Source) {
+	s.bundle = &console.Bundle{Source: source}
 	s.evidence = &console.ConsoleEvidence{Bundle: s.bundle}
 }
 
@@ -259,7 +263,7 @@ func (s *consoleServer) pin(source orchestration.ConsoleSource) {
 // cluster, GitHub's comparisons, and the stacks and jobs this server keeps.
 func (s *consoleServer) reads() console.Server {
 	return console.Server{Bundle: s.bundle, Reader: s.reader, Collector: s.collector, Data: s.data, Compare: s.compare,
-		Now: s.now, Repository: s.repository, GitHub: s.hasGitHub, Stacks: s.stacksOf, Jobs: s.jobsOf}
+		Now: s.now, Repository: s.repository, GitHub: s.hasGitHub, Stacks: s.stacksOf, Jobs: s.jobsOf, Flags: s.flags.Card}
 }
 
 // startJobs gives the server the registry of jobs it runs: the record its pod keeps and this process's own, so a job
@@ -304,7 +308,7 @@ func (l localConsole) Tree(_ context.Context, revision string) (map[string][]byt
 	if err != nil {
 		return nil, err
 	}
-	return orchestration.FilterTarball(archive, false)
+	return console.FilterTarball(archive, false)
 }
 
 // Files is the paths at one commit of the checkout, from the same archive Tree reads: nothing reaches GitHub.

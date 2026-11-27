@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -23,6 +24,9 @@ type FlagStore struct {
 	// Open signs in to NATS at a URL with a seed, answering on an inbox prefix.
 	Open func(ctx context.Context, url, seed, inbox string) (nats.KV, error)
 	Now  func() time.Time
+	// Audit receives one line for each change made, so the pod's log says who changed which override; the command
+	// writes it, and nil drops it.
+	Audit func(line string)
 
 	mu      sync.Mutex
 	kv      nats.KV
@@ -65,21 +69,23 @@ func (f *FlagStore) Card(ctx context.Context, instance pages.Instance, declarati
 	return orchestration.Flags(ctx, store, instance.Env, instance.App, declaration, problem, f.Now()), store != nil
 }
 
-// FlagChange is one form's change to one flag's override: set to Value's text, or cleared.
+// FlagChange is one form's change to one flag's override, asked by Identity: set to Value's text, or cleared.
 type FlagChange struct {
-	Name  string
-	Set   bool
-	Value string
+	Name     string
+	Set      bool
+	Value    string
+	Identity string
 }
 
 // Change sets or clears one flag's override for an instance, typed by the declaration the pinned tree's offers state.
-// It is not a pull request: the override is written to NATS at once. Done is what the write left, as the card reads it
-// back ("cleared", or "= " and the stored value); a problem comes with the status the console answers it with.
+// It is not a pull request: the override is written to NATS at once, which is why a change made writes one audit
+// line, ending in what the write left as the card reads it back ("cleared", or "= " and the stored value). A problem
+// comes with the status the console answers it with, and writes no line.
 func (f *FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte,
-	change FlagChange) (done, problem string, status int) {
+	change FlagChange) (problem string, status int) {
 	store, err := f.open(ctx)
 	if err != nil {
-		return "", "Overrides could not be written: " + err.Error(), http.StatusBadGateway
+		return "Overrides could not be written: " + err.Error(), http.StatusBadGateway
 	}
 	declaration, declarationProblem := orchestration.FlagDeclaration(tree[FlagDocument(instance)])
 	if change.Set {
@@ -88,13 +94,17 @@ func (f *FlagStore) Change(ctx context.Context, instance pages.Instance, tree ma
 		err = orchestration.ClearFlag(ctx, store, instance.Env, instance.App, change.Name)
 	}
 	if err != nil {
-		return "", change.Name + ": " + err.Error(), http.StatusBadRequest
+		return change.Name + ": " + err.Error(), http.StatusBadRequest
 	}
-	if !change.Set {
-		return "cleared", "", 0
+	done := "cleared"
+	if change.Set {
+		card := orchestration.Flags(ctx, store, instance.Env, instance.App, declaration, declarationProblem, f.Now())
+		done = "= " + storedValue(card, change.Name)
 	}
-	card := orchestration.Flags(ctx, store, instance.Env, instance.App, declaration, declarationProblem, f.Now())
-	return "= " + storedValue(card, change.Name), "", 0
+	if f.Audit != nil {
+		f.Audit(fmt.Sprintf("[AUDIT] %s flag %s/%s %s %s", change.Identity, instance.App, instance.Env, change.Name, done))
+	}
+	return "", 0
 }
 
 // storedValue is the value the write left one flag at, as the card reads it back.

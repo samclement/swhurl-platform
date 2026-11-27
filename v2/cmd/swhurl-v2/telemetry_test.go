@@ -13,6 +13,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube/kubetest"
 	"github.com/samclement/swhurl-platform/v2/adapters/otlp/otlptest"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
@@ -118,7 +119,7 @@ func TestAPageIsOneTraceWithItsReadsInside(t *testing.T) {
 	server.github = trace.traceGitHub(server.github)
 	cluster := kubetest.New(kubetest.Answers{})
 	server.reader, server.collector = trace.traceReader(cluster), trace.traceCollector(cluster)
-	server.pin(trace.traceSource(orchestration.ConsoleSourceOf{Console: server.github, Repository: "owner/repo", Token: "tok"}))
+	server.pin(trace.traceSource(console.SourceOf{Console: server.github, Repository: "owner/repo", Token: "tok"}))
 	handler := logRequests(server.requests, trace, server.identityMiddleware(server.routes()))
 	request := httptest.NewRequest("GET", "/catalogue", nil)
 	request.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")

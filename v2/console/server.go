@@ -16,16 +16,15 @@ import (
 	healthrules "github.com/samclement/swhurl-platform/v2/health/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/observe"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
 
 // Server is what the console's pages read, as the command composes it from the server it runs: the pinned tree's
 // source, the cluster, GitHub's comparisons and the clock, and the readings the command keeps for itself (each app's
-// stack, the jobs). Every read carries the request's context; nothing here writes.
+// stack, the jobs, the flag store's cards). Every read carries the request's context; nothing here writes.
 type Server struct {
-	Bundle    *orchestration.ConsoleBundle
+	Bundle    *Bundle
 	Reader    kube.Reader
 	Collector kube.Collector
 	// Data is the console's own records (dashboards); nil reads none.
@@ -42,6 +41,8 @@ type Server struct {
 	Stacks func(ctx context.Context, apps []string) map[string]string
 	// Jobs is the console's jobs, newest first.
 	Jobs func(ctx context.Context) []pages.Job
+	// Flags is the flag store's card for an instance, which its app page shows.
+	Flags FlagCards
 }
 
 // checkSource is who the platform checks a page shows say ran them.

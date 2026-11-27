@@ -180,16 +180,14 @@ var Orchestration = []string{"orchestration", "recovery", "delivery", "notificat
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints
 // must be declared use-case packages; self edges and cycles are forbidden. The console's composition reads the
-// platform checks through health's collector and every instance's status through apps; orchestration's edges to
-// health and apps carried that composition before it moved, and the console slice retires them with the console's
-// orchestration files. Recovery's restore takes apps' status as a port the command wires,
-// so it needs no edge. Provisioning owns writing an instance's folder and records: apps' create, edit and SetTeam
-// and delivery's deploy and promote write through it. Apps' create and orchestration's mint also use provisioning's
-// encrypted seed construction; mint keeps its identity workflow. The console capability reaches what it has not
-// moved yet, such as publishing a change, through orchestration; the edge goes when the console slice retires the
-// console's orchestration files.
+// platform checks through health's collector and every instance's status through apps. Recovery's restore takes
+// apps' status as a port the command wires, so it needs no edge. Provisioning owns writing an instance's folder and
+// records: apps' create, edit and SetTeam and delivery's deploy and promote write through it. Apps' create and
+// orchestration's mint also use provisioning's encrypted seed construction; mint keeps its identity workflow. The
+// console holds no files in orchestration; it still runs its jobs through orchestration's registry and reads and
+// writes flags and opens a registry change through orchestration's operations.
 var WorkflowDependencies = map[string][]string{
-	"orchestration": {"health", "apps", "provisioning"},
+	"orchestration": {"provisioning"},
 	"console":       {"orchestration", "health", "apps"},
 	"delivery":      {"provisioning"},
 	"apps":          {"provisioning"},

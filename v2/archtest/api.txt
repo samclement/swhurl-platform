@@ -1906,6 +1906,7 @@ recovery/rules: const BackupNotAssessed = "not_assessed"
 recovery/rules: const BackupStale = "stale"
 recovery/rules: const BackupSuspended = "suspended"
 recovery/rules: const BackupUnavailable = "unavailable"
+recovery/rules: const MinReadURLTTL = 20 * time.Minute
 recovery/rules: const NotRead = "not_read"
 recovery/rules: const Present = "present"
 recovery/rules: const ReasonAnotherInstance = "metadata_names_another_instance"
@@ -1941,10 +1942,12 @@ recovery/rules: func (RestorePlan) Ready() bool
 recovery/rules: func ArchiveMetadataOf(document []byte) (ArchiveMetadata, error)
 recovery/rules: func BackupLocation(uri string) (ArchiveQuery, bool)
 recovery/rules: func InstanceArchive(listed ArchiveList, namespace string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
+recovery/rules: func InstanceArchiveQuery(root, namespace string) (ArchiveQuery, error)
 recovery/rules: func MetadataKey(archive string) string
 recovery/rules: func NewestArchive(listed ArchiveList, suffix string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
 recovery/rules: func RestoreOf(input RestoreInput) RestorePlan
 recovery/rules: func SelectArchive(listed ArchiveList, prefix, key string, maxAge time.Duration, now time.Time) (ArchiveReport, error)
+recovery/rules: func ValidateReadURLTTL(ttl time.Duration) error
 recovery/rules: type Archive struct {Key string LastModified time.Time}
 recovery/rules: type ArchiveList struct {Query ArchiveQuery Status string Reason string Objects []Archive}
 recovery/rules: type ArchiveMetadata struct {SHA256, PlainSHA256 string Tables int32 Source string}

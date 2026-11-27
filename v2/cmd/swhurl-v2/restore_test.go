@@ -411,59 +411,50 @@ func TestTheBackupSelectorExcludesTheRestorePodLabel(t *testing.T) {
 	}
 }
 
-// Preparing a signed download reads the profile before constructing a reader, and stops at the first
-// failure. The query is the same namespace-scoped one used when listing archives for status and planning.
-func TestRestoreArchiveReader(t *testing.T) {
-	profile := fixture(t, "profile.json")
-	readerFailure := &s3.Error{Code: s3.RefusedRequest, Subject: "credentials", Reason: "missing"}
-	for _, tt := range []struct {
-		name       string
-		profile    []byte
-		readErr    error
-		readerErr  error
-		wantStatus int
-		wantReader bool
-		wantError  string
-	}{
-		{"ready", profile, nil, nil, 0, true, ""},
-		{"unreadable profile", nil, os.ErrNotExist, nil, 1, false, "io: profile: cannot read input file"},
-		{"malformed profile", []byte("{"), nil, nil, 2, false, "invalid"},
-		{"invalid backup URI", bytes.Replace(profile, []byte("s3://"), []byte("https://"), 1), nil, nil, 2, false, "backup.s3Uri"},
-		{"reader refused", profile, nil, readerFailure, 2, true, readerFailure.Error()},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var diagnostic bytes.Buffer
-			reads, readers := 0, 0
-			fake := s3test.New(s3test.Scenario{})
-			c := cli{diagnostic: &diagnostic,
-				readFile: func(path string) ([]byte, error) {
-					reads++
-					if path != "profile.json" {
-						t.Fatalf("read %q", path)
-					}
-					return tt.profile, tt.readErr
-				},
-				archives: func(bucket, region string) (s3.Reader, error) {
-					readers++
-					if bucket != "swhurl-platform-backups-110927251694" || region != "eu-west-2" {
-						t.Fatalf("reader for %q in %q", bucket, region)
-					}
-					return fake, tt.readerErr
-				}}
-			reader, query, status := c.archiveOf(request{profile: "profile.json", region: "eu-west-2"},
-				observe.Target{Namespace: "notes-prod"})
-			if status != tt.wantStatus || reads != 1 || (readers == 1) != tt.wantReader {
-				t.Fatalf("exit %d, reads %d, readers %d: %s", status, reads, readers, diagnostic.String())
-			}
-			if status != 0 {
-				if reader != nil || query != (rules.ArchiveQuery{}) || !strings.Contains(diagnostic.String(), tt.wantError) {
-					t.Fatalf("reader %v, query %v: %s", reader, query, diagnostic.String())
-				}
-				return
-			}
-			if reader != fake || query != (rules.ArchiveQuery{Bucket: "swhurl-platform-backups-110927251694", Prefix: "app-sqlite/notes-prod/"}) || diagnostic.Len() != 0 {
-				t.Fatalf("reader %v, query %v: %s", reader, query, diagnostic.String())
-			}
-		})
+// A confirmed restore reads each document once: the profile's backup root is decoded once and serves the plan's
+// listing and the signed read alike, and the use case is given the documents the command already read.
+func TestRestoreReadsEachDocumentOnce(t *testing.T) {
+	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
+	server := api.serve(t)
+	bucket := s3test.New(restoreScenario(t, "sqlite-20261026T071500Z.json", readyMetadata))
+	args := restoreArgs(t, kubeconfig(t, server), "--confirm", "demo-orders/staging", "--age-key-file", ageKeyFile(t))
+	reads := map[string]int{}
+	readFile := func(path string) ([]byte, error) {
+		reads[path]++
+		return os.ReadFile(path)
+	}
+	var out, diagnostic bytes.Buffer
+	status := runWithArchives(args, &out, &diagnostic, readFile, files.New(),
+		func(string, string) (s3.Reader, error) { return bucket, nil })
+	if status != 0 {
+		t.Fatalf("exit %d: %s", status, diagnostic.String())
+	}
+	for _, flag := range []string{"--profile", "--egress"} {
+		path := args[slices.Index(args, flag)+1]
+		if reads[path] != 1 {
+			t.Fatalf("%s was read %d times", flag, reads[path])
+		}
+	}
+	if len(bucket.Presigns) != 1 {
+		t.Fatalf("the presigned reads are %v", bucket.Presigns)
+	}
+}
+
+// A profile whose backup root is not one is refused before the cluster or the bucket is asked anything.
+func TestRestoreRefusesAnInvalidBackupRootFirst(t *testing.T) {
+	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true}
+	args := restoreArgs(t, kubeconfig(t, api.serve(t)), "--confirm", "demo-orders/staging")
+	profile := args[slices.Index(args, "--profile")+1]
+	data := bytes.Replace(fixture(t, "profile.json"), []byte("s3://"), []byte("https://"), 1)
+	if err := os.WriteFile(profile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	readers := 0
+	status, stdout, stderr := runRestore(t, func(string, string) (s3.Reader, error) {
+		readers++
+		return s3test.New(s3test.Scenario{}), nil
+	}, args...)
+	if status != 2 || stdout != "" || readers != 0 || len(api.requests) != 0 || !strings.Contains(stderr, "backup.s3Uri") {
+		t.Fatalf("exit %d, readers %d, requests %d, stdout %q, stderr %q", status, readers, len(api.requests), stdout, stderr)
 	}
 }

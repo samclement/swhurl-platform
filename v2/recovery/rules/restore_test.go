@@ -254,3 +254,43 @@ func TestBackupLocation(t *testing.T) {
 		}
 	}
 }
+
+// An instance's archives are its namespace's directory under the backup root, nested roots included. A root that
+// is not a directory URI, or a namespace that would not confine the prefix, gives no query rather than a broader one.
+func TestArchiveQueryIsTheInstancesOwnDirectory(t *testing.T) {
+	for _, tt := range []struct {
+		name, root, namespace string
+		want                  rules.ArchiveQuery
+		wantError             string
+	}{
+		{"staging", "s3://backups/app-sqlite/", "notes-staging",
+			rules.ArchiveQuery{Bucket: "backups", Prefix: "app-sqlite/notes-staging/"}, ""},
+		{"nested root", "s3://other-backups/platform/databases/", "notes-prod",
+			rules.ArchiveQuery{Bucket: "other-backups", Prefix: "platform/databases/notes-prod/"}, ""},
+		{"not S3", "https://backups/app-sqlite/", "notes-prod", rules.ArchiveQuery{},
+			"invalid: backup.s3Uri: expected_an_s3_uri_ending_with_a_slash"},
+		{"no trailing slash", "s3://backups/app-sqlite", "notes-prod", rules.ArchiveQuery{},
+			"invalid: backup.s3Uri: expected_an_s3_uri_ending_with_a_slash"},
+		{"bucket root", "s3://backups/", "notes-prod", rules.ArchiveQuery{},
+			"invalid: archive.prefix: not_confined_to_the_instance"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			query, err := rules.InstanceArchiveQuery(tt.root, tt.namespace)
+			if query != tt.want || (err == nil) != (tt.wantError == "") || (err != nil && err.Error() != tt.wantError) {
+				t.Fatalf("query %+v, error %v", query, err)
+			}
+		})
+	}
+}
+
+// A restore's read URL must outlive the restore window: the minimum is accepted, anything shorter refused.
+func TestRestoreReadURLTTLCoversTheRestoreWindow(t *testing.T) {
+	for ttl, ok := range map[time.Duration]bool{
+		rules.MinReadURLTTL: true, time.Hour: true, rules.MinReadURLTTL - time.Second: false, 90 * time.Second: false,
+	} {
+		err := rules.ValidateReadURLTTL(ttl)
+		if (err == nil) != ok || (err != nil && err.Error() != "invalid: url-ttl: shorter_than_the_restore_window") {
+			t.Errorf("%s: %v", ttl, err)
+		}
+	}
+}

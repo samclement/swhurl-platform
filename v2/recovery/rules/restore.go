@@ -1,6 +1,9 @@
 package rules
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
 
 // The states a restore plan can have. A plan is not an instruction: it says whether the archive this instance
 // would be restored from is one it can verify, and what the operator must run.
@@ -23,6 +26,19 @@ const (
 	ReasonNoTables           = "metadata_has_no_table_count"
 	ReasonNotRestorableStale = "archive_older_than_the_threshold"
 )
+
+// MinReadURLTTL is the shortest expiry a restore's presigned read URL may have: the wait for the app's pods to
+// stop and the restore Job's own deadline, with a margin, so the URL cannot expire while the pod that needs it
+// is still allowed to run.
+const MinReadURLTTL = 20 * time.Minute
+
+// ValidateReadURLTTL refuses a read URL's expiry shorter than the restore window.
+func ValidateReadURLTTL(ttl time.Duration) error {
+	if ttl < MinReadURLTTL {
+		return invalid("url-ttl", "shorter_than_the_restore_window")
+	}
+	return nil
+}
 
 // ArchiveMetadata is what the backup job records beside an archive: the archive's own checksum, the
 // plaintext's, its table count, and the instance it came from. A restore cannot verify without them, so an

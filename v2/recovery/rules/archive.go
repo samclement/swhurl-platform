@@ -135,6 +135,21 @@ func BackupLocation(uri string) (ArchiveQuery, bool) {
 	return ArchiveQuery{Bucket: bucket, Prefix: prefix}, true
 }
 
+// InstanceArchiveQuery is where one instance's archives live: its namespace's directory under the platform's
+// backup root, `s3://<bucket>/<prefix>/`. A root that is not such a URI, or a namespace that would not confine
+// the prefix to the instance, is refused rather than turned into a broader listing.
+func InstanceArchiveQuery(root, namespace string) (ArchiveQuery, error) {
+	location, ok := BackupLocation(root)
+	if !ok {
+		return ArchiveQuery{}, invalid("backup.s3Uri", "expected_an_s3_uri_ending_with_a_slash")
+	}
+	query := ArchiveQuery{Bucket: location.Bucket, Prefix: location.Prefix + namespace + "/"}
+	if err := validateArchiveQuery(query, namespace); err != nil {
+		return ArchiveQuery{}, err
+	}
+	return query, nil
+}
+
 // validateArchiveQuery keeps a listing inside the instance's own directory: a bucket, and a prefix that ends
 // with the instance's namespace. Anything else would read another instance's archives or the whole bucket.
 func validateArchiveQuery(query ArchiveQuery, namespace string) error {

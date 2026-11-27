@@ -34,9 +34,6 @@ const (
 	// defaultURLTTL is how long the pod's read URL stays valid: longer than the Job's deadline, and no
 	// longer than it needs to be.
 	defaultURLTTL = time.Hour
-	// minURLTTL is the shortest expiry v2 accepts: the pods-gone bound and the Job's own deadline, so a URL
-	// cannot expire while the pod that needs it is still allowed to run.
-	minURLTTL = 20 * time.Minute
 	// restoreTimeout bounds one run's requests as a whole: the waits inside it are the use case's.
 	restoreTimeout = 25 * time.Minute
 )
@@ -53,7 +50,11 @@ func (c cli) restore(r request) int {
 	if status != 0 {
 		return status
 	}
-	prepared, status := c.prepareRestore(r, inputs, maxAge)
+	root, err := backupRootOf(inputs.Profile)
+	if err != nil {
+		return fail(c.diagnostic, err)
+	}
+	prepared, status := c.prepareRestore(r, inputs, root, maxAge)
 	if status != 0 {
 		return status
 	}
@@ -73,12 +74,13 @@ func (c cli) restore(r request) int {
 		fmt.Fprintln(c.diagnostic, restoreSummary(prepared.Plan))
 		return emit(c.out, c.diagnostic, document)
 	}
-	return c.performRestore(r, spec, release, prepared)
+	return c.performRestore(r, inputs, root, spec, release, prepared)
 }
 
 // prepareRestore asks recovery for what a restore is decided from: the observation is apps' status over the
 // connection status takes, and the archives are the instance's own prefix read with the operator's credentials.
-func (c cli) prepareRestore(r request, inputs provisioningrules.Inputs, maxAge time.Duration) (recovery.Prepared, int) {
+func (c cli) prepareRestore(r request, inputs provisioningrules.Inputs, root string,
+	maxAge time.Duration) (recovery.Prepared, int) {
 	request, status := c.liveStatusInputs(r, inputs.Profile, maxAge)
 	if status != 0 {
 		return recovery.Prepared{}, status
@@ -94,12 +96,7 @@ func (c cli) prepareRestore(r request, inputs provisioningrules.Inputs, maxAge t
 			return apps.Status(ctx, request)
 		},
 		Archives: func(namespace string) (s3.Reader, rules.ArchiveQuery, error) {
-			query, err := archiveQueryOf(inputs.Profile, namespace)
-			if err != nil {
-				return nil, rules.ArchiveQuery{}, err
-			}
-			reader, err := c.archives(query.Bucket, r.region)
-			return reader, query, err
+			return c.instanceArchives(r, root, namespace)
 		},
 		From: r.from, MaxAge: maxAge, Now: func() time.Time { return time.Now().UTC() },
 	})
@@ -112,8 +109,8 @@ func (c cli) prepareRestore(r request, inputs provisioningrules.Inputs, maxAge t
 // performRestore is the half that changes the cluster: recovery admits the request, this command reads the two
 // credentials, the use case runs, and this command reports what it did. A refusal changed nothing and is an exit
 // 2; a failure part-way is written as the document and is an exit 1.
-func (c cli) performRestore(r request, spec kernel.InstanceSpec, release kernel.ReleaseBundle,
-	prepared recovery.Prepared) int {
+func (c cli) performRestore(r request, documents provisioningrules.Inputs, root string, spec kernel.InstanceSpec,
+	release kernel.ReleaseBundle, prepared recovery.Prepared) int {
 	if err := prepared.Confirm(spec, r.confirm); err != nil {
 		return fail(c.diagnostic, err)
 	}
@@ -121,7 +118,7 @@ func (c cli) performRestore(r request, spec kernel.InstanceSpec, release kernel.
 	if status != 0 {
 		return status
 	}
-	readURL, status := c.presignedRead(r, prepared.Report.Target, prepared.Plan)
+	readURL, status := c.presignedRead(r, root, prepared.Report.Target, prepared.Plan)
 	if status != 0 {
 		return status
 	}
@@ -129,10 +126,7 @@ func (c cli) performRestore(r request, spec kernel.InstanceSpec, release kernel.
 	if status != 0 {
 		return status
 	}
-	inputs, status := c.restoreInputs(r, prepared, identity, readURL, cluster)
-	if status != 0 {
-		return status
-	}
+	inputs := restoreInputs(documents, prepared, identity, readURL, cluster)
 	// An interrupt stops the restore the same way a failure does: the use case unwinds on a context of its own,
 	// so the app is put back rather than left stopped. A SIGTERM is deliberately not caught here — the console catches
 	// one to drain its jobs, and a restore must leave the state any crash would.
@@ -164,32 +158,13 @@ func (c cli) reportRestore(spec kernel.InstanceSpec, release kernel.ReleaseBundl
 	return max(emit(c.out, c.diagnostic, document), status)
 }
 
-// restoreInputs is what the use case takes: the three documents, the plan, the two credentials, the target
-// and the cluster.
-func (c cli) restoreInputs(r request, prepared recovery.Prepared, identity, readURL string,
-	cluster recovery.Cluster) (recovery.RestoreInputs, int) {
-	instance, status := c.read(r.instance, "instance")
-	if status != 0 {
-		return recovery.RestoreInputs{}, status
-	}
-	release, status := c.read(r.release, "release")
-	if status != 0 {
-		return recovery.RestoreInputs{}, status
-	}
-	profile, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return recovery.RestoreInputs{}, status
-	}
-	var egress []byte
-	if r.egressFile != "" {
-		egress, status = c.read(r.egressFile, "egress")
-		if status != 0 {
-			return recovery.RestoreInputs{}, status
-		}
-	}
-	return recovery.RestoreInputs{Instance: instance, Release: release, Profile: profile, Egress: egress,
-		Plan: prepared.Plan, Target: prepared.Report.Target, AgeIdentity: identity, ReadURL: readURL, Cluster: cluster,
-		Sleep: time.Sleep, Now: time.Now}, 0
+// restoreInputs is what the use case takes: the documents the command read, the plan, the two credentials, the
+// target and the cluster.
+func restoreInputs(documents provisioningrules.Inputs, prepared recovery.Prepared, identity, readURL string,
+	cluster recovery.Cluster) recovery.RestoreInputs {
+	return recovery.RestoreInputs{Instance: documents.Instance, Release: documents.Release, Profile: documents.Profile,
+		Egress: documents.Egress, Plan: prepared.Plan, Target: prepared.Report.Target, AgeIdentity: identity,
+		ReadURL: readURL, Cluster: cluster, Sleep: time.Sleep, Now: time.Now}
 }
 
 // ageIdentity is the operator's age identity: the one credential the restore pod decrypts with. It is read
@@ -251,18 +226,18 @@ func (c cli) restoreCluster(r request) (recovery.Cluster, int) {
 
 // presignedRead signs one read of the chosen archive, so the pod holds a URL for that object instead of the
 // bucket credential. The credentials are the operator's own environment, as they are for an observation, and
-// the expiry is bounded by SigV4's own maximum.
-func (c cli) presignedRead(r request, target observe.Target, plan rules.RestorePlan) (string, int) {
-	reader, query, status := c.archiveOf(r, target)
-	if status != 0 {
-		return "", status
-	}
+// the expiry is at least the restore window and at most SigV4's own maximum.
+func (c cli) presignedRead(r request, root string, target observe.Target, plan rules.RestorePlan) (string, int) {
 	ttl := defaultURLTTL
 	if r.urlTTLSet {
 		ttl = r.urlTTL
 	}
-	if ttl < minURLTTL {
-		return "", fail(c.diagnostic, errors.New("invalid: url-ttl: shorter_than_the_restore_window"))
+	if err := rules.ValidateReadURLTTL(ttl); err != nil {
+		return "", fail(c.diagnostic, err)
+	}
+	reader, query, err := c.instanceArchives(r, root, target.Namespace)
+	if err != nil {
+		return "", fail(c.diagnostic, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
@@ -271,23 +246,6 @@ func (c cli) presignedRead(r request, target observe.Target, plan rules.RestoreP
 		return "", fail(c.diagnostic, err)
 	}
 	return address, 0
-}
-
-// archiveOf is the instance's own prefix and the reader the operator's credentials make.
-func (c cli) archiveOf(r request, target observe.Target) (s3.Reader, rules.ArchiveQuery, int) {
-	profile, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return nil, rules.ArchiveQuery{}, status
-	}
-	query, err := archiveQueryOf(profile, target.Namespace)
-	if err != nil {
-		return nil, rules.ArchiveQuery{}, fail(c.diagnostic, err)
-	}
-	reader, err := c.archives(query.Bucket, r.region)
-	if err != nil {
-		return nil, rules.ArchiveQuery{}, fail(c.diagnostic, err)
-	}
-	return reader, query, 0
 }
 
 // restoreDocument is the plan's shape: the instance's facts, the archive and its metadata, the observation it

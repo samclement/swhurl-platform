@@ -990,31 +990,3 @@ func TestStatusAllRefusesReviewedDigestEvenWhenEmpty(t *testing.T) {
 		}
 	}
 }
-
-// Status and restore use the same profile root and namespace, including nested roots. Invalid input
-// must not produce a query that could accidentally list a broader prefix.
-func TestArchiveQueryOf(t *testing.T) {
-	for _, tt := range []struct {
-		name, root, namespace, bucket, prefix, wantError string
-	}{
-		{"staging", "s3://backups/app-sqlite/", "notes-staging", "backups", "app-sqlite/notes-staging/", ""},
-		{"production nested root", "s3://other-backups/platform/databases/", "notes-prod", "other-backups", "platform/databases/notes-prod/", ""},
-		{"not S3", "https://backups/app-sqlite/", "notes-prod", "", "", "backup.s3Uri"},
-		{"no trailing slash", "s3://backups/app-sqlite", "notes-prod", "", "", "backup.s3Uri"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			profile := bytes.Replace(fixture(t, "profile.json"),
-				[]byte("s3://swhurl-platform-backups-110927251694/app-sqlite/"), []byte(tt.root), 1)
-			query, err := archiveQueryOf(profile, tt.namespace)
-			if tt.wantError != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantError) || query != (rules.ArchiveQuery{}) {
-					t.Fatalf("query %v, error %v", query, err)
-				}
-				return
-			}
-			if err != nil || query != (rules.ArchiveQuery{Bucket: tt.bucket, Prefix: tt.prefix}) {
-				t.Fatalf("query %v, error %v", query, err)
-			}
-		})
-	}
-}

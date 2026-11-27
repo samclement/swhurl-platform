@@ -203,14 +203,15 @@ func (c cli) mounted(path string) ([]byte, int) {
 }
 
 // archiveLister lists the instance's own prefix in the object store: the credential is the operator's, the bucket
-// and root are the platform profile's, and the prefix is the instance's namespace.
+// and root are the platform profile's, and the prefix is the instance's namespace. The profile is decoded once,
+// however many instances are listed.
 func (c cli) archiveLister(r request, profile []byte) func(context.Context, string) (rules.ArchiveList, error) {
+	root, err := backupRootOf(profile)
 	return func(ctx context.Context, namespace string) (rules.ArchiveList, error) {
-		query, err := archiveQueryOf(profile, namespace)
 		if err != nil {
 			return rules.ArchiveList{}, err
 		}
-		reader, err := c.archives(query.Bucket, r.region)
+		reader, query, err := c.instanceArchives(r, root, namespace)
 		if err != nil {
 			return rules.ArchiveList{}, err
 		}
@@ -218,17 +219,24 @@ func (c cli) archiveLister(r request, profile []byte) func(context.Context, stri
 	}
 }
 
-// archiveQueryOf is the instance's own prefix: the profile's root and the instance's namespace.
-func archiveQueryOf(document []byte, namespace string) (rules.ArchiveQuery, error) {
+// backupRootOf is the platform profile's backup root, the s3:// URI every instance's archives live under.
+func backupRootOf(document []byte) (string, error) {
 	profile, err := kernel.DecodeProfile(document)
 	if err != nil {
-		return rules.ArchiveQuery{}, err
+		return "", err
 	}
-	root, err := s3.ParseURL(profile.Backup.S3URI)
+	return profile.Backup.S3URI, nil
+}
+
+// instanceArchives is the instance's own prefix under the backup root, and the reader the operator's credentials
+// make for its bucket.
+func (c cli) instanceArchives(r request, root, namespace string) (s3.Reader, rules.ArchiveQuery, error) {
+	query, err := rules.InstanceArchiveQuery(root, namespace)
 	if err != nil {
-		return rules.ArchiveQuery{}, err
+		return nil, rules.ArchiveQuery{}, err
 	}
-	return rules.ArchiveQuery{Bucket: root.Bucket, Prefix: root.Prefix + namespace + "/"}, nil
+	reader, err := c.archives(query.Bucket, r.region)
+	return reader, query, err
 }
 
 // maxAge is the threshold the backup answer is judged by: the operator's, or the default.

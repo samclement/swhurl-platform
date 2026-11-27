@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fake aws for tests/host/dns-updater.sh: records every call; the zone holds FAKE_OLD_IP.
+echo "aws $*" >>"$FAKE_LOG"
+case "$2" in
+  list-resource-record-sets)
+    printf 'homelab.swhurl.com.\t%s\n\\052.homelab.swhurl.com.\t%s\n' "$FAKE_OLD_IP" "$FAKE_OLD_IP" ;;
+  change-resource-record-sets) ;;
+  *) echo "fake aws: unexpected call $*" >&2; exit 2 ;;
+esac

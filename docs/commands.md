@@ -97,7 +97,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | Target | Does | Touches |
 | --- | --- | --- |
 | `host-heartbeat`, `host-heartbeat-delete` † | Install or remove the five-minute notification checker heartbeat timer (`swhurl-notification-heartbeat`) | Host |
-| `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`) | Host |
+| `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`). Each run reads the public address over HTTPS from `checkip.amazonaws.com` within 10 seconds and changes no record if that fails or returns no IPv4 address; `bash tests/host/dns-updater.sh` tests this with a fake `curl` and `aws` | Host |
 
 Both timer pairs use [`host/install-timer.sh`](../host/install-timer.sh): a system unit that runs a script from this checkout as you, so edits to the script or `host/dns.env` apply at the next run; only unit template changes need a reinstall. All ask for `sudo`, so run them in your own terminal. Output goes to `/var/log/swhurl-platform/<unit>.log` and ClickStack.
 

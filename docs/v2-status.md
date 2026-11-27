@@ -84,7 +84,8 @@ This page is the one place v2's progress, remaining work and deferred features l
 The platform's own Python implementation and the top-level Python test suite are retired. No replacement
 suite was added: those manifest, workflow, image, script and make-safety regression checks are lost,
 including the ClickStack chart-secret render check and automatic plan-only dry runs. `tests/fixtures/`
-stays for Go, collector and live checks; Go, backup and codegraph tests stay intact.
+stays for Go, collector and live checks; Go, backup and codegraph tests stay intact. One bash host test was
+added: `tests/host/dns-updater.sh` runs the DNS updater against a fake `curl` and `aws` ([record](current-state.md#the-dns-updater-stops-on-a-failed-address-lookup-offline-27-november-2026)).
 
 | Python surface | What replaces it | State |
 | --- | --- | --- |

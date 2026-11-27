@@ -27,7 +27,11 @@ if [[ "$#" -ne 0 ]]; then
   exit 1
 fi
 
-NEW_IP="$(curl -s checkip.amazonaws.com || true)"
+# --fail makes an HTTP error exit non-zero rather than return its body as the address.
+if ! NEW_IP="$(curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com)"; then
+  echo "Could not reach checkip.amazonaws.com; no records changed" >&2
+  exit 1
+fi
 if [[ ! $NEW_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
   echo "Could not get current IP address: $NEW_IP" >&2
   exit 1

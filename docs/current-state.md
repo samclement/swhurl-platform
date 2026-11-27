@@ -2,6 +2,19 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## The DNS updater stops on a failed address lookup, offline (27 November 2026)
+
+- **Change:** [`host/aws-dns-updater.sh`](../host/aws-dns-updater.sh) reads the public address with
+  `curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com` and exits before any `aws` call
+  when curl fails (an HTTP error status, a timeout) or the answer is not an IPv4 address. It used plain HTTP,
+  no timeout and `|| true`, so an error page's body reached the address check.
+- **Verification:** [`tests/host/dns-updater.sh`](../tests/host/dns-updater.sh) runs the script against the
+  fakes in `tests/fixtures/dns/`: a changed address writes, an unchanged one only reads, and an HTTP error, a
+  timeout or a non-address answer exits 1 with no Route 53 call; it also asserts the HTTPS URL, `--fail` and
+  `--max-time`. `shellcheck` and `make check` pass.
+- **Not exercised:** nothing live changed; the installed timer was not run against Route 53. A failed Route 53
+  read is still taken as an empty old address, so the run then writes the record.
+
 ## The console's code leaves orchestration, offline (27 November 2026)
 
 - **Change:** tasks 73–77, 82 and 83 are merged on `main` (`655d9fe3e1d7`), finishing the

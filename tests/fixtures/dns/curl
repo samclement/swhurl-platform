@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake curl for tests/host/dns-updater.sh: FAKE_CURL picks the outcome.
+echo "curl $*" >>"$FAKE_LOG"
+case "$FAKE_CURL" in
+  ok) echo 203.0.113.7 ;;
+  http-error) echo "curl: (22) The requested URL returned error: 503" >&2; exit 22 ;;
+  timeout) echo "curl: (28) Operation timed out after 10000 milliseconds" >&2; exit 28 ;;
+  not-an-ip) echo "<html>maintenance</html>" ;;
+  *) echo "fake curl: unknown FAKE_CURL=$FAKE_CURL" >&2; exit 2 ;;
+esac

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/pages"
 	"github.com/samclement/swhurl-platform/v2/producer"
 )
 
@@ -16,19 +16,19 @@ import (
 // publishes with the payload schema and first example a subscriber reads. A document an instance does not have is
 // not an error, so an instance that offers nothing describes nothing. Python's json prints a payload, so a schema's
 // fields are worded by pages; this file only decodes.
-func Describe(api, events []byte) (pages.Offers, error) {
-	offers := pages.Offers{}
+func Describe(api, events []byte) (connectivityrules.Offers, error) {
+	offers := connectivityrules.Offers{}
 	if len(api) > 0 {
 		described, err := describedAPI(api)
 		if err != nil {
-			return pages.Offers{}, err
+			return connectivityrules.Offers{}, err
 		}
 		offers.API = &described
 	}
 	if len(events) > 0 {
 		described, err := describedEvents(events)
 		if err != nil {
-			return pages.Offers{}, err
+			return connectivityrules.Offers{}, err
 		}
 		offers.Events = described
 	}
@@ -40,17 +40,17 @@ var apiMethods = []string{"get", "put", "post", "delete", "patch", "head", "opti
 
 // describedAPI is what an OpenAPI 3 document says its app answers: each path and method with its summary. Python's
 // check_api: the document must state an OpenAPI 3 version and a paths mapping.
-func describedAPI(data []byte) (pages.OfferedAPI, error) {
+func describedAPI(data []byte) (connectivityrules.OfferedAPI, error) {
 	name := kernel.DocumentRoles["api"]
 	document, err := Parse(data, name)
 	if err != nil {
-		return pages.OfferedAPI{}, err
+		return connectivityrules.OfferedAPI{}, err
 	}
 	paths, listed := document.Get("paths").(producer.Object)
 	if version, _ := document.Get("openapi").(string); !strings.HasPrefix(version, "3.") || !listed {
-		return pages.OfferedAPI{}, fmt.Errorf("%s must be an OpenAPI 3 document (openapi: 3.x, with paths)", name)
+		return connectivityrules.OfferedAPI{}, fmt.Errorf("%s must be an OpenAPI 3 document (openapi: 3.x, with paths)", name)
 	}
-	offered := pages.OfferedAPI{Description: description(document.Get("info"))}
+	offered := connectivityrules.OfferedAPI{Description: description(document.Get("info"))}
 	for _, path := range paths {
 		offered.Operations = append(offered.Operations, operationsOf(path)...)
 	}
@@ -58,19 +58,19 @@ func describedAPI(data []byte) (pages.OfferedAPI, error) {
 }
 
 // operationsOf is one path item's documented methods, in the order the document writes them.
-func operationsOf(path producer.Field) []pages.Operation {
+func operationsOf(path producer.Field) []connectivityrules.Operation {
 	item, listed := path.Value.(producer.Object)
 	if !listed {
 		return nil
 	}
-	found := []pages.Operation{}
+	found := []connectivityrules.Operation{}
 	for _, route := range item {
 		method, named := route.Name.(string)
 		operation, documented := route.Value.(producer.Object)
 		if !named || !documented || !slices.Contains(apiMethods, method) {
 			continue
 		}
-		found = append(found, pages.Operation{Method: strings.ToUpper(method), Path: keyText(path.Name),
+		found = append(found, connectivityrules.Operation{Method: strings.ToUpper(method), Path: keyText(path.Name),
 			Summary: summaryOf(operation)})
 	}
 	return found
@@ -92,7 +92,7 @@ func description(info any) string {
 }
 
 // describedEvents is the events an AsyncAPI 3 document says its app sends, with what a catalogue shows of each.
-func describedEvents(data []byte) ([]pages.OfferedEvent, error) {
+func describedEvents(data []byte) ([]connectivityrules.OfferedEvent, error) {
 	name := kernel.DocumentRoles["events"]
 	document, err := Parse(data, name)
 	if err != nil {
@@ -102,9 +102,9 @@ func describedEvents(data []byte) ([]pages.OfferedEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	found := make([]pages.OfferedEvent, 0, len(emitted))
+	found := make([]connectivityrules.OfferedEvent, 0, len(emitted))
 	for _, event := range emitted {
-		found = append(found, pages.OfferedEvent{Name: event.Name, Description: event.Description,
+		found = append(found, connectivityrules.OfferedEvent{Name: event.Name, Description: event.Description,
 			Payload: documentValue(event.Payload), Example: documentValue(event.Example)})
 	}
 	return found, nil
@@ -112,7 +112,7 @@ func describedEvents(data []byte) ([]pages.OfferedEvent, error) {
 
 // documentValue is a decoded document value as a page keeps it: an object's keys in document order, and a scalar as
 // JSON prints it. A value that is not JSON (a YAML timestamp) is its own text.
-func documentValue(value any) pages.Value {
+func documentValue(value any) connectivityrules.Value {
 	if object, listed := value.(producer.Object); listed {
 		return objectValue(object)
 	}
@@ -123,17 +123,17 @@ func documentValue(value any) pages.Value {
 }
 
 // objectValue is a mapping's value, its keys in document order.
-func objectValue(object producer.Object) pages.Value {
-	found := pages.Value{Kind: pages.ValueObject}
+func objectValue(object producer.Object) connectivityrules.Value {
+	found := connectivityrules.Value{Kind: connectivityrules.ValueObject}
 	for _, field := range object {
-		found.Fields = append(found.Fields, pages.ValueField{Name: keyText(field.Name), Value: documentValue(field.Value)})
+		found.Fields = append(found.Fields, connectivityrules.ValueField{Name: keyText(field.Name), Value: documentValue(field.Value)})
 	}
 	return found
 }
 
 // arrayValue is a sequence's value.
-func arrayValue(items []any) pages.Value {
-	found := pages.Value{Kind: pages.ValueArray}
+func arrayValue(items []any) connectivityrules.Value {
+	found := connectivityrules.Value{Kind: connectivityrules.ValueArray}
 	for _, item := range items {
 		found.Items = append(found.Items, documentValue(item))
 	}
@@ -141,22 +141,22 @@ func arrayValue(items []any) pages.Value {
 }
 
 // scalarValue is a scalar as JSON prints it.
-func scalarValue(value any) pages.Value {
+func scalarValue(value any) connectivityrules.Value {
 	switch value := value.(type) {
 	case string:
-		return pages.Value{Kind: pages.ValueString, Text: value}
+		return connectivityrules.Value{Kind: connectivityrules.ValueString, Text: value}
 	case bool:
-		return pages.Value{Kind: pages.ValueBool, Text: strconv.FormatBool(value)}
+		return connectivityrules.Value{Kind: connectivityrules.ValueBool, Text: strconv.FormatBool(value)}
 	case int64:
-		return pages.Value{Kind: pages.ValueNumber, Text: strconv.FormatInt(value, 10)}
+		return connectivityrules.Value{Kind: connectivityrules.ValueNumber, Text: strconv.FormatInt(value, 10)}
 	case json.Number:
-		return pages.Value{Kind: pages.ValueNumber, Text: string(value)}
+		return connectivityrules.Value{Kind: connectivityrules.ValueNumber, Text: string(value)}
 	case float64:
-		return pages.Value{Kind: pages.ValueNumber, Text: floatText(value)}
+		return connectivityrules.Value{Kind: connectivityrules.ValueNumber, Text: floatText(value)}
 	case nil:
-		return pages.Value{Kind: pages.ValueNull}
+		return connectivityrules.Value{Kind: connectivityrules.ValueNull}
 	}
-	return pages.Value{Kind: pages.ValueString, Text: fmt.Sprint(value)}
+	return connectivityrules.Value{Kind: connectivityrules.ValueString, Text: fmt.Sprint(value)}
 }
 
 // keyText is an object key as JSON writes it: a document's keys are strings, and a source may number one.

@@ -8,7 +8,7 @@ adapters/appsource/appsourcetest: type Fake struct {Root string Source producer.
 adapters/appsource: func (Local) API(root, name string) ([]byte, error)
 adapters/appsource: func (Local) Declaration(root string) (producer.Object, error)
 adapters/appsource: func (Local) Events(root, name string) (producer.Object, []byte, error)
-adapters/appsource: func Describe(api, events []byte) (pages.Offers, error)
+adapters/appsource: func Describe(api, events []byte) (connectivityrules.Offers, error)
 adapters/appsource: func Parse(data []byte, name string) (producer.Object, error)
 adapters/appsource: type Local struct {}
 adapters/appsource: type Reader interface {Declaration(root string) (producer.Object, error) API(root, name string) ([]byte, error) Events(root, name string) (producer.Object, []byte, error)}
@@ -643,7 +643,16 @@ connectivity/rules/events: type Error struct {Application, Environment, Field, R
 connectivity/rules/events: type Resolved struct {Connected []Subscription Pending []string}
 connectivity/rules/events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 connectivity/rules: const ResolutionRecordName = "calls.json"
+connectivity/rules: const ValueAbsent ValueKind = iota
+connectivity/rules: const ValueArray
+connectivity/rules: const ValueBool
+connectivity/rules: const ValueNull
+connectivity/rules: const ValueNumber
+connectivity/rules: const ValueObject
+connectivity/rules: const ValueString
 connectivity/rules: func (*Refusal) Error() string
+connectivity/rules: func (Offers) APIText() string
+connectivity/rules: func (Offers) EventText(name string) string
 connectivity/rules: func Allocation(revision string, instances []Records, previous kernel.EgressDocument, backupHost string) (kernel.EgressDocument, error)
 connectivity/rules: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
 connectivity/rules: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
@@ -657,8 +666,15 @@ connectivity/rules: func EventsKey(instance []byte) string
 connectivity/rules: func InstanceEgress(document []byte, application, environment string) (*kernel.Egress, error)
 connectivity/rules: func Resolve(revision string, instances []Records) (kernel.ConnectionsDocument, error)
 connectivity/rules: func SubscribersOf(data []byte, application, environment string) ([]string, error)
+connectivity/rules: type OfferedAPI struct {Description string Operations []Operation}
+connectivity/rules: type OfferedEvent struct {Name, Description string Payload, Example Value}
+connectivity/rules: type Offers struct {API *OfferedAPI Events []OfferedEvent Problem string}
+connectivity/rules: type Operation struct {Method, Path, Summary string}
 connectivity/rules: type Records struct {Application, Environment string Instance, Release, App []byte}
 connectivity/rules: type Refusal struct {Subject, Reason string}
+connectivity/rules: type Value struct {Kind ValueKind Fields []ValueField Items []Value Text string}
+connectivity/rules: type ValueField struct {Name string Value Value}
+connectivity/rules: type ValueKind int
 console: const Create Operation = "create"
 console: const Edit Operation = "edit"
 console: const NoJobsProblem = "This console runs no jobs: it has no cluster record, so nothing would remember them. Start it " + "with --in-cluster or --kubeconfig."
@@ -742,7 +758,7 @@ console: func FlagView(environment string, card orchestration.FlagCard) pages.Fl
 console: func JobPageOf(ctx context.Context, jobs []pages.Job, id int, reads ChangeReads, canCreate bool) (JobPage, bool)
 console: func MergePlanFor(kind string, changed []string) string
 console: func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead, open func(context.Context, NewAppRequest, func(string)) (string, error)) orchestration.JobWork
-console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
+console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]connectivityrules.Offers
 console: func OpenPullViewOf(pr pages.OpenPull, now time.Time) *OpenPullView
 console: func OpenPulls(ctx context.Context, client github.Console, repository, token string) ([]pages.OpenPull, string)
 console: func ParseConsoleBranch(branch string) (change Change, name, env string, ok bool)
@@ -1707,13 +1723,6 @@ pages: const StateStopped = "stopped"
 pages: const StateSuspended = "suspended"
 pages: const StateUnknown = "unknown"
 pages: const StateUpdating = "updating"
-pages: const ValueAbsent ValueKind = iota
-pages: const ValueArray
-pages: const ValueBool
-pages: const ValueNull
-pages: const ValueNumber
-pages: const ValueObject
-pages: const ValueString
 pages: func (AppPage) HasHosts() bool
 pages: func (AppRow) Connections() Connections
 pages: func (AppRow) DatabasePath() (path string, known bool)
@@ -1734,8 +1743,6 @@ pages: func (Instance) Namespace() string
 pages: func (Instance) Unit() string
 pages: func (Job) Interrupted(finished time.Time) Job
 pages: func (Job) Running() bool
-pages: func (Offers) APIText() string
-pages: func (Offers) EventText(name string) string
 pages: func (Progress) Reached() bool
 pages: func (Render) Pending() bool
 pages: func (Site) DashboardURL(id string) string
@@ -1769,7 +1776,7 @@ pages: func ChecksOf(checks []Check) Checks
 pages: func CommonRevision(units []Unit) string
 pages: func Compare(staging, prod *AppRow) string
 pages: func Condensed(entries []Entry) []Entry
-pages: func ConnectableTo(rows []AppRow, offers map[string]Offers, env, app string) Connectable
+pages: func ConnectableTo(rows []AppRow, offers map[string]connectivityrules.Offers, env, app string) Connectable
 pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env string) Connections
 pages: func ConsoleFormChange(kind, name string, fields map[string][]string, declared *Inventory, teams map[string]TeamInfo) (ConsoleFormFlags, error)
 pages: func ConsoleTeamChange(kind, name string, fields map[string][]string) (ConsoleFormFlags, error)
@@ -1825,7 +1832,7 @@ pages: type AppsInput struct {Rows []AppRow View string Team string Env string A
 pages: type AppsPage struct {Apps []AppView Teams []Link AllTeams Link ShowAll Link ShowAttention Link ListView Link MapView Link Envs []Link Tally Tally Attention bool Team, View string Env string StackNames map[string]string Map *AppMap Site Site}
 pages: type Artifact struct {Image string `json:"image"` Digest string `json:"digest"`}
 pages: type CatalogueGroup struct {App, Team, TeamLabel string Uses []Used Offers []Offer}
-pages: type CatalogueInput struct {Rows []AppRow Offers map[string]Offers Env string Kind string Team string Site Site Github bool}
+pages: type CatalogueInput struct {Rows []AppRow Offers map[string]connectivityrules.Offers Env string Kind string Team string Site Site Github bool}
 pages: type CataloguePage struct {Envs []Link AllKinds Link APIs, Events Link AllTeams Link Teams []Link Groups []CatalogueGroup Tally CatalogueTally Env, Kind, Team string Site Site Github bool}
 pages: type CatalogueTally struct {APIs, Events, Described int}
 pages: type Certificate struct {Name string `json:"name"` Outcome string `json:"outcome"` Reason string `json:"reason"`}
@@ -1867,13 +1874,9 @@ pages: type NewAppForm struct {Name, Type, Stack, Description, Team, Exposure st
 pages: type NewAppInput struct {Catalogue StackCatalogue Site Site Teams map[string]TeamInfo TeamsError string Connectable Connectable Form NewAppForm Error string Github bool AppRepos bool}
 pages: type NewAppPage struct {Types []AppType ChosenType string StackTypes map[string]string Stacks []StackInfo Owner string Domain string Teams []TeamChoice TeamsError string CallableApps []ConnectableApp OfferedEvents []ConnectableEvent ConnectionsError string Exposures []Choice ChosenExposure string ChosenStack string IncludedAll []IncludedAnswer Form NewAppForm Error string Github bool AppRepos bool ChosenCalls, ChosenEvents []string}
 pages: type Observed struct {Read bool Row *AppRow}
-pages: type Offer struct {Kind, Name, App string KindLabel string Event string Team, TeamLabel string Description string Described bool UsedBy []OfferUser UsedByTitle string FirstTwo string More int Address, Link string LinkExternal bool Operations []Operation RoutesLabel string SamplePath string Fields []PayloadField Schema, Example string Commit, CommitURL, Problem string CouldUse []OfferUser HiddenName string FormID, Confirm, Hint string}
+pages: type Offer struct {Kind, Name, App string KindLabel string Event string Team, TeamLabel string Description string Described bool UsedBy []OfferUser UsedByTitle string FirstTwo string More int Address, Link string LinkExternal bool Operations []connectivityrules.Operation RoutesLabel string SamplePath string Fields []PayloadField Schema, Example string Commit, CommitURL, Problem string CouldUse []OfferUser HiddenName string FormID, Confirm, Hint string}
 pages: type OfferUser struct {Name, Team string}
-pages: type OfferedAPI struct {Description string Operations []Operation}
-pages: type OfferedEvent struct {Name, Description string Payload, Example Value}
-pages: type Offers struct {API *OfferedAPI Events []OfferedEvent Problem string}
 pages: type OpenPull struct {Number int Title, URL, Branch, Opened string Body, Checks, ChecksURL string}
-pages: type Operation struct {Method, Path, Summary string}
 pages: type PayloadField struct {Name, Type string Required bool Meaning string}
 pages: type Pending struct {Label string App string Removing bool InGit bool Jobs []Job PRs []PendingPull PRsError string}
 pages: type PendingPull struct {Number int Title string URL string Opened string ChecksURL string Checks string Merging string}
@@ -1911,9 +1914,6 @@ pages: type UnitRow struct {Unit Unit Open bool AppLabel string AppLink string A
 pages: type Unregistered struct {Team string Apps []UnregisteredApp}
 pages: type UnregisteredApp struct {App string Envs []string}
 pages: type Used struct {Kind, Name, Href, Label string}
-pages: type Value struct {Kind ValueKind Fields []ValueField Items []Value Text string}
-pages: type ValueField struct {Name string Value Value}
-pages: type ValueKind int
 pages: type Workload struct {Status string `json:"status"` ReadyReplicas *int32 `json:"readyReplicas"`}
 pages: var ConsoleSharedFiles = []string{ConsoleCallsFile, ConsoleEgressFile, "platform/egress/configmap.json", "platform/egress/networkpolicy.json", "platform/nats/users.json", "platform/reloader/values.json", ConsoleUnitsRoot + "/kustomization.yaml",}
 pages: var EveryApp = map[string]bool{"events": true, "flags": true}

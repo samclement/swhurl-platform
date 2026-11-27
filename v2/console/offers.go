@@ -2,6 +2,7 @@ package console
 
 import (
 	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -10,8 +11,8 @@ import (
 // tree: the two files the Deploy workflow copies into the instance's offers folder, or why they could not be read. An
 // instance with no documents offers nothing, which is not a problem. The read is bounded by what the tree filter
 // keeps, so a page can only describe an instance from the commit it also shows.
-func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers {
-	found := map[string]pages.Offers{}
+func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]connectivityrules.Offers {
+	found := map[string]connectivityrules.Offers{}
 	for _, row := range rows {
 		if row.Instance.Env != env {
 			continue
@@ -20,7 +21,7 @@ func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]
 		offers, err := appsource.Describe(tree[folder+"/"+kernel.DocumentRoles["api"]],
 			tree[folder+"/"+kernel.DocumentRoles["events"]])
 		if err != nil {
-			offers = pages.Offers{Problem: err.Error()}
+			offers = connectivityrules.Offers{Problem: err.Error()}
 		}
 		found[row.Instance.App] = offers
 	}

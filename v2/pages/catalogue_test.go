@@ -4,25 +4,28 @@ import (
 	"reflect"
 	"testing"
 
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 // object is a document object with its keys in the order written.
-func object(fields ...pages.ValueField) pages.Value {
-	return pages.Value{Kind: pages.ValueObject, Fields: fields}
+func object(fields ...connectivityrules.ValueField) connectivityrules.Value {
+	return connectivityrules.Value{Kind: connectivityrules.ValueObject, Fields: fields}
 }
 
 // array is a document array.
-func array(items ...pages.Value) pages.Value {
-	return pages.Value{Kind: pages.ValueArray, Items: items}
+func array(items ...connectivityrules.Value) connectivityrules.Value {
+	return connectivityrules.Value{Kind: connectivityrules.ValueArray, Items: items}
 }
 
 // text is a document string.
-func text(said string) pages.Value { return pages.Value{Kind: pages.ValueString, Text: said} }
+func text(said string) connectivityrules.Value {
+	return connectivityrules.Value{Kind: connectivityrules.ValueString, Text: said}
+}
 
 // field is one key of an object.
-func field(name string, value pages.Value) pages.ValueField {
-	return pages.ValueField{Name: name, Value: value}
+func field(name string, value connectivityrules.Value) connectivityrules.ValueField {
+	return connectivityrules.ValueField{Name: name, Value: value}
 }
 
 // offerRow is one instance of the catalogue's fixture: a web app that publishes one event.
@@ -66,11 +69,11 @@ func TestCataloguePayloadRows(t *testing.T) {
 		)),
 	)
 	rows := []pages.AppRow{offerRow("orders", "staging", true)}
-	page := pages.CataloguePageOf(pages.CatalogueInput{Rows: rows, Offers: map[string]pages.Offers{"orders": {
-		API: &pages.OfferedAPI{Description: "Create and read orders", Operations: []pages.Operation{
+	page := pages.CataloguePageOf(pages.CatalogueInput{Rows: rows, Offers: map[string]connectivityrules.Offers{"orders": {
+		API: &connectivityrules.OfferedAPI{Description: "Create and read orders", Operations: []connectivityrules.Operation{
 			{Method: "GET", Path: "/orders/{id}", Summary: "Read one order"}, {Method: "POST", Path: "/orders"},
 			{Method: "GET", Path: "/orders", Summary: "List orders"}}},
-		Events: []pages.OfferedEvent{{Name: "created", Description: "An order was <b>accepted</b>", Payload: schema,
+		Events: []connectivityrules.OfferedEvent{{Name: "created", Description: "An order was <b>accepted</b>", Payload: schema,
 			Example: object(field("id", text("o-1")))}}}}})
 	if len(page.Groups) != 1 || len(page.Groups[0].Offers) != 2 {
 		t.Fatalf("groups = %+v", page.Groups)
@@ -108,9 +111,9 @@ func TestCataloguePayloadRows(t *testing.T) {
 
 // A schema that is not an object with properties gives no rows, so the page shows the schema alone.
 func TestCataloguePayloadRowsNeedAnObject(t *testing.T) {
-	for _, schema := range []pages.Value{text("string"), object(field("type", text("string"))), object()} {
+	for _, schema := range []connectivityrules.Value{text("string"), object(field("type", text("string"))), object()} {
 		if rows := pages.CataloguePageOf(pages.CatalogueInput{Rows: []pages.AppRow{offerRow("orders", "staging", true)},
-			Offers: map[string]pages.Offers{"orders": {Events: []pages.OfferedEvent{{Name: "created", Payload: schema}}}}}).
+			Offers: map[string]connectivityrules.Offers{"orders": {Events: []connectivityrules.OfferedEvent{{Name: "created", Payload: schema}}}}}).
 			Groups[0].Offers[0].Fields; len(rows) != 0 {
 			t.Fatalf("schema %+v gave %+v", schema, rows)
 		}
@@ -121,7 +124,7 @@ func TestCataloguePayloadRowsNeedAnObject(t *testing.T) {
 // app that offers nothing of it: the console's own cases.
 func TestCatalogueGroupsAndFilters(t *testing.T) {
 	rows := []pages.AppRow{offerRow("reports", "staging", false), offerRow("orders", "staging", true)}
-	offers := map[string]pages.Offers{"orders": {API: &pages.OfferedAPI{Description: "Create and read orders"}}}
+	offers := map[string]connectivityrules.Offers{"orders": {API: &connectivityrules.OfferedAPI{Description: "Create and read orders"}}}
 	page := pages.CataloguePageOf(pages.CatalogueInput{Rows: rows, Offers: offers})
 	groups := []string{}
 	for _, group := range page.Groups {

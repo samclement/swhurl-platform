@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 )
 
 // The app page, the page an app that is not deployed yet shows, a promotion's review and the New app form: what they
@@ -146,7 +148,7 @@ type Connectable struct {
 
 // ConnectableTo is what an app may connect to in one environment: every other web app, and every event those apps
 // publish, leaving out what an existing instance already calls or receives.
-func ConnectableTo(rows []AppRow, offers map[string]Offers, env, app string) Connectable {
+func ConnectableTo(rows []AppRow, offers map[string]connectivityrules.Offers, env, app string) Connectable {
 	here, called, received := connectableHere(rows, env, app)
 	found := Connectable{}
 	for _, row := range here {
@@ -183,7 +185,7 @@ func connectableHere(rows []AppRow, env, app string) ([]AppRow, map[string]bool,
 }
 
 // connectableRow adds one other app's call and each of its events the instance does not already have.
-func connectableRow(found *Connectable, row AppRow, said Offers, called, received map[string]bool) {
+func connectableRow(found *Connectable, row AppRow, said connectivityrules.Offers, called, received map[string]bool) {
 	team, connections := row.Team(), row.Connections()
 	if connections.Address != "" && !called[row.Instance.App] {
 		found.Apps = append(found.Apps, ConnectableApp{App: row.Instance.App, Team: team, Says: said.APIText()})
@@ -195,24 +197,6 @@ func connectableRow(found *Connectable, row AppRow, said Offers, called, receive
 				Says: said.EventText(event)})
 		}
 	}
-}
-
-// APIText is what an app's OpenAPI document says about its API, empty when it describes none.
-func (o Offers) APIText() string {
-	if o.API == nil {
-		return ""
-	}
-	return o.API.Description
-}
-
-// EventText is what an app's AsyncAPI document says about one of its events, empty when it says nothing.
-func (o Offers) EventText(name string) string {
-	for _, event := range o.Events {
-		if event.Name == name {
-			return event.Description
-		}
-	}
-	return ""
 }
 
 // FlagLine is one line of an instance's Feature flags card, as the template states it: the declaration, the override

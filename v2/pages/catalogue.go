@@ -5,77 +5,26 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 )
 
 // The catalogue: what the apps of one environment offer each other. One group per app with what it uses, and in it
 // one offer for its API and one per event it publishes, whether or not the app describes it. The facts are the
 // cluster's, as every page's are; the descriptions are the documents kept beside each instance in Git, decoded by the
-// appsource adapter into Offers and worded here.
-
-// Offers is what one instance's offered documents say: its API, its events, or why they could not be read. An
-// instance with no documents offers nothing, which is not a problem.
-type Offers struct {
-	API     *OfferedAPI
-	Events  []OfferedEvent
-	Problem string
-}
-
-// OfferedAPI is what an OpenAPI document says an app answers.
-type OfferedAPI struct {
-	Description string
-	Operations  []Operation
-}
-
-// Operation is one route of an API: its method, its path, and what the document says it does.
-type Operation struct{ Method, Path, Summary string }
-
-// OfferedEvent is one event an app publishes, as its AsyncAPI document describes it.
-type OfferedEvent struct {
-	Name, Description string
-	Payload, Example  Value // its payload schema, for the field rows, and the first example a payload document gives
-}
-
-// ValueKind is what a Value holds.
-type ValueKind int
-
-// The kinds a document's value has; the zero value is an absent one, which a page shows as nothing.
-const (
-	ValueAbsent ValueKind = iota
-	ValueNull
-	ValueString
-	ValueNumber
-	ValueBool
-	ValueArray
-	ValueObject
-)
-
-// Value is a document's value with an object's keys in the order the document writes them, so a payload schema's
-// fields are shown as the app wrote them. A scalar keeps the text JSON prints it as, except a string, which keeps its
-// own text and is quoted when the page prints it.
-type Value struct {
-	Kind   ValueKind
-	Fields []ValueField // an object's keys, in document order
-	Items  []Value      // an array's entries
-	Text   string       // a scalar: a string's text, a number, true, false or null
-}
-
-// ValueField is one key of an object.
-type ValueField struct {
-	Name  string
-	Value Value
-}
+// appsource adapter into connectivity's Offers and worded here.
 
 // member is one key of an object value, or the zero value when it has none.
-func (v Value) member(name string) Value {
-	if v.Kind != ValueObject {
-		return Value{}
+func member(v connectivityrules.Value, name string) connectivityrules.Value {
+	if v.Kind != connectivityrules.ValueObject {
+		return connectivityrules.Value{}
 	}
 	for _, field := range v.Fields {
 		if field.Name == name {
 			return field.Value
 		}
 	}
-	return Value{}
+	return connectivityrules.Value{}
 }
 
 // PayloadField is one row of an event's payload: a field, with a nested field below its parent under its path
@@ -103,7 +52,7 @@ type Offer struct {
 	More                       int    // how many users the row does not name
 	Address, Link              string // an API: its address inside the cluster, and where its description is served
 	LinkExternal               bool
-	Operations                 []Operation
+	Operations                 []connectivityrules.Operation
 	RoutesLabel                string // "3 routes", "API" for an undescribed one
 	SamplePath                 string
 	Fields                     []PayloadField
@@ -147,7 +96,7 @@ type CataloguePage struct {
 // filters.
 type CatalogueInput struct {
 	Rows   []AppRow
-	Offers map[string]Offers // each app's offered documents, for Env
+	Offers map[string]connectivityrules.Offers // each app's offered documents, for Env
 	Env    string
 	Kind   string
 	Team   string
@@ -218,7 +167,7 @@ func tallyOf(shown []Offer) CatalogueTally {
 }
 
 // offersOf is every API and event of one environment, APIs first, each with who uses it and who could.
-func offersOf(here []AppRow, env string, documents map[string]Offers, site Site) []Offer {
+func offersOf(here []AppRow, env string, documents map[string]connectivityrules.Offers, site Site) []Offer {
 	teams, others := catalogueTeams(here)
 	found := []Offer{}
 	for _, row := range here {
@@ -244,7 +193,7 @@ func catalogueTeams(here []AppRow) (map[string]string, []OfferUser) {
 }
 
 // apiOffer is one web app's API: its address, its documented routes, and who calls it.
-func apiOffer(row AppRow, connection Connections, documents Offers, env string, site Site,
+func apiOffer(row AppRow, connection Connections, documents connectivityrules.Offers, env string, site Site,
 	teams map[string]string, others []OfferUser) Offer {
 	offer := Offer{Kind: "api", Name: row.Instance.App, App: row.Instance.App, KindLabel: "API", Team: row.Team(),
 		TeamLabel: teamWord(row.Team()), Address: connection.Address, Link: connection.API, Commit: connection.Offers,
@@ -269,9 +218,9 @@ func apiOffer(row AppRow, connection Connections, documents Offers, env string, 
 }
 
 // eventOffers is every event one app publishes, each with who subscribes to it.
-func eventOffers(row AppRow, connection Connections, documents Offers, env string, site Site,
+func eventOffers(row AppRow, connection Connections, documents connectivityrules.Offers, env string, site Site,
 	teams map[string]string, others []OfferUser) []Offer {
-	described := map[string]OfferedEvent{}
+	described := map[string]connectivityrules.OfferedEvent{}
 	for _, event := range documents.Events {
 		described[event.Name] = event
 	}
@@ -289,7 +238,7 @@ func eventOffers(row AppRow, connection Connections, documents Offers, env strin
 }
 
 // eventOffer is one published event: its payload's rows, an example, and who receives it.
-func eventOffer(row AppRow, name string, users []string, described OfferedEvent, problem, env string, site Site,
+func eventOffer(row AppRow, name string, users []string, described connectivityrules.OfferedEvent, problem, env string, site Site,
 	teams map[string]string, others []OfferUser) Offer {
 	app := row.Instance.App
 	offer := Offer{Kind: "event", Name: app + "." + name, App: app, KindLabel: "event", Event: name, Team: row.Team(),
@@ -355,7 +304,7 @@ func routeWord(count int) string {
 }
 
 // samplePath is a route of the API to show in a code sample: its first GET without a parameter, else /.
-func samplePath(operations []Operation) string {
+func samplePath(operations []connectivityrules.Operation) string {
 	for _, operation := range operations {
 		if operation.Method == "GET" && !strings.Contains(operation.Path, "{") && operation.Path != "/" {
 			return operation.Path
@@ -480,32 +429,32 @@ func commitURL(site Site, app, commit string) string {
 
 // payloadFields is a payload schema's fields, one row each, nested objects and lists of objects below their parent.
 // Empty for a schema that is not an object with properties: the page then shows the schema alone.
-func payloadFields(schema Value) []PayloadField {
+func payloadFields(schema connectivityrules.Value) []PayloadField {
 	return schemaFields(schema, "", true)
 }
 
 // schemaFields is payloadFields from one prefix, where needed says whether an absent parent may still require a field.
-func schemaFields(schema Value, prefix string, needed bool) []PayloadField {
-	properties := schema.member("properties")
-	if schema.Kind != ValueObject || properties.Kind != ValueObject {
+func schemaFields(schema connectivityrules.Value, prefix string, needed bool) []PayloadField {
+	properties := member(schema, "properties")
+	if schema.Kind != connectivityrules.ValueObject || properties.Kind != connectivityrules.ValueObject {
 		return []PayloadField{}
 	}
-	required := requiredNames(schema.member("required"))
+	required := requiredNames(member(schema, "required"))
 	found := []PayloadField{}
 	for _, property := range properties.Fields {
 		each := property.Value
 		must := needed && slices.Contains(required, property.Name)
 		found = append(found, PayloadField{Name: prefix + property.Name, Type: typeWords(each), Required: must,
-			Meaning: each.member("description").Text})
+			Meaning: member(each, "description").Text})
 		found = append(found, schemaFields(each, prefix+property.Name+".", must)...)
-		found = append(found, schemaFields(each.member("items"), prefix+property.Name+"[].", must)...)
+		found = append(found, schemaFields(member(each, "items"), prefix+property.Name+"[].", must)...)
 	}
 	return found
 }
 
 // requiredNames is a schema's required list.
-func requiredNames(required Value) []string {
-	if required.Kind != ValueArray {
+func requiredNames(required connectivityrules.Value) []string {
+	if required.Kind != connectivityrules.ValueArray {
 		return nil
 	}
 	names := make([]string, 0, len(required.Items))
@@ -516,24 +465,24 @@ func requiredNames(required Value) []string {
 }
 
 // typeWords is a JSON Schema's type as a few words: "string (date-time)", "string or null", "one of a, b".
-func typeWords(schema Value) string {
+func typeWords(schema connectivityrules.Value) string {
 	if choice := enumWords(schema); choice != "" {
 		return choice
 	}
-	words := typeName(schema.member("type"))
-	if words == "array" && schema.member("items").Kind == ValueObject {
-		words = "list of " + typeWords(schema.member("items"))
+	words := typeName(member(schema, "type"))
+	if words == "array" && member(schema, "items").Kind == connectivityrules.ValueObject {
+		words = "list of " + typeWords(member(schema, "items"))
 	}
-	if format := schema.member("format").Text; format != "" {
+	if format := member(schema, "format").Text; format != "" {
 		return words + " (" + format + ")"
 	}
 	return words
 }
 
 // enumWords is a schema's enumeration as one row says it, empty when it does not enumerate.
-func enumWords(schema Value) string {
-	choice := schema.member("enum")
-	if choice.Kind != ValueArray || len(choice.Items) == 0 {
+func enumWords(schema connectivityrules.Value) string {
+	choice := member(schema, "enum")
+	if choice.Kind != connectivityrules.ValueArray || len(choice.Items) == 0 {
 		return ""
 	}
 	said := make([]string, 0, len(choice.Items))
@@ -544,9 +493,9 @@ func enumWords(schema Value) string {
 }
 
 // typeName is a schema's type as words: one type, or the alternatives a list of them gives.
-func typeName(said Value) string {
+func typeName(said connectivityrules.Value) string {
 	switch said.Kind {
-	case ValueArray:
+	case connectivityrules.ValueArray:
 		each := make([]string, 0, len(said.Items))
 		for _, item := range said.Items {
 			each = append(each, pythonText(item))
@@ -554,27 +503,27 @@ func typeName(said Value) string {
 		if words := strings.Join(each, " or "); words != "" {
 			return words
 		}
-	case ValueString:
+	case connectivityrules.ValueString:
 		if said.Text != "" {
 			return said.Text
 		}
-	case ValueNumber, ValueBool:
+	case connectivityrules.ValueNumber, connectivityrules.ValueBool:
 		return pythonText(said)
 	}
 	return "any"
 }
 
 // pythonText is a scalar as Python's str() writes it, for the few words a type is said in an enumeration.
-func pythonText(value Value) string {
+func pythonText(value connectivityrules.Value) string {
 	switch value.Kind {
-	case ValueString, ValueNumber:
+	case connectivityrules.ValueString, connectivityrules.ValueNumber:
 		return value.Text
-	case ValueBool:
+	case connectivityrules.ValueBool:
 		if value.Text == "true" {
 			return "True"
 		}
 		return "False"
-	case ValueNull:
+	case connectivityrules.ValueNull:
 		return "None"
 	}
 	return ""
@@ -582,30 +531,30 @@ func pythonText(value Value) string {
 
 // printed is a document value as the page shows it: json.dumps(indent=2, ensure_ascii=False) of it, and nothing for an
 // absent or null one.
-func printed(value Value) string {
-	if value.Kind == ValueAbsent || value.Kind == ValueNull {
+func printed(value connectivityrules.Value) string {
+	if value.Kind == connectivityrules.ValueAbsent || value.Kind == connectivityrules.ValueNull {
 		return ""
 	}
 	return printValue(value, 0)
 }
 
 // printValue is one value at one depth of the printed document.
-func printValue(value Value, depth int) string {
+func printValue(value connectivityrules.Value, depth int) string {
 	switch value.Kind {
-	case ValueObject:
+	case connectivityrules.ValueObject:
 		return printObject(value.Fields, depth)
-	case ValueArray:
+	case connectivityrules.ValueArray:
 		return printArray(value.Items, depth)
-	case ValueString:
+	case connectivityrules.ValueString:
 		return quoteJSON(value.Text)
-	case ValueNull:
+	case connectivityrules.ValueNull:
 		return "null"
 	}
 	return value.Text
 }
 
 // printObject is an object's lines, its keys in document order.
-func printObject(fields []ValueField, depth int) string {
+func printObject(fields []connectivityrules.ValueField, depth int) string {
 	if len(fields) == 0 {
 		return "{}"
 	}
@@ -618,7 +567,7 @@ func printObject(fields []ValueField, depth int) string {
 }
 
 // printArray is an array's lines.
-func printArray(items []Value, depth int) string {
+func printArray(items []connectivityrules.Value, depth int) string {
 	if len(items) == 0 {
 		return "[]"
 	}

@@ -324,11 +324,11 @@ An ownership map, not a directory list: a capability's directory earns a package
 | apps | App and environment records, instance lifecycle, the intent to run a selected release, and an instance's status | `apps/` creation, editing, SetTeam, removal, status and status-all; pure instance records and lifecycle rules remain in `kernel` |
 | delivery | Release identity and selection, staging-to-production promotion, deployment, the evidence that the requested revision landed, and a deployment's health | `delivery/` and `delivery/rules/` (including deployment health in `health.go` and image acceptance in `image.go`); release selection in `kernel/select.go`; `observe/explain.go` presents delivery’s currentness as `unit.revision`, without its own revision parser |
 | provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation, declaration and optional-document validation in `provisioning/rules`; its folder/record writers and encrypted seed construction in `provisioning/`; the compiler and whole-tree rendering in `kernel`, egress allocation, `policy` |
-| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/rules` declaration changes (`ConnectionSettings`, `AllowSettings`) and document readers, and `connectivity/rules/{calls,events}` resolvers, all pure; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
+| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/rules` declaration changes (`ConnectionSettings`, `AllowSettings`), document readers and the offered documents' types (`Offers`, `OfferedAPI`, `OfferedEvent`, decoded by `adapters/appsource` and worded by `pages`), and `connectivity/rules/{calls,events}` resolvers, all pure; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
 | notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
-| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | `console/`: the change-kind table (each kind's branch facts, flags and planned operations), the pinned tree's source and cache (`Bundle`, `Source`, `SourceOf`, `FilterTarball`), the page readers, actions, jobs' work, flag store with its audit line, and Activity's evidence; thin HTTP handlers in `cmd/swhurl-v2/console*.go`; the page models in `pages`, with Offers until its owner is chosen; the job registry, flag operations and ordered decoder in `orchestration` |
+| console | Console view models, presentation and interaction flows; it calls capability operations for shared behaviour | `console/`: the change-kind table (each kind's branch facts, flags and planned operations), the pinned tree's source and cache (`Bundle`, `Source`, `SourceOf`, `FilterTarball`), the page readers, actions, jobs' work, flag store with its audit line, and Activity's evidence; thin HTTP handlers in `cmd/swhurl-v2/console*.go`; the page models in `pages`, which words connectivity's Offers; the job registry, flag operations and ordered decoder in `orchestration` |
 
 Two ownership contracts matter more than the directory names:
 
@@ -3034,7 +3034,7 @@ and effects unchanged and its existing tests moved with the code they test.
 | 3 | notifications | incident, heartbeat and notify workflows | code moved, offline |
 | 4 | health | `verify-platform`: the report assembling other capabilities' verdicts | code moved; delivery currentness reported without a duplicate parser, offline |
 | 5 | connectivity, provisioning, apps | compilation and writers, declaration changes, app lifecycle and status; restore sequencing in recovery | complete offline; status uses delivery’s shared verdict, observation Version 6 |
-| 6 | console | view models, presentation and interaction flows; `swhurl-v2 change` first | approved 26 November 2026; moved offline: `v2/console` holds the change-kind table and the console's composition, and `orchestration` holds no console file; Offers' move out of `pages` and a check on who imports `pages` remain |
+| 6 | console | view models, presentation and interaction flows; `swhurl-v2 change` first | approved 26 November 2026; moved offline: `v2/console` holds the change-kind table and the console's composition, and `orchestration` holds no console file; Offers has moved to `connectivity/rules`, and a check on who imports `pages` remains |
 
 **Slice 1: recovery.**
 
@@ -3265,9 +3265,11 @@ open a pull request.
   `UnreachableFlags`) and the ordered decoder (`DecodeOrdered`, `OrderedValue`, `ScalarText`). Console calls
   these through its `console` → `orchestration` edge; the command calls `ConsoleJobs`, `NewJobs` and
   `ChangeRegistryIn` itself.
-- **Remaining.** Offers and `OfferedAPI` stay in `pages` until the operator chooses their owner (connectivity
-  or apps) and they move without a change in behaviour; then an architecture check allows only `console` and
-  the command to import `pages`.
+- **Offers.** The operator chose connectivity as the owner (27 November 2026): `Offers`, `OfferedAPI`,
+  `OfferedEvent` and their `Operation` and `Value` types live in `connectivity/rules`, which `adapters/appsource`
+  decodes into and `pages` words (the `pages` → `connectivity/rules` pure dependency). The catalogue's wording and
+  rendering stay in `pages`, unchanged.
+- **Remaining.** An architecture check that allows only `console` and the command to import `pages`.
 - **Checks.** `console` is layer 2 and listed in `Orchestration`, with the edges `console` → `orchestration`,
   `health` and `apps` in `WorkflowDependencies`. The command's quoted-line test also requires every kind's steps to run only its planned
   operations, in their order, and covers every kind. `swhurl-v2 change`'s flags, refusals and output are unchanged.

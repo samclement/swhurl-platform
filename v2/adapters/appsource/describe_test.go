@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
-	"github.com/samclement/swhurl-platform/v2/pages"
+	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 )
 
 // The two documents an instance keeps beside it, as a stack template writes them: the API's one route, and the
@@ -38,7 +38,7 @@ func TestDescribeOffersDocuments(t *testing.T) {
 	if offers.API == nil || offers.API.Description != "Create and read orders" {
 		t.Fatalf("api = %+v", offers.API)
 	}
-	want := []pages.Operation{{Method: "GET", Path: "/orders/{id}", Summary: "Read one order"},
+	want := []connectivityrules.Operation{{Method: "GET", Path: "/orders/{id}", Summary: "Read one order"},
 		{Method: "POST", Path: "/orders/{id}", Summary: "Replace one order"}}
 	if !reflect.DeepEqual(offers.API.Operations, want) {
 		t.Fatalf("operations = %+v", offers.API.Operations)
@@ -47,7 +47,7 @@ func TestDescribeOffersDocuments(t *testing.T) {
 		t.Fatalf("events = %+v", offers.Events)
 	}
 	payload := offers.Events[0].Payload
-	if payload.Kind != pages.ValueObject || payload.Fields[0].Name != "type" {
+	if payload.Kind != connectivityrules.ValueObject || payload.Fields[0].Name != "type" {
 		t.Fatalf("payload = %+v", payload)
 	}
 	if example := offers.Events[0].Example; example.Fields[0].Value.Text != "o-1" {

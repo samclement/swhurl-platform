@@ -2,6 +2,36 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Slice 6 begins: the console's change kinds and one records reader, offline (27 November 2026)
+
+- **Change:** the operator approved the [console slice](iteration-2-plan.md#36-capabilities-as-the-main-navigation-approved-22-november-2026)
+  on 26 November 2026. Tasks 65, 66, 67, 69 and 72 are merged on `main` (`bc613a7a471c`); 68 was cancelled
+  and recreated as 69.
+- **Console promotion (task 65, `e60227cd`):** the console's promote step expected staging's record revision,
+  but `promote` compares `--expect` with production's record, so every console promotion was refused as stale.
+  It now expects production's revision and quotes `--expect=<revision>` in the pull request's lines; a test parses
+  every kind's quoted line back to its request, and a `v2-promote` change runs end to end against the fixture tree.
+- **One records reader (tasks 66 and 67, `9e553386`, `34858d93`):** `adapters/files` reads a repository archive
+  (`ReadArchive`, moved from `orchestration`, one 8 MiB bound per file) and a records tree (`Records` over an
+  archive, `ReadRecords` over a directory, the same result): every folder holding `instance.json`, in app and
+  environment order, and a missing `release.json` or `app.json` refuses the whole tree. Kernel owns the layout:
+  `kernel.RecordsRoot` replaces the four records-root constants, and `InstanceRecordPath`, `ReleaseRecordPath` and
+  `InstanceRecordOf` replace hard-coded paths; the operator approved `pages` importing `kernel`.
+- **Deploy, edit and promote read through it (task 69, `1c3b4767`):** `deploy --records`, `promote` and `edit`
+  read the whole tree with `files.ReadRecords`, so a missing record now exits 2 rather than 1, and any half-read
+  instance refuses.
+- **The change-kind table (task 72, `a71ebfac`):** `v2/console` (layer 2, edge `console` → `orchestration`) holds
+  `console.Changes`, one row per kind: `pages`' branch facts looked up by kind, the flags it takes or needs
+  (from the command's deleted `changeShapes`) and its planned operations in order. `swhurl-v2 change` reads a kind
+  only through it; a test keeps its kinds equal to `pages.ConsoleChanges` and requires every kind's steps to run
+  only its planned operations. `swhurl-v2 change`'s flags, refusals and output are unchanged.
+- **Verification (task 81):** `make check-v2` passed on `87ac4ca4bfd9` (gofmt, `go vet`, `go test -count=1 ./...`,
+  and the render checks: 172 platform files and 27 fixture files, 0 differences); each task's own checks are in
+  its notes, not re-claimed here.
+- **Not exercised:** nothing live changed; no console promotion, deploy, edit or browser path ran against the
+  cluster. The console's composition, pages, Activity, jobs and handlers remain in `orchestration` and the
+  command. **Next gate:** the slice's remaining moves land offline and are recorded.
+
 ## Ownership follow-ups and job-test synchronization, offline (22 November 2026)
 
 - **Change:** tasks 56–60 are done and merged in this task's base (`837a4b265f1a`). The

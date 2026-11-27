@@ -49,6 +49,8 @@ scope:
   - v2/provisioning/rules/*.go
   - v2/connectivity/rules/*.go
   - v2/connectivity/rules/*/*.go
+  - v2/cmd/swhurl-v2/policy.go
+  - v2/cmd/swhurl-v2/policy_test.go
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -68,3 +70,6 @@ notes:
   - at: 2026-11-27T08:17:25.741Z
     commit: e134969f0795
     text: "Where do render's pure decisions go? -> operator: option 2: resolution and allocation (with their encoders) into connectivity/rules beside its decoders; provisioning/rules keeps the platform files (proxy, auth, users, reloader, notify), team checks and snapshot, and composes; use cases provisioning.Render and provisioning.CheckRender; an adapters/files reader assembles inputs. Scope widened by the conductor."
+  - at: 2026-11-27T08:33:59.256Z
+    commit: ed8447d8892c
+    text: "policy.go calls render's internals: widen scope or keep cmd wrappers? -> conductor: widen scope to policy.go (and policy_test.go); call provisioning.DecideTree directly. Settled by the operator's option-3 decision (direct use-case calls) and the no-compatibility-shims rule; output and exit codes unchanged."

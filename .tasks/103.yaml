@@ -1,6 +1,6 @@
 id: 103
 title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
-state: active
+state: ready
 scope:
   - host/aws-dns-updater.sh
   - tests/host/dns-updater.sh
@@ -29,3 +29,9 @@ notes:
   - at: 2026-11-27T22:55:37.343Z
     commit: 5a3ad1ca294e
     text: May scope include status documentation required by tests workstream ownership? -> Operator approved extend scope. Added docs/v2-status.md and docs/current-state.md only for required status/evidence updates. Added after 87 to prevent overlapping status-page writers. Release now preserving work; resume after task87 branch merged.
+  - at: 2026-11-27T22:55:50.829Z
+    commit: 2e0087f027b6
+    text: "released: waits on task 87 (edits docs/v2-status.md). Main 2e0087f0 merged (ff); task work intact and uncommitted. All checks pass except check-docs: tests/ is v2-owned (docs/workstreams.md:11), so the new tests/host/dns-updater.sh + tests/fixtures/dns/* need a docs/v2-status.md row (Uncommitted field + slice) and a dated docs/current-state.md entry. Operator approved that scope extension (main 1aa8466d). Resume after 87 merges: merge main, add those doc updates, rerun tk done with followup: record_ip swallows aws list failures as empty old IP -> UPSERT."
+  - at: 2026-11-27T22:59:02.427Z
+    commit: 1aa8466d7084
+    text: "Operator approved workflow exception for check-docs: worker may commit only scoped changes before tk done, leaving Uncommitted: none truthful for committed state, then run full tk done checks. Applies to subsequent same-requirement tasks. Conductor retains merge control. Still wait until87 merged before resuming shared docs."

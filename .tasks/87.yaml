@@ -20,3 +20,6 @@ notes:
   - at: 2026-11-27T22:54:20.796Z
     commit: 2e0087f027b6
     text: May task scope include v2/cmd/swhurl-v2/restore_test.go to change expected first step suspend to claim? -> Operator approved yes. File added to scope; no other scope extension authorized.
+  - at: 2026-11-27T22:59:02.222Z
+    commit: 1aa8466d7084
+    text: "How should check-docs Uncommitted field stay truthful before and after commit? -> Operator approved workflow exception: workers may commit only scoped changes before tk done, set Uncommitted: none for committed state, then run tk done checks against that committed state. Applies to87 and subsequent tasks with same requirement. Conductor still controls merges; no doc mutation after checks or weakening checks."

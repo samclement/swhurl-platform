@@ -1,6 +1,6 @@
 id: 79
 title: "Record the console slice as moved offline: plan section 36 state, workstream row, v2 status and dated evidence"
-state: ready
+state: cancelled
 scope:
   - docs/iteration-2-plan.md
   - docs/workstreams.md
@@ -12,7 +12,7 @@ checks:
   - make check-repo
 after:
   - 78
-reason: null
+reason: "Operator-approved chain recreation: replaced by 84 after 83."
 notes:
   - at: 2026-11-26T07:29:28.799Z
     commit: 0a81414b2703

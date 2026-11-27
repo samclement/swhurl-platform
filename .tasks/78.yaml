@@ -1,6 +1,6 @@
 id: 78
 title: Move the flag, secret and audit handlers into v2/console and retire the console's orchestration edges and files
-state: ready
+state: cancelled
 scope:
   - v2/console/*.go
   - v2/cmd/swhurl-v2/console_secrets.go
@@ -18,7 +18,7 @@ checks:
   - make check-apps
 after:
   - 77
-reason: null
+reason: "Operator-approved split: replaced by 82 and 83, after existing task 77."
 notes:
   - at: 2026-11-26T07:29:28.638Z
     commit: 0a81414b2703

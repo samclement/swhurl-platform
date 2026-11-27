@@ -1,0 +1,17 @@
+id: 82
+title: Move the console's flag and secret handlers into v2/console
+state: ready
+scope:
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/console_secrets.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/cmd/swhurl-v2/console_flags_test.go
+  - v2/cmd/swhurl-v2/console_secrets_test.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./console/... ./cmd/swhurl-v2/
+  - make check-v2
+after:
+  - 77
+reason: null
+notes: []

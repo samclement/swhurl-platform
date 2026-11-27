@@ -1,0 +1,19 @@
+id: 86
+title: Enforce that only console and cmd import pages and document its architecture layer
+state: ready
+scope:
+  - v2/archtest/rules_test.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+  - v2/pages/*.go
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/*.go
+  - docs/architecture.md
+checks:
+  - cd v2 && go test ./archtest/
+  - make check-v2
+  - make check-docs
+after:
+  - 85
+reason: null
+notes: []

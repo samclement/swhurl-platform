@@ -1,6 +1,6 @@
 id: 77
 title: Move Activity, the change job and the new-app job into v2/console
-state: active
+state: ready
 scope:
   - v2/console/activity.go
   - v2/console/changes.go
@@ -49,3 +49,12 @@ notes:
   - at: 2026-11-27T14:20:35.067Z
     commit: 897df7215297
     text: "widen to call sites and move the kind list here? -> conductor: option 1, as the operator's task-72 decision recorded on 77 says; scope widened to pages/*.go, console/*.go, cmd console*/change*.go, orchestration console*/jobs, archtest api/budgets/rules/checks, docs/console.md, docs/v2-status.md (check-docs only)"
+  - at: 2026-11-27T16:39:08.277Z
+    commit: b3ebbb298b48
+    text: "released: Previous worker failed: lost x5; NON_MONOTONIC_NATIVE_RESPONSE; conductor hit Claude session quota. One recovery relaunch."
+  - at: 2026-11-27T16:50:35.193Z
+    commit: b3ebbb298b48
+    text: "released: Recovery relaunch reached workflow budget (3.13M input tokens) and was stopped. Second failure; awaiting operator decision on splitting task. Partial edits retained in existing task-77 worktree."
+  - at: 2026-11-27T17:45:43.033Z
+    commit: b3ebbb298b48
+    text: "Operator approved bounded finishing attempt in retained task-77 worktree after two failures: preserve partial code move, finish public-API baseline and affected docs, run required checks. No adjacent implementation. Approved replacing 78-80 with five smaller sequential tasks; Offers destination remains undecided."

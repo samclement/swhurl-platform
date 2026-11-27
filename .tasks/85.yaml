@@ -1,0 +1,22 @@
+id: 85
+title: Move Offers/OfferedAPI out of pages into the operator-chosen capability package without behaviour changes
+state: ready
+scope:
+  - v2/pages/*.go
+  - v2/connectivity/*.go
+  - v2/apps/*.go
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/*.go
+  - v2/adapters/appsource/*.go
+  - v2/archtest/api.txt
+checks:
+  - cd v2 && go test ./...
+  - make check-v2
+  - make check-apps
+after:
+  - 84
+reason: null
+notes:
+  - at: 2026-11-27T17:46:05.602Z
+    commit: b3ebbb298b48
+    text: DO NOT CLAIM until operator chooses connectivity or apps as Offers/OfferedAPI owner; ask and record answer first. Replaces ownership-move portion of task 80.

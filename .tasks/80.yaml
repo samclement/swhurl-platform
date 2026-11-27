@@ -1,6 +1,6 @@
 id: 80
 title: Move Offers/OfferedAPI out of pages into a domain package and add an archtest rule that only console and cmd import pages
-state: ready
+state: cancelled
 scope:
   - v2/adapters/appsource/*.go
   - v2/pages/*.go
@@ -20,8 +20,11 @@ checks:
   - make check-apps
 after:
   - 79
-reason: null
+reason: "Operator-approved split: replaced by 85 and 86; destination decision required before 85."
 notes:
   - at: 2026-11-26T07:56:11.086Z
     commit: 61bf25f7bfb9
     text: "operator: pages holds view models and must not be imported by core logic. Destination of Offers (connectivity or apps) is the operator's choice: ask before moving."
+  - at: 2026-11-27T17:46:05.759Z
+    commit: b3ebbb298b48
+    text: Operator approved split into 85 (ownership move) and 86 (pages import boundary); destination choice deferred, not answered.

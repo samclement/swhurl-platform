@@ -1,0 +1,19 @@
+id: 83
+title: Move the console's audit handler into v2/console and retire its remaining orchestration edges and files
+state: ready
+scope:
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/console*.go
+  - v2/orchestration/console*.go
+  - v2/orchestration/jobs.go
+  - v2/archtest/api.txt
+  - v2/archtest/budgets.json
+  - v2/archtest/rules_test.go
+  - docs/iteration-2-plan.md
+checks:
+  - cd v2 && go test ./...
+  - make check-v2
+after:
+  - 82
+reason: null
+notes: []

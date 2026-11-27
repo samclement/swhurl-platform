@@ -1,6 +1,6 @@
 id: 84
 title: "Record the console slice as moved offline: plan section 36 state, workstream row, v2 status and dated evidence"
-state: ready
+state: done
 scope:
   - docs/iteration-2-plan.md
   - docs/workstreams.md
@@ -14,4 +14,16 @@ checks:
 after:
   - 83
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T19:30:26.172Z
+    commit: 655d9fe3e1d7
+    text: "released: First attempt reached workflow token budget (3.15M input) and stopped; partial edits retained. One allowed recovery relaunch in existing worktree."
+  - at: 2026-11-27T19:31:51.522Z
+    commit: 655d9fe3e1d7
+    text: "done: Docs record console slice 6 moved offline: plan §36 rows/state, workstream v2 row and gate (Offers owner = operator's choice), v2-status gate/rows, console promote --expect wording, stale orchestration paths in current-state/rehearsal, new dated current-state entry. Only check-docs and check-repo ran; nothing live verified."
+  - at: 2026-11-27T19:31:51.522Z
+    commit: 655d9fe3e1d7
+    text: "followup: Task 86's pages-import check: orchestration/jobs.go (pages.Job, pages.Value) and adapters/appsource (pages.Offers) also import pages today; Offers' move (85) does not clear jobs.go"
+  - at: 2026-11-27T19:32:59.059Z
+    commit: 655d9fe3e1d7
+    text: branch dsa/01M8F7GN1MNMRWR2P99H4CZ3PM/task-84

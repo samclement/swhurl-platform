@@ -1,6 +1,6 @@
 id: 88
 title: Restore preserves release and backup suspension across uncertain patch outcomes (audit 10,11)
-state: ready
+state: done
 scope:
   - v2/recovery/restore.go
   - v2/recovery/restore_test.go
@@ -16,3 +16,15 @@ notes:
   - at: 2026-11-27T22:59:09.048Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-27T23:11:22.078Z
+    commit: 957e545f0687
+    text: "done: Commit 957e545f: restore reads the HelmRelease's suspend first and never resumes one the operator had suspended; backup-suspend records ownership before its patch, so a timed-out suspend is still resumed on undo and reported. Offline tests cover both and fail on the old code. Not verified live."
+  - at: 2026-11-27T23:11:22.078Z
+    commit: 957e545f0687
+    text: "followup: No dated docs/current-state.md entry for this offline change: current-state.md was outside task 88's scope"
+  - at: 2026-11-27T23:11:22.078Z
+    commit: 957e545f0687
+    text: "followup: RestoreOutcome.BackupSuspended's doc says true only when a restore pod may hold the claim; it is also true when the schedule's resume failed (restore.go and cmd restore.go comments)"
+  - at: 2026-11-27T23:13:19.388Z
+    commit: b48e3969e014
+    text: branch dsa/01M8FM4MEA32VBWCG7EV71HJFB/task-88

@@ -1,6 +1,6 @@
 id: 76
 title: Move the app and instance pages, actions and their readers into v2/console
-state: active
+state: done
 scope:
   - v2/console/app.go
   - v2/console/actions.go
@@ -45,3 +45,24 @@ notes:
   - at: 2026-11-27T14:14:20.164Z
     commit: 85ac5cd4c8c2
     text: "conductor: added v2/orchestration/apprepo.go (+_test) to scope; my earlier widening named the cmd file by mistake"
+  - at: 2026-11-27T14:14:26.433Z
+    commit: 8734653ad026
+    text: "done: App page/promotion/unit-action composition and readers (rows, teams, site, offers, stacks, variables, settings, flag view, dashboards, app stack) moved from orchestration+cmd into v2/console; ordered decoder exported in orchestration/ordered.go; ConsoleJobs beside jobs. App page reuses the handler's jobs read. Offline only; not live."
+  - at: 2026-11-27T14:14:26.433Z
+    commit: 8734653ad026
+    text: "followup: cmd readApp still computes the instance's changes (own-jobs filter + orchestration.ConsoleChanges + changeViewOf): moves with Activity in task 77"
+  - at: 2026-11-27T14:14:26.433Z
+    commit: 8734653ad026
+    text: "followup: cmd newApp handler (console_app.go) repeats console_new.go's newAppRead composition except for keeping teamsError; fold them when task 77 moves the new-app read"
+  - at: 2026-11-27T14:14:26.433Z
+    commit: 8734653ad026
+    text: "followup: console.Server.AppPage takes the flag store as a FlagCards argument because cmd/console.go (reads()) was out of scope; task 78 can make it a Server field when it moves the flag store"
+  - at: 2026-11-27T14:14:26.433Z
+    commit: 8734653ad026
+    text: "followup: orchestration/jobs.go header says nothing there touches a cluster; ConsoleJobs now there reads the record and pods through caller-given kube ports — reword if task 78 keeps it"
+  - at: 2026-11-27T14:17:01.433Z
+    commit: 8734653ad026
+    text: "followup: adapters/git TestReadWritesNothing failed once under make check-v2 after tk done (snapshot of the temp repo incl. .git changed), then passed in a full rerun and 23 isolated runs; flaky and unrelated to task 76, which does not touch adapters/git. Likely something under the temp repo's .git written during Read under load; worth a look in an adapters/git task"
+  - at: 2026-11-27T14:17:50.046Z
+    commit: 55a12117a483
+    text: branch dsa/01M8EN3FX1MT2YK5X54ZXHDW6H/task-76

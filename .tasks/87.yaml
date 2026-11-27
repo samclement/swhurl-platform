@@ -1,6 +1,6 @@
 id: 87
 title: Restore claims instance before effects, drains backups and fails closed on existing claim (audit 1,9)
-state: active
+state: done
 scope:
   - v2/recovery/restore.go
   - v2/recovery/restore_test.go
@@ -23,3 +23,24 @@ notes:
   - at: 2026-11-27T22:59:02.222Z
     commit: 1aa8466d7084
     text: "How should check-docs Uncommitted field stay truthful before and after commit? -> Operator approved workflow exception: workers may commit only scoped changes before tk done, set Uncommitted: none for committed state, then run tk done checks against that committed state. Applies to87 and subsequent tasks with same requirement. Conductor still controls merges; no doc mutation after checks or weakening checks."
+  - at: 2026-11-27T22:59:38.580Z
+    commit: 90d0f78e367d
+    text: "released: First worker run reached workflow token budget (3000000). Approved one relaunch in preserved worktree; read prior task notes and finish existing work, do not restart exploration."
+  - at: 2026-11-27T22:59:38.873Z
+    commit: 90d0f78e367d
+    text: "retry: 1 of 1 automatic relaunch used after workflow budget reached on 01M8FJWTYFR9VR6GGK3K3BTAXH/task-87. Reuse preserved worktree. A second failed/timed-out/over-budget run must stop for operator decision."
+  - at: 2026-11-27T22:59:34.221Z
+    commit: 567b5bc1a9e7
+    text: "done: Commit 567b5bc1 (branch dsa/01M8FJWTYFR9VR6GGK3K3BTAXH/task-87): restore creates <app>-restore-key as the claim before any patch; a refused create is Refusal restore.claim, an unknown answer fails with no change or delete. Drains CronJob status.active (3 min) before scale-down. All tk checks passed on that commit. Not verified live."
+  - at: 2026-11-27T22:59:34.221Z
+    commit: 567b5bc1a9e7
+    text: "followup: kube adapter maps 409 Conflict to the generic 'status' reason, so restore.claim cannot say 'held' specifically; a conflict reason in adapters/kube would make the refusal self-explaining"
+  - at: 2026-11-27T22:59:34.221Z
+    commit: 567b5bc1a9e7
+    text: "followup: No dated docs/current-state.md entry for this offline change: current-state.md was outside task 87's scope"
+  - at: 2026-11-27T23:02:53.250Z
+    commit: 90d0f78e367d
+    text: branch dsa/01M8FJWTYFR9VR6GGK3K3BTAXH/task-87
+  - at: 2026-11-27T23:02:53.410Z
+    commit: 90d0f78e367d
+    text: "Late completion race: original run finished tk done at commit567b5bc1 as budget notice arrived. Replacement run stopped immediately after observing task done; no second implementation needed. Original clean worktree no longer listed by git worktree list; committed branch retained."

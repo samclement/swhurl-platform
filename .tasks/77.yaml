@@ -1,6 +1,6 @@
 id: 77
 title: Move Activity, the change job and the new-app job into v2/console
-state: ready
+state: active
 scope:
   - v2/console/activity.go
   - v2/console/changes.go
@@ -21,6 +21,18 @@ scope:
   - v2/orchestration/console_evidence_test.go
   - v2/orchestration/console_publish_test.go
   - v2/archtest/api.txt
+  - v2/pages/*.go
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/console*.go
+  - v2/cmd/swhurl-v2/change*.go
+  - v2/orchestration/console*.go
+  - v2/orchestration/jobs.go
+  - v2/orchestration/jobs_test.go
+  - v2/archtest/budgets.json
+  - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
+  - docs/console.md
+  - docs/v2-status.md
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -34,3 +46,6 @@ notes:
   - at: 2026-11-27T07:16:39.429Z
     commit: 725cb56e1c4f
     text: "operator (task 72 decision): move pages' ConsoleChange kind list into console here, ending the two-list split"
+  - at: 2026-11-27T14:20:35.067Z
+    commit: 897df7215297
+    text: "widen to call sites and move the kind list here? -> conductor: option 1, as the operator's task-72 decision recorded on 77 says; scope widened to pages/*.go, console/*.go, cmd console*/change*.go, orchestration console*/jobs, archtest api/budgets/rules/checks, docs/console.md, docs/v2-status.md (check-docs only)"

@@ -14,6 +14,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -44,7 +45,7 @@ func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.jobs == nil {
-		s.failure(w, r, http.StatusConflict, noJobsProblem)
+		s.failure(w, r, http.StatusConflict, console.NoJobsProblem)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), writeTimeout)
@@ -70,7 +71,7 @@ func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
 // refusals and the flags v2's command takes. A problem comes with the status the console answers it with.
 func (s *consoleServer) changeSpecOf(ctx context.Context, instance pages.Instance, one pages.ConsoleChange, change string,
 	fields map[string][]string, identity string) (*changeSpec, string, int) {
-	tree, rows, row, err := s.appRow(ctx, instance)
+	tree, rows, row, err := s.reads().AppRow(ctx, instance)
 	if err != nil {
 		return nil, err.Error(), http.StatusBadGateway
 	}
@@ -80,7 +81,7 @@ func (s *consoleServer) changeSpecOf(ctx context.Context, instance pages.Instanc
 	if problem, refused := appFormRefusal(change, one, instance.Env, row, rows); refused {
 		return nil, problem, http.StatusBadRequest
 	}
-	teams, _ := orchestration.ConsoleTeams(tree)
+	teams, _ := console.TeamRegistry(tree)
 	flags, err := pages.ConsoleFormChange(change, instance.App, fields, row.Inventory, teams)
 	if err != nil {
 		return nil, err.Error(), http.StatusBadRequest
@@ -152,7 +153,7 @@ func offered(change, env, app string, rows []pages.AppRow, tree map[string][]byt
 	if change != "connect" {
 		return "", false
 	}
-	connectable := pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, env), env, app)
+	connectable := pages.ConnectableTo(rows, console.Offers(tree, rows, env), env, app)
 	callable := make(map[string]bool, len(connectable.Apps))
 	for _, one := range connectable.Apps {
 		callable[one.App] = true
@@ -313,7 +314,7 @@ func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, "Overrides could not be written: "+err.Error())
 		return
 	}
-	declaration, problem := orchestration.FlagDeclaration(tree[flagDocument(instance)])
+	declaration, problem := orchestration.FlagDeclaration(tree[console.FlagDocument(instance)])
 	set := first(fields, "action") == "set"
 	if set {
 		err = orchestration.SetFlag(ctx, store, instance.Env, instance.App, name, first(fields, "value"), declaration)
@@ -429,7 +430,7 @@ func (s *consoleServer) proposeTeam(w http.ResponseWriter, r *http.Request, kind
 		return
 	}
 	if s.jobs == nil {
-		s.failure(w, r, http.StatusConflict, noJobsProblem)
+		s.failure(w, r, http.StatusConflict, console.NoJobsProblem)
 		return
 	}
 	name := strings.TrimSpace(first(fields, "name"))

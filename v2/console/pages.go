@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -164,12 +163,12 @@ func (s Server) Catalogue(ctx context.Context, env, kind, team string) (pages.Ca
 	if err != nil {
 		return pages.CataloguePage{}, err
 	}
-	site, err := orchestration.ConsoleSite(tree, s.Repository)
+	site, err := Site(tree, s.Repository)
 	if err != nil {
 		return pages.CataloguePage{}, err
 	}
 	input := pages.CatalogueInput{Rows: rows, Env: env, Kind: kind, Team: team, Site: site, Github: s.GitHub}
-	input.Offers = orchestration.ConsoleOffers(tree, rows, pages.EnvironmentNamed(env))
+	input.Offers = Offers(tree, rows, pages.EnvironmentNamed(env))
 	return pages.CataloguePageOf(input), nil
 }
 
@@ -180,7 +179,7 @@ func (s Server) Apps(ctx context.Context, input pages.AppsInput) (pages.AppsPage
 	if err != nil {
 		return pages.AppsPage{}, err
 	}
-	site, err := orchestration.ConsoleSite(tree, s.Repository)
+	site, err := Site(tree, s.Repository)
 	if err != nil {
 		return pages.AppsPage{}, err
 	}
@@ -204,7 +203,7 @@ func (s Server) Egress(ctx context.Context) (pages.EgressPage, error) {
 	if err != nil {
 		return pages.EgressPage{}, err
 	}
-	site, err := orchestration.ConsoleSite(tree, s.Repository)
+	site, err := Site(tree, s.Repository)
 	if err != nil {
 		return pages.EgressPage{}, err
 	}
@@ -218,11 +217,11 @@ func (s Server) Teams(ctx context.Context) (pages.TeamsPage, error) {
 	if err != nil {
 		return pages.TeamsPage{}, err
 	}
-	site, err := orchestration.ConsoleSite(tree, s.Repository)
+	site, err := Site(tree, s.Repository)
 	if err != nil {
 		return pages.TeamsPage{}, err
 	}
-	registry, registryErr := orchestration.ConsoleTeams(tree)
+	registry, registryErr := TeamRegistry(tree)
 	page := pages.TeamsPageOf(registry, registryErr == nil, rows, site, s.Stacks(ctx, appsOf(rows)), s.Dashboards(ctx))
 	if registryErr != nil {
 		page.RegistryError = registryErr.Error()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/nats"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
@@ -79,7 +80,7 @@ func (s *consoleServer) app(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	tree, rows, row, err := s.appRow(ctx, instance)
+	tree, rows, row, err := s.reads().AppRow(ctx, instance)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
@@ -95,27 +96,13 @@ func (s *consoleServer) app(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusOK, "pending.html", page)
 		return
 	}
-	data, err := s.readApp(ctx, instance, tree, rows, *row)
+	data, err := s.readApp(ctx, instance, tree, rows, jobs)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
 	data.shell = s.pageWith(r, false, jobs)
 	s.render(w, r, http.StatusOK, "app.html", data)
-}
-
-// appRow is the pinned tree, every row, and the instance's row (nil when the cluster has no such instance).
-func (s *consoleServer) appRow(ctx context.Context, instance pages.Instance) (map[string][]byte, []pages.AppRow, *pages.AppRow, error) {
-	tree, rows, err := s.readRows(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	for i := range rows {
-		if rows[i].Instance == instance {
-			return tree, rows, &rows[i], nil
-		}
-	}
-	return tree, rows, nil, nil
 }
 
 // pending shows why an instance is not deployed: its job and pull request, or that Flux has not applied it.
@@ -132,29 +119,13 @@ func (s *consoleServer) pending(w http.ResponseWriter, r *http.Request, instance
 	s.render(w, r, http.StatusOK, "pending.html", page)
 }
 
-// readApp is one instance's page: the pinned tree, the rows and the documents the page shows.
+// readApp is one instance's page and the changes that made it.
 func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tree map[string][]byte,
-	rows []pages.AppRow, row pages.AppRow) (appData, error) {
-	site, err := orchestration.ConsoleSite(tree, s.repository)
+	rows []pages.AppRow, jobs []pages.Job) (appData, error) {
+	page, err := s.reads().AppPage(ctx, instance, tree, rows, jobs, s.flagCard)
 	if err != nil {
 		return appData{}, err
 	}
-	registry, registryErr := orchestration.ConsoleTeams(tree)
-	teamsError := ""
-	if registryErr != nil {
-		registry, teamsError = map[string]pages.TeamInfo{}, registryErr.Error()
-	}
-	declaration, problem := orchestration.FlagDeclaration(tree[flagDocument(instance)])
-	card, writable := s.flagCard(ctx, instance, declaration, problem)
-	flags := orchestration.ConsoleFlagView(instance.Env, card)
-	variables, variablesKnown := orchestration.ConsoleDesiredVariables(tree, instance.App, instance.Env)
-	connectable := pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, instance.Env), instance.Env, instance.App)
-	jobs := s.jobsOf(ctx)
-	page := pages.AppPageOf(pages.AppInput{Instance: instance, Rows: rows, Site: site,
-		Stacks: s.stacksOf(ctx, []string{instance.App}), Dashboards: s.dashboardsOf(ctx), Jobs: jobs,
-		Flags: flags, FlagChanged: "", FlagsWritable: writable, Teams: registry, TeamsError: teamsError,
-		Settings: orchestration.ConsoleSettings(tree, instance.App, instance.Env), Variables: variables,
-		VariablesKnown: variablesKnown, Connectable: connectable, Github: s.hasGitHub})
 	reads := s.changeReads()
 	own := []pages.Job{}
 	for _, job := range jobs {
@@ -168,11 +139,6 @@ func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tr
 		changes = append(changes, changeViewOf(change, reads.Now))
 	}
 	return appData{AppPage: page, Changes: changes}, nil
-}
-
-// flagDocument is the path an instance's offered flags document takes in the pinned tree.
-func flagDocument(instance pages.Instance) string {
-	return kernel.RecordFolder(kernel.RecordsRoot, instance.App, instance.Env) + "/offers/" + kernel.DocumentRoles["flags"]
 }
 
 // promotion is staging's image reviewed against production's, or the promotion pull request already open.
@@ -203,43 +169,13 @@ func (s *consoleServer) promotion(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	review, problem := promotionReview(app, rows)
+	review, problem := console.PromotionReview(app, rows)
 	if problem != "" {
 		s.failure(w, r, http.StatusConflict, problem)
 		return
 	}
 	page := promotionData{shell: s.page(r, false), PromotionPage: pages.PromotionPage{App: app, Review: &review}}
 	s.render(w, r, http.StatusOK, "promotion.html", page)
-}
-
-// promotionReview is staging's image against production's, or why the promotion cannot be reviewed.
-func promotionReview(app string, rows []pages.AppRow) (pages.PromotionReview, string) {
-	staging, prod := promotionRows(app, rows)
-	if staging == nil {
-		return pages.PromotionReview{}, "its records are not in Git, so what it declares is unknown"
-	}
-	if prod == nil {
-		return pages.PromotionReview{}, "v2 has no first promotion: production has no records yet"
-	}
-	return pages.PromotionOf(app, staging, prod), ""
-}
-
-// promotionRows is one app's staging and production rows, each only when its records declare it.
-func promotionRows(app string, rows []pages.AppRow) (*pages.AppRow, *pages.AppRow) {
-	var staging, prod *pages.AppRow
-	for i := range rows {
-		row := &rows[i]
-		if row.Instance.App != app || row.Inventory == nil || row.Removed != "" {
-			continue
-		}
-		switch row.Instance.Env {
-		case "staging":
-			staging = row
-		case "prod":
-			prod = row
-		}
-	}
-	return staging, prod
 }
 
 // newApp shows the form that creates an app's repository and opens the pull request that adds it to staging.
@@ -254,23 +190,23 @@ func (s *consoleServer) newApp(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	catalogue, err := orchestration.ConsoleStacks(tree)
+	catalogue, err := console.StackCatalogue(tree)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
+	site, err := console.Site(tree, s.repository)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	registry, registryErr := orchestration.ConsoleTeams(tree)
+	registry, registryErr := console.TeamRegistry(tree)
 	teamsError := ""
 	if registryErr != nil {
 		registry, teamsError = map[string]pages.TeamInfo{}, registryErr.Error()
 	}
 	read := newAppRead{tree: tree, catalogue: catalogue, teams: registry, teamsError: teamsError,
-		connectable: pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, "staging"), "staging", ""),
+		connectable: pages.ConnectableTo(rows, console.Offers(tree, rows, "staging"), "staging", ""),
 		hookHost:    "flux-webhook." + site.Domain}
 	s.renderNewApp(w, r, read, pages.NewAppForm{}, nil, nil, "", http.StatusOK)
 }

@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"html"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -60,11 +59,12 @@ func backURL(r *http.Request) string {
 // is the job's own last line, as it always was: the console only decides that a job may start.
 func (s *consoleServer) startUnit(w http.ResponseWriter, r *http.Request) {
 	if s.jobs == nil {
-		s.failure(w, r, http.StatusConflict, noJobsProblem)
+		s.failure(w, r, http.StatusConflict, console.NoJobsProblem)
 		return
 	}
 	action, unit := r.PathValue("action"), r.PathValue("unit")
-	job, err := s.jobs.Start(r.Context(), action, unit, identityOf(r), nil, s.unitWork(action, unit))
+	work := console.UnitWork(s.cluster(), s.now, action, unit)
+	job, err := s.jobs.Start(r.Context(), action, unit, identityOf(r), nil, work)
 	if err != nil {
 		if inPlace(r) {
 			s.refusalAnswer(w, r, err.Error())
@@ -76,20 +76,8 @@ func (s *consoleServer) startUnit(w http.ResponseWriter, r *http.Request) {
 	s.started(w, r, job)
 }
 
-// unitWork is one unit action as a job's work: Flux's own lines, and the refusal it ends with when there is one.
-func (s *consoleServer) unitWork(action, unit string) orchestration.JobWork {
-	return func(ctx context.Context, line func(string)) (string, error) {
-		return "", orchestration.Flux(ctx, orchestration.FluxInputs{Action: orchestration.FluxAction(action), Unit: unit,
-			Cluster: s.cluster(), Now: s.now, Sleep: time.Sleep, Progress: line})
-	}
-}
-
 // cluster is the API server a unit action reads and changes: the one credential the console was given, and nothing
 // else. A console without the write port runs no unit action.
 func (s *consoleServer) cluster() orchestration.Cluster {
 	return orchestration.Cluster{Reader: s.reader, Writer: s.writer}
 }
-
-// noJobsProblem says why a form did nothing: this console would have no record of the job it started.
-const noJobsProblem = "This console runs no jobs: it has no cluster record, so nothing would remember them. Start it " +
-	"with --in-cluster or --kubeconfig."

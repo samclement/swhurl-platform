@@ -661,6 +661,7 @@ connectivity/rules: type Records struct {Application, Environment string Instanc
 connectivity/rules: type Refusal struct {Subject, Reason string}
 console: const Create Operation = "create"
 console: const Edit Operation = "edit"
+console: const NoJobsProblem = "This console runs no jobs: it has no cluster record, so nothing would remember them. Start it " + "with --in-cluster or --kubeconfig."
 console: const Promote Operation = "promote"
 console: const Remove Operation = "remove"
 console: const Render Operation = "render"
@@ -679,6 +680,8 @@ console: func (RemoveStep) Quote() string
 console: func (RenderStep) Operation() Operation
 console: func (RenderStep) Quote() string
 console: func (Request) Name() string
+console: func (Server) AppPage(ctx context.Context, instance pages.Instance, tree map[string][]byte, rows []pages.AppRow, jobs []pages.Job, cards FlagCards) (pages.AppPage, error)
+console: func (Server) AppRow(ctx context.Context, instance pages.Instance) (map[string][]byte, []pages.AppRow, *pages.AppRow, error)
 console: func (Server) Apps(ctx context.Context, input pages.AppsInput) (pages.AppsPage, error)
 console: func (Server) Catalogue(ctx context.Context, env, kind, team string) (pages.CataloguePage, error)
 console: func (Server) Checks(ctx context.Context) (pages.Checks, error)
@@ -693,14 +696,26 @@ console: func (Server) UnitPage(ctx context.Context, name string) (UnitPage, boo
 console: func (Server) Units(ctx context.Context) ([]pages.Unit, error)
 console: func (TeamStep) Operation() Operation
 console: func (TeamStep) Quote() string
+console: func AppStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
 console: func ChangeNamed(kind string) (Change, bool)
 console: func Changes() []Change
+console: func DesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
+console: func FlagDocument(instance pages.Instance) string
+console: func FlagView(environment string, card orchestration.FlagCard) pages.FlagView
+console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
 console: func PlatformOf(checks pages.Checks, units []pages.Unit) Platform
+console: func PromotionReview(app string, rows []pages.AppRow) (pages.PromotionReview, string)
+console: func Settings(tree map[string][]byte, app, env string) map[string]string
+console: func Site(files map[string][]byte, repository string) (pages.Site, error)
+console: func StackCatalogue(tree map[string][]byte) (pages.StackCatalogue, error)
+console: func TeamRegistry(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 console: func UnitPageOf(unit pages.Unit) UnitPage
+console: func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) orchestration.JobWork
 console: func WorkingCopy(dir string) files.Checkout
 console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
+console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
 console: type Layer struct {Title, Text string Members []UnitRow}
 console: type Operation string
 console: type Overview struct {Checks pages.Checks AppCount int Units []pages.Unit Problems []pages.Problem Updating []pages.Problem}
@@ -1531,6 +1546,8 @@ orchestration: func (*Refusal) Error() string
 orchestration: func (ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
 orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
 orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
+orchestration: func (OrderedValue) Member(name string) OrderedValue
+orchestration: func (OrderedValue) Text() string
 orchestration: func (RegistryOutcome) Summary() string
 orchestration: func (StackContract) Stack(name string) (Stack, bool)
 orchestration: func (StackContract) Type(key string) (AppType, bool)
@@ -1548,18 +1565,9 @@ orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(p
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
 orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
-orchestration: func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string
-orchestration: func ConsoleDesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
-orchestration: func ConsoleFlagView(environment string, card FlagCard) pages.FlagView
 orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
-orchestration: func ConsoleOffers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
 orchestration: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
-orchestration: func ConsoleRows(collection observe.Collection) ([]pages.AppRow, error)
-orchestration: func ConsoleSettings(tree map[string][]byte, app, env string) map[string]string
-orchestration: func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error)
-orchestration: func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
-orchestration: func ConsoleStacks(tree map[string][]byte) (pages.StackCatalogue, error)
-orchestration: func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error)
+orchestration: func DecodeOrdered(data []byte) (OrderedValue, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
 orchestration: func FlagDeclaration(document []byte) ([]producer.Flag, string)
@@ -1572,6 +1580,7 @@ orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
+orchestration: func ScalarText(value any) string
 orchestration: func SetCertIssuer(inputs CertIssuerInputs, issuer string, dryRun bool, root string, decoder manifests.Decoder, writer files.Writer) (certissuer.Outcome, error)
 orchestration: func SetFlag(ctx context.Context, store nats.KV, environment, application, name, text string, flags []producer.Flag) error
 orchestration: func SyncDashboards(ctx context.Context, ports DashboardPorts, options DashboardOptions) (DashboardReport, error)
@@ -1616,6 +1625,8 @@ orchestration: type LifecycleTestInputs struct {Cluster Cluster Secrets kube.Sec
 orchestration: type MintInputs struct {Instance, Profile []byte Seed [32]byte Rotate bool}
 orchestration: type MintOutcome struct {Application, Environment string Public, Previous string Written []files.Outcome}
 orchestration: type Named struct {Name, Value string}
+orchestration: type OrderedField struct {Name string Value OrderedValue}
+orchestration: type OrderedValue struct {Kind byte Fields []OrderedField Items []OrderedValue Scalar any}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
 orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
 orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}

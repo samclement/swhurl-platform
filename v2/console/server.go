@@ -63,7 +63,7 @@ func (s Server) Rows(ctx context.Context) (map[string][]byte, []pages.AppRow, er
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err := orchestration.ConsoleRows(collection)
+	rows, err := rowsOf(collection)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -237,5 +237,5 @@ func (s Server) Dashboards(ctx context.Context) map[string]string {
 	if s.Data == nil {
 		return nil
 	}
-	return orchestration.ConsoleDashboards(ctx, s.Data)
+	return dashboardsOf(ctx, s.Data)
 }

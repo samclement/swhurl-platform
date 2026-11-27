@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/observe"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -457,4 +459,80 @@ type jobRecordDocument struct {
 	Resume   map[string]any `json:"resume"`
 	Reached  string         `json:"reached"`
 	Lines    []string       `json:"lines"`
+}
+
+// The console keeps its jobs outside the pod: one key per job in this ConfigMap, written as each starts and as it
+// ends (docs/console.md#jobs-and-restarts). A page reads them; step 2's writer owns what is written.
+const (
+	consoleJobsNamespace = "console"
+	consoleJobsName      = "console-jobs"
+	consolePodKind       = "Pod"
+)
+
+// ConsoleJobs reads the jobs the console keeps outside its pod, newest first. A record that cannot be read is left
+// out rather than shown wrong, and an unreadable store is no jobs (the page still renders).
+func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job {
+	record, err := data.GetConfigMap(ctx, consoleJobsNamespace, consoleJobsName)
+	if err != nil || record == nil {
+		return nil
+	}
+	found := make([]pages.Job, 0, len(record.Data))
+	for _, raw := range record.Data {
+		if job, ok := decodeJob(raw); ok {
+			found = append(found, job)
+		}
+	}
+	slices.SortFunc(found, func(a, b pages.Job) int { return b.ID - a.ID })
+	alive := map[string]bool{}
+	for i := range found {
+		if !found[i].Running() {
+			continue
+		}
+		owner := found[i].Owner
+		known, ok := alive[owner]
+		if !ok {
+			known = owner != "" && podAlive(ctx, reader, owner)
+			alive[owner] = known
+		}
+		if !known {
+			found[i] = found[i].Interrupted(now)
+		}
+	}
+	return found
+}
+
+// podAlive is whether the pod that ran a job still exists; an unreadable answer counts as alive, so a job is called
+// interrupted only when its pod is known to be gone.
+func podAlive(ctx context.Context, reader kube.Reader, owner string) bool {
+	read, err := reader.Read(ctx, observe.Ref{APIVersion: "v1", Kind: consolePodKind, Namespace: consoleJobsNamespace, Name: owner})
+	if err != nil {
+		return true
+	}
+	return read.Status != observe.Absent
+}
+
+// decodeJob is one stored record as a job; anything malformed is not a job.
+func decodeJob(raw string) (pages.Job, bool) {
+	var record jobRecordDocument
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		return pages.Job{}, false
+	}
+	started, err := time.Parse(time.RFC3339Nano, record.Started)
+	if err != nil {
+		return pages.Job{}, false
+	}
+	var finished *time.Time
+	if record.Finished != nil {
+		at, err := time.Parse(time.RFC3339Nano, *record.Finished)
+		if err != nil {
+			return pages.Job{}, false
+		}
+		finished = &at
+	}
+	if !slices.Contains([]string{"running", "succeeded", "failed", "interrupted"}, record.State) {
+		return pages.Job{}, false
+	}
+	return pages.Job{ID: record.ID, Action: record.Action, Unit: record.Unit, Identity: record.Identity,
+		Started: started, Finished: finished, State: record.State, Link: record.Link, Owner: record.Owner,
+		Resume: record.Resume, Reached: record.Reached, Lines: record.Lines}, true
 }

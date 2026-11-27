@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -67,7 +68,7 @@ func (s *consoleServer) newAppReady(w http.ResponseWriter, r *http.Request, form
 		return false
 	}
 	if s.jobs == nil {
-		s.failure(w, r, http.StatusConflict, noJobsProblem)
+		s.failure(w, r, http.StatusConflict, console.NoJobsProblem)
 		return false
 	}
 	return true
@@ -168,17 +169,17 @@ func (s *consoleServer) newAppRead(ctx context.Context) (newAppRead, error) {
 	if err != nil {
 		return newAppRead{}, err
 	}
-	catalogue, err := orchestration.ConsoleStacks(tree)
+	catalogue, err := console.StackCatalogue(tree)
 	if err != nil {
 		return newAppRead{}, err
 	}
-	site, err := orchestration.ConsoleSite(tree, s.repository)
+	site, err := console.Site(tree, s.repository)
 	if err != nil {
 		return newAppRead{}, err
 	}
-	teams, _ := orchestration.ConsoleTeams(tree)
+	teams, _ := console.TeamRegistry(tree)
 	return newAppRead{tree: tree, catalogue: catalogue, teams: teams, hookHost: "flux-webhook." + site.Domain,
-		connectable: pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, "staging"), "staging", "")}, nil
+		connectable: pages.ConnectableTo(rows, console.Offers(tree, rows, "staging"), "staging", "")}, nil
 }
 
 // callable is the apps staging offers a call to, as the form's checkboxes name them; nil when the lists could not be

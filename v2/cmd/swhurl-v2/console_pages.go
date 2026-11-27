@@ -97,7 +97,7 @@ func (s *consoleServer) stacksOf(ctx context.Context, apps []string) map[string]
 		}
 		stack := ""
 		if reachable {
-			stack, reachable = orchestration.ConsoleStack(ctx, s.appConsole, owner, app)
+			stack, reachable = console.AppStack(ctx, s.appConsole, owner, app)
 		}
 		s.stacks[app] = stackEntry{at: time.Now(), stack: stack}
 		found[app] = stack

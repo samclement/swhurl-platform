@@ -64,24 +64,24 @@ type StackContract struct {
 
 // ReadStackContract reads the stack catalogue, keeping the file's order: a type's first stack is its default.
 func ReadStackContract(data []byte) (StackContract, error) {
-	document, err := decodeOrdered(data)
+	document, err := DecodeOrdered(data)
 	if err != nil {
 		return StackContract{}, &Refusal{"app-repo", "the stack catalogue cannot be read: " + err.Error()}
 	}
-	found := StackContract{Copier: scalarText(document.member("copier"))}
-	for _, field := range document.member("stacks").fields {
+	found := StackContract{Copier: document.Member("copier").Text()}
+	for _, field := range document.Member("stacks").Fields {
 		found.Stacks = append(found.Stacks, Stack{Name: field.Name,
-			Repository:  scalarText(field.Value.member("repository")),
-			Revision:    scalarText(field.Value.member("revision")),
-			Description: scalarText(field.Value.member("description"))})
+			Repository:  field.Value.Member("repository").Text(),
+			Revision:    field.Value.Member("revision").Text(),
+			Description: field.Value.Member("description").Text()})
 	}
-	for _, field := range document.member("types").fields {
-		appType := AppType{Key: field.Name, Exposure: scalarText(field.Value.member("exposure"))}
-		for _, stack := range field.Value.member("stacks").items {
-			appType.Stacks = append(appType.Stacks, scalarText(stack))
+	for _, field := range document.Member("types").Fields {
+		appType := AppType{Key: field.Name, Exposure: field.Value.Member("exposure").Text()}
+		for _, stack := range field.Value.Member("stacks").Items {
+			appType.Stacks = append(appType.Stacks, stack.Text())
 		}
-		for _, answer := range field.Value.member("answers").fields {
-			appType.Answers = append(appType.Answers, Named{answer.Name, scalarText(answer.Value)})
+		for _, answer := range field.Value.Member("answers").Fields {
+			appType.Answers = append(appType.Answers, Named{answer.Name, answer.Value.Text()})
 		}
 		found.Types = append(found.Types, appType)
 	}

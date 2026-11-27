@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -72,7 +73,7 @@ func (f appFixture) tree() map[string][]byte {
 }
 
 // fixtureRows is the rows the pages show: one per instance reported, and one only the cluster still has, as
-// orchestration.ConsoleRows builds them from the same status document.
+// the console's rows build them from the same status document.
 func (f appFixture) fixtureRows(t *testing.T) []pages.AppRow {
 	t.Helper()
 	rows := []pages.AppRow{}
@@ -165,7 +166,7 @@ func shellWithJobs(t *testing.T, path, title string, jobs []pages.Job) shell {
 // fixtureSite is the site the pages link to: the console's repository, whose owner app repositories live under too.
 func fixtureSite(t *testing.T, tree map[string][]byte) pages.Site {
 	t.Helper()
-	site, err := orchestration.ConsoleSite(tree, "samclement/swhurl-platform")
+	site, err := console.Site(tree, "samclement/swhurl-platform")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,15 +201,15 @@ func appPageOf(t *testing.T, f appFixture, tree map[string][]byte, app, env stri
 		t.Fatalf("%s/%s is not an instance", app, env)
 	}
 	rows := f.fixtureRows(t)
-	teams, _ := orchestration.ConsoleTeams(tree)
-	variables, variablesKnown := orchestration.ConsoleDesiredVariables(tree, app, env)
+	teams, _ := console.TeamRegistry(tree)
+	variables, variablesKnown := console.DesiredVariables(tree, app, env)
 	now := f.moment(t)
 	card := orchestration.Flags(context.Background(), nil, env, app, nil, "", now)
 	return pages.AppPageOf(pages.AppInput{Instance: instance, Rows: rows, Site: fixtureSite(t, tree),
 		Stacks: map[string]string{app: "typescript"}, Jobs: f.fixtureJobs(t),
-		Flags: orchestration.ConsoleFlagView(env, card), FlagsWritable: false, Teams: teams,
-		Settings: orchestration.ConsoleSettings(tree, app, env), Variables: variables, VariablesKnown: variablesKnown,
-		Connectable: pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, env), env, app),
+		Flags: console.FlagView(env, card), FlagsWritable: false, Teams: teams,
+		Settings: console.Settings(tree, app, env), Variables: variables, VariablesKnown: variablesKnown,
+		Connectable: pages.ConnectableTo(rows, console.Offers(tree, rows, env), env, app),
 		Github:      true})
 }
 
@@ -322,14 +323,14 @@ func TestNewAppIsByteIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 	tree["v2/contract/stacks.json"] = stacks
-	catalogue, err := orchestration.ConsoleStacks(tree)
+	catalogue, err := console.StackCatalogue(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rows := fixture.fixtureRows(t)
-	teams, _ := orchestration.ConsoleTeams(tree)
+	teams, _ := console.TeamRegistry(tree)
 	page := pages.NewAppPageOf(pages.NewAppInput{Catalogue: catalogue, Site: fixtureSite(t, tree), Teams: teams,
-		Connectable: pages.ConnectableTo(rows, orchestration.ConsoleOffers(tree, rows, "staging"), "staging", ""),
+		Connectable: pages.ConnectableTo(rows, console.Offers(tree, rows, "staging"), "staging", ""),
 		Github:      true, AppRepos: true})
 	data := newAppData{shell: fixtureShell("/new", "New app"), NewAppPage: page}
 	var rendered bytes.Buffer

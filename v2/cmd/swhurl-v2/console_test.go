@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -392,9 +391,9 @@ func TestCatalogueIsByteIdentical(t *testing.T) {
 	}{
 		{"catalogue.html", "/catalogue", pages.CatalogueInput{Rows: appsRows(t), Site: site}},
 		{"catalogue-described.html", "/catalogue", pages.CatalogueInput{Rows: rows, Site: site,
-			Offers: orchestration.ConsoleOffers(tree, rows, "staging")}},
+			Offers: console.Offers(tree, rows, "staging")}},
 		{"catalogue-empty.html", "/catalogue?env=prod&kind=event&team=nobody", pages.CatalogueInput{Rows: rows,
-			Env: "prod", Kind: "event", Team: "nobody", Site: site, Offers: orchestration.ConsoleOffers(tree, rows, "prod")}},
+			Env: "prod", Kind: "event", Team: "nobody", Site: site, Offers: console.Offers(tree, rows, "prod")}},
 	} {
 		data := catalogueData{shell: shell{Title: "Catalogue", Path: "/catalogue", Identity: "sam@swhurl.com", ReadAt: "09:43",
 			RefreshURL: one.refresh, Assets: "93e3b193821e"}, CataloguePage: pages.CataloguePageOf(one.input)}

@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/appsource"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
@@ -18,14 +17,13 @@ import (
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
-// ConsoleRows decodes a bulk status collection into the rows the console's pages show: one row per instance it
-// reports, and one per instance only the cluster still has, so an app removed from Git stays visible until its
-// namespace goes.
-func ConsoleRows(collection observe.Collection) ([]pages.AppRow, error) {
+// rowsOf decodes a bulk status collection into the rows the console's pages show: one row per instance it reports,
+// and one per instance only the cluster still has, so an app removed from Git stays visible until its namespace goes.
+func rowsOf(collection observe.Collection) ([]pages.AppRow, error) {
 	teams := map[string]string{}
 	rows := make([]pages.AppRow, 0, len(collection.Instances))
 	for _, instance := range collection.Instances {
-		row, err := consoleRowOf(instance, teams)
+		row, err := rowOf(instance, teams)
 		if err != nil {
 			return nil, err
 		}
@@ -55,8 +53,8 @@ var (
 	dashboardID  = regexp.MustCompile(`^[0-9a-f]{24}$`)
 )
 
-// consoleRowOf is one instance as a row, remembering its team for the rows after it.
-func consoleRowOf(instance observe.InstanceReport, teams map[string]string) (*pages.AppRow, error) {
+// rowOf is one instance as a row, remembering its team for the rows after it.
+func rowOf(instance observe.InstanceReport, teams map[string]string) (*pages.AppRow, error) {
 	named, known := pages.Named(instance.Application, instance.Environment)
 	if !known {
 		return nil, fmt.Errorf("Go status unavailable: invalid instance identity")
@@ -83,9 +81,9 @@ func consoleRowOf(instance observe.InstanceReport, teams map[string]string) (*pa
 		Inventory: &inventory, Report: &report, Teams: teams, Suspended: suspended}, nil
 }
 
-// ConsoleTeams is the team registry as a page shows it: each team's description and its channel's name and
+// TeamRegistry is the team registry as a page shows it: each team's description and its channel's name and
 // transport, read from the pinned tree's v2-records/teams.json.
-func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error) {
+func TeamRegistry(tree map[string][]byte) (map[string]pages.TeamInfo, error) {
 	data, known := tree[kernel.RecordsRoot+"/"+kernel.TeamsRecordName]
 	if !known {
 		return nil, fmt.Errorf("cannot read v2-records/teams.json: not in the repository")
@@ -105,9 +103,9 @@ func ConsoleTeams(tree map[string][]byte) (map[string]pages.TeamInfo, error) {
 	return found, nil
 }
 
-// ConsoleDashboards is each app's HyperDX dashboard, from the record the dashboard job keeps. Empty when it cannot be
+// dashboardsOf is each app's HyperDX dashboard, from the record the dashboard job keeps. Empty when it cannot be
 // read, so a page leaves the link out; only an app name and a dashboard id become a link.
-func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string {
+func dashboardsOf(ctx context.Context, data kube.Data) map[string]string {
 	record, err := data.GetConfigMap(ctx, dashboards.RecordNamespace, dashboards.RecordName)
 	found := map[string]string{}
 	if err != nil || record == nil {
@@ -125,10 +123,10 @@ func ConsoleDashboards(ctx context.Context, data kube.Data) map[string]string {
 	return found
 }
 
-// ConsoleStack reads one app's swhurl.yaml from its repository's default branch and returns the stack it names.
+// AppStack reads one app's swhurl.yaml from its repository's default branch and returns the stack it names.
 // reachable is false when GitHub could not be asked at all: a page then stops asking it for the rest of the apps
 // rather than waiting once per app. A file that is absent or unusable names no stack, which is a fact, not a failure.
-func ConsoleStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool) {
+func AppStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool) {
 	body, found, err := console.AppFile(ctx, owner+"/"+app, "", "swhurl.yaml")
 	if err != nil {
 		return "", false
@@ -158,89 +156,13 @@ func number(value any) (int64, bool) {
 	return 0, false
 }
 
-// ConsoleSite is the platform a page links into: the domain its profile's routing shares, and the owner of its
+// Site is the platform a page links into: the domain its profile's routing shares, and the owner of its
 // repositories.
-func ConsoleSite(files map[string][]byte, repository string) (pages.Site, error) {
-	profile, err := kernel.DecodeProfile(files[consoleProfile])
+func Site(files map[string][]byte, repository string) (pages.Site, error) {
+	profile, err := kernel.DecodeProfile(files[profilePath])
 	if err != nil {
 		return pages.Site{}, fmt.Errorf("platform profile unavailable: %w", err)
 	}
 	owner, _, _ := strings.Cut(repository, "/")
 	return pages.Site{Domain: profile.Routing.BaseDomain, Owner: owner}, nil
-}
-
-// The console keeps its jobs outside the pod: one key per job in this ConfigMap, written as each starts and as it
-// ends (docs/console.md#jobs-and-restarts). A page reads them; step 2's writer owns what is written.
-const (
-	consoleJobsNamespace = "console"
-	consoleJobsName      = "console-jobs"
-	consolePodKind       = "Pod"
-)
-
-// ConsoleJobs reads the jobs the console keeps outside its pod, newest first. A record that cannot be read is left
-// out rather than shown wrong, and an unreadable store is no jobs (the page still renders).
-func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job {
-	record, err := data.GetConfigMap(ctx, consoleJobsNamespace, consoleJobsName)
-	if err != nil || record == nil {
-		return nil
-	}
-	found := make([]pages.Job, 0, len(record.Data))
-	for _, raw := range record.Data {
-		if job, ok := decodeJob(raw); ok {
-			found = append(found, job)
-		}
-	}
-	slices.SortFunc(found, func(a, b pages.Job) int { return b.ID - a.ID })
-	alive := map[string]bool{}
-	for i := range found {
-		if !found[i].Running() {
-			continue
-		}
-		owner := found[i].Owner
-		known, ok := alive[owner]
-		if !ok {
-			known = owner != "" && podAlive(ctx, reader, owner)
-			alive[owner] = known
-		}
-		if !known {
-			found[i] = found[i].Interrupted(now)
-		}
-	}
-	return found
-}
-
-// podAlive is whether the pod that ran a job still exists; an unreadable answer counts as alive, so a job is called
-// interrupted only when its pod is known to be gone.
-func podAlive(ctx context.Context, reader kube.Reader, owner string) bool {
-	read, err := reader.Read(ctx, observe.Ref{APIVersion: "v1", Kind: consolePodKind, Namespace: consoleJobsNamespace, Name: owner})
-	if err != nil {
-		return true
-	}
-	return read.Status != observe.Absent
-}
-
-// decodeJob is one stored record as a job; anything malformed is not a job.
-func decodeJob(raw string) (pages.Job, bool) {
-	var record jobRecordDocument
-	if err := json.Unmarshal([]byte(raw), &record); err != nil {
-		return pages.Job{}, false
-	}
-	started, err := time.Parse(time.RFC3339Nano, record.Started)
-	if err != nil {
-		return pages.Job{}, false
-	}
-	var finished *time.Time
-	if record.Finished != nil {
-		at, err := time.Parse(time.RFC3339Nano, *record.Finished)
-		if err != nil {
-			return pages.Job{}, false
-		}
-		finished = &at
-	}
-	if !slices.Contains([]string{"running", "succeeded", "failed", "interrupted"}, record.State) {
-		return pages.Job{}, false
-	}
-	return pages.Job{ID: record.ID, Action: record.Action, Unit: record.Unit, Identity: record.Identity,
-		Started: started, Finished: finished, State: record.State, Link: record.Link, Owner: record.Owner,
-		Resume: record.Resume, Reached: record.Reached, Lines: record.Lines}, true
 }

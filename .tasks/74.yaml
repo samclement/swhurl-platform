@@ -22,6 +22,12 @@ scope:
   - v2/console/change_test.go
   - v2/adapters/files/checkout.go
   - v2/adapters/files/checkout_test.go
+  - v2/connectivity/connectivity.go
+  - v2/connectivity/connectivity_test.go
+  - v2/connectivity/rules/*.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/budgets.json
+  - docs/iteration-2-plan.md
 checks:
   - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/
   - make check-v2
@@ -47,3 +53,6 @@ notes:
   - at: 2026-11-27T12:45:34.714Z
     commit: 3620ab9b63aa
     text: "released: run failed: Claude quota exceeded (five-hour session limit) after 5.07M tokens; partial work kept in its worktree"
+  - at: 2026-11-27T13:34:38.519Z
+    commit: dbb59ce17223
+    text: "connect/disconnect/allow builders need connectivity.ConnectionSettings/AllowSettings; console may not import connectivity -> operator: option 2: move them (pure) into connectivity/rules, delete the then-empty connectivity root package and its layer registration; step builders move into console, cmd's switch deleted. If they turn out not pure or the package not empty, fall back to option 1 (register console->connectivity) and say so in the done note."

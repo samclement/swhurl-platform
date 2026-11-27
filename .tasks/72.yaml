@@ -1,6 +1,6 @@
 id: 72
 title: Create v2/console with one change-kind table (kind, title, envs, flags, planned operations) and register its layer and edges
-state: active
+state: done
 scope:
   - v2/console/console.go
   - v2/console/change.go
@@ -26,3 +26,15 @@ notes:
   - at: 2026-11-27T07:16:38.985Z
     commit: 725cb56e1c4f
     text: "Where does the change-kind table live while pages still reads branches? -> operator: option 1, split by reader: pages keeps branch facts, console/change.go holds flags and planned operations keyed by kind, a test keeps the kind lists equal; the pages half moves into console with Activity (task 77)"
+  - at: 2026-11-27T07:26:53.724Z
+    commit: 581cc1e0621c
+    text: "done: v2/console (layer 2, edge console->orchestration) holds one change-kind table: pages' branch row looked up per kind, flags (CheckFlags, from cmd's deleted changeShapes) and ordered planned operations; cmd change reads it. Tests: kinds match pages; steps follow plan for every kind. Plan §36 updated. Offline only; make check-docs fails on v2-status.md (task 79)."
+  - at: 2026-11-27T07:26:53.724Z
+    commit: 581cc1e0621c
+    text: "followup: make check-docs fails: docs/v2-status.md 'Uncommitted' and slice record not updated for the v2 changes (outside 72's scope; task 79 records the slice)."
+  - at: 2026-11-27T07:26:53.724Z
+    commit: 581cc1e0621c
+    text: "followup: cmd/swhurl-v2/change_steps.go still switches on kind names (a second kind list) and takes pages.ConsoleChange; tasks 73/74 replace it with console's planned operations."
+  - at: 2026-11-27T07:28:36.649Z
+    commit: ce04c1a358e2
+    text: branch dsa/01M8BDX24NCKE3CTGYAZ444WEM/task-72

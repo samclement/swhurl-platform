@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": "test-01",
   "environment": "staging",
-  "release": "rel-sha256:5f459890bd55d7dd96a8ae8b6e4c981e151ff502da38379e306a03a29b1a4655",
+  "release": "rel-sha256:c8bbca90790995f25bda2ede7d6f63249fe680233c87dd54267c81a5794186cf",
   "configuration": {
     "replicas": 1,
     "memoryMiB": 128

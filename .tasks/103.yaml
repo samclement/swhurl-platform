@@ -1,6 +1,6 @@
 id: 103
 title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
-state: ready
+state: done
 scope:
   - host/aws-dns-updater.sh
   - tests/host/dns-updater.sh
@@ -35,3 +35,15 @@ notes:
   - at: 2026-11-27T22:59:02.427Z
     commit: 1aa8466d7084
     text: "Operator approved workflow exception for check-docs: worker may commit only scoped changes before tk done, leaving Uncommitted: none truthful for committed state, then run full tk done checks. Applies to subsequent same-requirement tasks. Conductor retains merge control. Still wait until87 merged before resuming shared docs."
+  - at: 2026-11-27T23:04:37.949Z
+    commit: 6d42159b35fe
+    text: Committed on branch dsa/01M8FJWZN5JWCE6P4GMAYB1P22/task-103 at 6d42159b (on top of main e8599c96); not merged or pushed.
+  - at: 2026-11-27T23:04:38.093Z
+    commit: 6d42159b35fe
+    text: "done: aws-dns-updater.sh reads its IP via curl --fail --silent --show-error --max-time 10 https://checkip.amazonaws.com and exits before any aws call on failure; tests/host/dns-updater.sh with fake curl/aws proves HTTP error, timeout and non-IP stop with no Route 53 call. Docs: commands, v2-status, current-state. Not run live against Route 53."
+  - at: 2026-11-27T23:04:38.093Z
+    commit: 6d42159b35fe
+    text: "followup: record_ip in host/aws-dns-updater.sh swallows aws list-resource-record-sets failures (2>/dev/null, || true) as an empty old IP, so a failed Route 53 read becomes an UPSERT."
+  - at: 2026-11-27T23:05:58.442Z
+    commit: e8599c965335
+    text: branch dsa/01M8FJWZN5JWCE6P4GMAYB1P22/task-103

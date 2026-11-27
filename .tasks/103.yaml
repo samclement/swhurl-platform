@@ -1,14 +1,17 @@
 id: 103
 title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
-state: ready
+state: active
 scope:
   - host/aws-dns-updater.sh
   - tests/host/dns-updater.sh
   - tests/fixtures/dns/*
   - docs/commands.md
+  - docs/v2-status.md
+  - docs/current-state.md
 checks:
   - bash -n host/aws-dns-updater.sh && bash -n tests/host/dns-updater.sh && bash tests/host/dns-updater.sh && uvx --from shellcheck-py==0.11.0.1 shellcheck -x host/aws-dns-updater.sh && for f in host/*.sh tests/fixtures/*.sh; do [ ! -f "$f" ] || bash -n "$f" || exit; done && make check
-after: []
+after:
+  - 87
 reason: null
 notes:
   - at: 2026-11-27T22:44:19.935Z
@@ -23,3 +26,6 @@ notes:
   - at: 2026-11-27T22:48:23.513Z
     commit: ebc85053ba9d
     text: "released: blocked on task 104: pre-existing broken doc link fails make check-repo"
+  - at: 2026-11-27T22:55:37.343Z
+    commit: 5a3ad1ca294e
+    text: May scope include status documentation required by tests workstream ownership? -> Operator approved extend scope. Added docs/v2-status.md and docs/current-state.md only for required status/evidence updates. Added after 87 to prevent overlapping status-page writers. Release now preserving work; resume after task87 branch merged.

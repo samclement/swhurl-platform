@@ -28,3 +28,6 @@ notes:
   - at: 2026-11-27T17:46:05.759Z
     commit: b3ebbb298b48
     text: Operator approved split into 85 (ownership move) and 86 (pages import boundary); destination choice deferred, not answered.
+  - at: 2026-11-27T19:42:09.060Z
+    commit: c5580535ae48
+    text: Offers owner? -> operator approved connectivity/rules on replacement task 85; presentation wording stays in pages.

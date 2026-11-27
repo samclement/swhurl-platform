@@ -4,11 +4,14 @@ state: ready
 scope:
   - v2/pages/*.go
   - v2/connectivity/*.go
+  - v2/connectivity/rules/*.go
   - v2/apps/*.go
   - v2/console/*.go
   - v2/cmd/swhurl-v2/*.go
   - v2/adapters/appsource/*.go
   - v2/archtest/api.txt
+  - v2/archtest/rules_test.go
+  - docs/iteration-2-plan.md
 checks:
   - cd v2 && go test ./...
   - make check-v2
@@ -20,3 +23,6 @@ notes:
   - at: 2026-11-27T17:46:05.602Z
     commit: b3ebbb298b48
     text: DO NOT CLAIM until operator chooses connectivity or apps as Offers/OfferedAPI owner; ask and record answer first. Replaces ownership-move portion of task 80.
+  - at: 2026-11-27T19:42:08.899Z
+    commit: c5580535ae48
+    text: Offers owner and scope? -> operator approved connectivity/rules. Move document types there; keep wording/rendering helpers in pages. Scope adds v2/connectivity/rules/*.go, v2/archtest/rules_test.go (explicit pages -> connectivity/rules pure dependency), docs/iteration-2-plan.md (resolve ownership wording). No new apps/rules package, no behaviour change. This answers the earlier DO NOT CLAIM ownership gate.

@@ -115,8 +115,10 @@ type fakeCluster struct {
 	// runs on.
 	cancelOn string
 	cancel   context.CancelFunc
-	// backupSuspended is the CronJob's state as the cluster holds it: a schedule the operator suspended.
-	backupSuspended bool
+	// releaseSuspended and backupSuspended are the HelmRelease's and the CronJob's state as the cluster holds
+	// them: a release or a schedule the operator suspended.
+	releaseSuspended bool
+	backupSuspended  bool
 	// backupActive is how many more CronJob reads state an active run: a backup that was already writing.
 	backupActive int
 	available    int32
@@ -165,6 +167,9 @@ func (f *fakeCluster) Read(ctx context.Context, ref observe.Ref) (observe.Read, 
 		document := fmt.Sprintf(`{"metadata":{"generation":2},"spec":{"replicas":%d},`+
 			`"status":{"observedGeneration":2,"availableReplicas":%d}}`, f.replicas, available)
 		return observe.Read{Ref: ref, Status: observe.Present, Object: []byte(document)}, nil
+	case "HelmRelease":
+		return observe.Read{Ref: ref, Status: observe.Present,
+			Object: []byte(fmt.Sprintf(`{"spec":{"suspend":%v}}`, f.releaseSuspended))}, nil
 	case "CronJob":
 		active := "[]"
 		if f.backupActive > 0 {
@@ -337,6 +342,9 @@ func indexOf(events []string, prefix string) int {
 	return -1
 }
 
+// timedOut is a write whose answer never came: the server may have applied it.
+var timedOut = &kube.Error{Code: kube.Failed, Subject: "write", Reason: observe.ReasonTimedOut}
+
 // Every failure from the first change onward puts the app back, and a failure before the first change is a
 // refusal with nothing written.
 func TestRestoreUndoesAndRefuses(t *testing.T) {
@@ -354,6 +362,15 @@ func TestRestoreUndoesAndRefuses(t *testing.T) {
 		// putting it back while a restore pod may still hold the claim.
 		backupSuspended bool
 	}{
+		// A suspend whose answer never came may have been applied, so the undo puts it back all the same.
+		{"the release's suspend has no answer", func(f *fakeCluster) {
+			f.failOn, f.failErr = `patch:HelmRelease:{"spec":{"suspend":true}}`, timedOut
+		}, []string{"delete-secret", "resume"}, AppUnknown, "suspend", 1, false, false},
+		{"the schedule's suspend has no answer", func(f *fakeCluster) {
+			f.failOn, f.failErr = `patch:CronJob:{"spec":{"suspend":true}}`, timedOut
+		}, []string{"delete-secret", "backup-resume", "resume"}, AppUnknown, "backup-suspend", 1, false, false},
+		{"the schedule cannot be read", func(f *fakeCluster) { f.failOn = "read:CronJob" },
+			[]string{"delete-secret", "resume"}, AppUnknown, "backup-suspend", 1, false, false},
 		{"app pods do not stop", func(f *fakeCluster) { f.appPods = 1 }, []string{"delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "pods-gone", 1, false, false},
 		{"a backup run does not finish", func(f *fakeCluster) { f.backupActive = 1000 },
 			[]string{"delete-secret", "backup-resume", "resume"}, AppUnknown, "backup-drain", 1, false, false},
@@ -562,6 +579,26 @@ func TestRestoreLeavesAnAlreadySuspendedBackupAlone(t *testing.T) {
 	}
 	if stepNamed(outcome.Steps, "backup-resume").Outcome != StepDone {
 		t.Fatalf("the schedule's own state is not recorded: %+v", outcome.Steps)
+	}
+}
+
+// A release the operator had already suspended stays suspended, whether the run completes or unwinds: the run
+// does not resume a release it did not stop, and it does not claim to have left one behind.
+func TestRestoreLeavesAnAlreadySuspendedReleaseAlone(t *testing.T) {
+	for _, failOn := range []string{"", "create:Job"} {
+		t.Run("fail on "+failOn, func(t *testing.T) {
+			cluster := &fakeCluster{replicas: 1, releaseSuspended: true, failOn: failOn}
+			outcome, err := Restore(context.Background(), restoreInputs(t, cluster))
+			if (err != nil) != (failOn != "") || outcome.App.Suspended {
+				t.Fatalf("outcome %+v %v", outcome, err)
+			}
+			if indexOf(cluster.events, `patch:HelmRelease:{"spec":{"suspend":false}}`) >= 0 {
+				t.Fatal("it resumed a release the operator had suspended")
+			}
+			if stepNamed(outcome.Steps, "resume").Outcome != StepDone {
+				t.Fatalf("the release's own state is not recorded: %+v", outcome.Steps)
+			}
+		})
 	}
 }
 

@@ -111,7 +111,8 @@ type RestoreJobOutcome struct {
 }
 
 // RestoreApp is the app's state when the run ended: the replica count it had before (the count the run
-// returns it to), whether its release is still suspended, and whether it was observed available again.
+// returns it to), whether the run left its release suspended (one the operator had already suspended stays
+// so and is not reported), and whether it was observed available again.
 type RestoreApp struct {
 	Replicas  int32
 	Suspended bool
@@ -265,14 +266,16 @@ type restorer struct {
 	now     func() time.Time
 
 	replicas   int32
-	suspended  bool
 	scaled     bool
 	secretName string
 	jobName    string
-	// backupSuspended is whether this run suspended the backup schedule and has not put it back;
-	// backupWasSuspended is what it found, so a schedule the operator had already suspended stays that way.
-	backupSuspended    bool
-	backupWasSuspended bool
+	// suspended is whether this run may have suspended the release and has not put it back;
+	// releaseWasSuspended is what it found, so a release the operator had already suspended stays that way.
+	// The backup schedule's pair means the same.
+	suspended           bool
+	releaseWasSuspended bool
+	backupSuspended     bool
+	backupWasSuspended  bool
 
 	steps []RestoreStep
 	out   RestoreOutcome
@@ -430,33 +433,47 @@ func (r *restorer) attempt(name string, action func() error) error {
 }
 
 // suspend stops Flux reconciling the release, so no upgrade starts and the scale-down is not reverted. The
-// run records the intent before the request: a request that timed out may still have been applied.
+// release's own state is read first, so one the operator had already suspended is left suspended. The run
+// records the intent before the request: a request that timed out may still have been applied.
 func (r *restorer) suspend() error {
-	r.suspended = true
+	suspended, err := r.readSuspended("release", r.target.Release)
+	if err != nil {
+		return err
+	}
+	r.releaseWasSuspended, r.suspended = suspended, true
 	return r.patch(r.target.Release, `{"spec":{"suspend":true}}`)
+}
+
+// readSuspended reads one object's own suspension fact: absent means not suspended.
+func (r *restorer) readSuspended(subject string, ref observe.Ref) (bool, error) {
+	read, err := r.cluster.Reader.Read(r.ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	if read.Status != observe.Present {
+		return false, unavailable(subject, reasonOf(read))
+	}
+	var object struct {
+		Spec struct {
+			Suspend *bool `json:"suspend"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(read.Object, &object); err != nil {
+		return false, unavailable(subject, observe.ReasonMalformed)
+	}
+	return object.Spec.Suspend != nil && *object.Spec.Suspend, nil
 }
 
 // suspendBackup stops the nightly run for the window: a backup that copied the database while the restore swaps
 // its files would publish a stale archive. The schedule's own state is read first, so one the operator had
-// already suspended is left suspended.
+// already suspended is left suspended, and the intent is recorded before the request, as the release's is.
 func (r *restorer) suspendBackup() error {
-	read, err := r.cluster.Reader.Read(r.ctx, r.target.Backup.CronJob)
+	suspended, err := r.readSuspended("backup", r.target.Backup.CronJob)
 	if err != nil {
 		return err
 	}
-	if read.Status != observe.Present {
-		return unavailable("backup", reasonOf(read))
-	}
-	suspended, err := cronJobSuspended(read.Object)
-	if err != nil {
-		return err
-	}
-	r.backupWasSuspended = suspended
-	if err := r.patch(r.target.Backup.CronJob, `{"spec":{"suspend":true}}`); err != nil {
-		return err
-	}
-	r.backupSuspended = true
-	return nil
+	r.backupWasSuspended, r.backupSuspended = suspended, true
+	return r.patch(r.target.Backup.CronJob, `{"spec":{"suspend":true}}`)
 }
 
 // resumeBackup puts the schedule back as it was. A CronJob that was already suspended stays so, and the run no
@@ -487,18 +504,8 @@ func (r *restorer) drainBackup() error {
 	})
 }
 
-// cronJobSuspended is a CronJob's own suspension fact: absent means not suspended.
-func cronJobSuspended(document []byte) (bool, error) {
-	cronJob, err := cronJobOf(document)
-	return cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend, err
-}
-
-// backupSchedule is the two facts a restore reads from the backup CronJob: whether it is suspended, and the
-// runs its controller states are active.
+// backupSchedule is what the drain reads from the backup CronJob: the runs its controller states are active.
 type backupSchedule struct {
-	Spec struct {
-		Suspend *bool `json:"suspend"`
-	} `json:"spec"`
 	Status struct {
 		Active []json.RawMessage `json:"active"`
 	} `json:"status"`
@@ -669,10 +676,13 @@ func (r *restorer) scaleUp() error {
 }
 
 // resume hands the release back to Flux, after the app is scaled: a resume first would restart the app while
-// the database was still being replaced.
+// the database was still being replaced. A release the operator had already suspended stays so, and the run
+// no longer owns it: nothing to put back.
 func (r *restorer) resume() error {
-	if err := r.patch(r.target.Release, `{"spec":{"suspend":false}}`); err != nil {
-		return err
+	if !r.releaseWasSuspended {
+		if err := r.patch(r.target.Release, `{"spec":{"suspend":false}}`); err != nil {
+			return err
+		}
 	}
 	r.suspended = false
 	return nil

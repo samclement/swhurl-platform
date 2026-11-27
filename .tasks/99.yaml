@@ -1,0 +1,16 @@
+id: 99
+title: Validate folder and record identity before removal or instance mutation (audit 8)
+state: ready
+scope:
+  - v2/apps/checkout.go
+  - v2/apps/remove_test.go
+  - v2/apps/create_test.go
+  - docs/apps.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./apps/) && make check-v2 && make check && make check-docs
+after:
+  - 98
+reason: null
+notes: []

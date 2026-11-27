@@ -1,0 +1,17 @@
+id: 94
+title: Name proposal branches by their resulting commit to avoid base collisions (audit 17)
+state: ready
+scope:
+  - v2/console/publish.go
+  - v2/console/change.go
+  - v2/console/publish_test.go
+  - v2/console/branches_test.go
+  - docs/console.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./console/ ./cmd/swhurl-v2/) && make check-v2 && make check && make check-docs
+after:
+  - 93
+reason: null
+notes: []

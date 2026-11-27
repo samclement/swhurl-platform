@@ -1,0 +1,28 @@
+id: 95
+title: Carry reviewed promotion image and reject changed staging before execution (audit 5)
+state: ready
+scope:
+  - v2/console/change.go
+  - v2/console/steps.go
+  - v2/console/changes.go
+  - v2/console/*_test.go
+  - v2/cmd/swhurl-v2/promote.go
+  - v2/cmd/swhurl-v2/promote_test.go
+  - v2/cmd/swhurl-v2/main.go
+  - v2/delivery/promote.go
+  - v2/delivery/promote_test.go
+  - v2/delivery/rules/promote.go
+  - v2/delivery/rules/promote_test.go
+  - v2/archtest/api.txt
+  - docs/apps.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./console/ ./delivery/... ./cmd/swhurl-v2/ && go test ./archtest/) && make check-v2 && make check && make check-docs
+after:
+  - 94
+reason: null
+notes:
+  - at: 2026-11-27T22:44:19.775Z
+    commit: 21567fbb7dac
+    text: "Approved acceptance: carry reviewed image through HTTP proposal to worker pinned tree; reject staging mismatch before promotion. Do not weaken architecture guardrails or make CLI compatibility changes beyond this contract without asking."

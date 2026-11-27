@@ -1,0 +1,15 @@
+id: 88
+title: Restore preserves release and backup suspension across uncertain patch outcomes (audit 10,11)
+state: ready
+scope:
+  - v2/recovery/restore.go
+  - v2/recovery/restore_test.go
+  - docs/operations.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./recovery/...) && make check-v2 && make check && make check-docs
+after:
+  - 87
+reason: null
+notes: []

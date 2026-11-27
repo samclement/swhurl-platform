@@ -1,0 +1,12 @@
+id: 90
+title: Stream backup uploads with replayable bodies and unchanged checksums (audit 12)
+state: ready
+scope:
+  - images/backup/tool/upload.go
+  - images/backup/tool/tool_test.go
+checks:
+  - (cd images/backup/tool && go test -count=1 ./...) && make check
+after:
+  - 89
+reason: null
+notes: []

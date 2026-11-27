@@ -1,0 +1,15 @@
+id: 96
+title: Apply Secret encryption gate to JSON manifests (audit 3)
+state: ready
+scope:
+  - v2/checkrepo/secrets.go
+  - v2/checkrepo/checkrepo.go
+  - v2/checkrepo/*_test.go
+  - docs/operations.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./checkrepo/) && make check-repo && make check-v2 && make check && make check-docs
+after: []
+reason: null
+notes: []

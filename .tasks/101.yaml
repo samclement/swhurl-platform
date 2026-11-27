@@ -1,0 +1,14 @@
+id: 101
+title: Bound total archive decompression including skipped entries (audit 19)
+state: ready
+scope:
+  - v2/adapters/files/archive.go
+  - v2/adapters/files/archive_test.go
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./adapters/files/ ./console/) && make check-v2 && make check && make check-docs
+after:
+  - 100
+reason: null
+notes: []

@@ -1,0 +1,17 @@
+id: 102
+title: Validate PR token before public app repository creation without live token probing (audit 20)
+state: ready
+scope:
+  - v2/orchestration/apprepo.go
+  - v2/orchestration/apprepo_test.go
+  - v2/cmd/swhurl-v2/apprepo.go
+  - v2/cmd/swhurl-v2/apprepo_test.go
+  - docs/apps.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./orchestration/ ./cmd/swhurl-v2/) && make check-v2 && make check && make check-docs
+after:
+  - 101
+reason: null
+notes: []

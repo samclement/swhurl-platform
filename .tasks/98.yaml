@@ -1,0 +1,16 @@
+id: 98
+title: Bound YAML alias expansion in appsource and manifests (audit 7)
+state: ready
+scope:
+  - v2/adapters/appsource/source.go
+  - v2/adapters/appsource/source_test.go
+  - v2/adapters/manifests/manifests.go
+  - v2/adapters/manifests/manifests_test.go
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./adapters/appsource/ ./adapters/manifests/) && make check-v2 && make check && make check-docs
+after:
+  - 97
+reason: null
+notes: []

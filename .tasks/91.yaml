@@ -1,0 +1,17 @@
+id: 91
+title: Prevent overlapping console pods with single-replica non-overlapping rollout (audit 14)
+state: ready
+scope:
+  - platform/console/helmrelease.yaml
+  - platform/console/*.json
+  - docs/console.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./...) && make check-apps && make check-v2 && make check && make check-docs
+after: []
+reason: null
+notes:
+  - at: 2026-11-27T22:44:19.595Z
+    commit: 21567fbb7dac
+    text: "Approved trade-off: use non-overlapping single-console rollout, accepting brief console downtime; do not substitute a still-racy max+1 shared-store recheck. Prove rendered strategy with a deterministic check, without cluster changes."

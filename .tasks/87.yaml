@@ -1,0 +1,18 @@
+id: 87
+title: Restore claims instance before effects, drains backups and fails closed on existing claim (audit 1,9)
+state: ready
+scope:
+  - v2/recovery/restore.go
+  - v2/recovery/restore_test.go
+  - v2/archtest/api.txt
+  - docs/operations.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./recovery/... && go test ./archtest/) && make check-v2 && make check && make check-docs
+after: []
+reason: null
+notes:
+  - at: 2026-11-27T22:44:19.255Z
+    commit: 21567fbb7dac
+    text: "Approved design: acquire exclusive per-instance ownership before any suspension or scaling using existing primitives. Existing claim refuses with no effects or cleanup ownership. No age-only/absent-pod automatic takeover. Unknown API outcome must not authorize deleting another operation resources. Drain active backup writers boundedly. No new effect adapters/dependencies or general workflow framework; do not weaken archtest baselines. Offline changes only."

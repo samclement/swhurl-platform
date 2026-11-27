@@ -1,0 +1,16 @@
+id: 97
+title: Reject direct image manifests incompatible with linux/amd64 (audit 6)
+state: ready
+scope:
+  - v2/adapters/registry/registry.go
+  - v2/adapters/registry/registry_test.go
+  - v2/adapters/registry/registrytest/*
+  - docs/apps.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./adapters/registry/) && make check-v2 && make check && make check-docs
+after:
+  - 96
+reason: null
+notes: []

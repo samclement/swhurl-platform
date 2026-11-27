@@ -1,0 +1,16 @@
+id: 103
+title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
+state: ready
+scope:
+  - host/aws-dns-updater.sh
+  - tests/host/dns-updater.sh
+  - tests/fixtures/dns/*
+  - docs/commands.md
+checks:
+  - bash -n host/aws-dns-updater.sh && bash -n tests/host/dns-updater.sh && bash tests/host/dns-updater.sh && uvx --from shellcheck-py==0.11.0.1 shellcheck -x host/aws-dns-updater.sh && for f in host/*.sh tests/fixtures/*.sh; do [ ! -f "$f" ] || bash -n "$f" || exit; done && make check
+after: []
+reason: null
+notes:
+  - at: 2026-11-27T22:44:19.935Z
+    commit: 21567fbb7dac
+    text: "Approved acceptance: HTTPS, HTTP-failure handling and bounded timeout; deterministic fake-curl tests must prove failures stop before DNS writes. No actual DNS/network changes."

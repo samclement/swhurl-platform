@@ -1,0 +1,16 @@
+id: 93
+title: Handle missing console token safely and use default repository (audit 15,16)
+state: ready
+scope:
+  - v2/cmd/swhurl-v2/console.go
+  - v2/cmd/swhurl-v2/console_test.go
+  - v2/console/source.go
+  - docs/console.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./cmd/swhurl-v2/ ./console/) && make check-v2 && make check && make check-docs
+after:
+  - 92
+reason: null
+notes: []

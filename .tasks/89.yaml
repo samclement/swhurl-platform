@@ -1,0 +1,20 @@
+id: 89
+title: SQLite swap rolls back; failed rollback prevents automatic app restart (audit 2)
+state: ready
+scope:
+  - images/backup/tool/restore.go
+  - images/backup/tool/restore_test.go
+  - v2/recovery/restore.go
+  - v2/recovery/restore_test.go
+  - docs/operations.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd images/backup/tool && go test -count=1 ./...) && (cd v2 && go test -count=1 ./recovery/...) && make check-v2 && make check && make check-docs
+after:
+  - 88
+reason: null
+notes:
+  - at: 2026-11-27T22:44:19.433Z
+    commit: 21567fbb7dac
+    text: "Approved acceptance: reverse completed file moves on swap failure; if rollback fails preserve recovery files and ensure orchestration cannot automatically restart the app over an unsafe/missing database. No live restore or destructive test."

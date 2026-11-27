@@ -1,0 +1,15 @@
+id: 92
+title: Parse catalogue connection submissions once (audit 13)
+state: ready
+scope:
+  - v2/cmd/swhurl-v2/console_change.go
+  - v2/cmd/swhurl-v2/console_*_test.go
+  - docs/console.md
+  - docs/v2-status.md
+  - docs/workstreams.md
+checks:
+  - (cd v2 && go test -count=1 ./cmd/swhurl-v2/) && make check-v2 && make check && make check-docs
+after:
+  - 91
+reason: null
+notes: []

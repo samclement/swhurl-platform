@@ -75,7 +75,7 @@ func currentTag(t *testing.T) (string, kernel.ReleaseBundle) {
 	return "42-" + release.Source.Commit, release
 }
 
-func TestRecordsReportsAnInstanceThatAlreadyRunsItsNewestImage(t *testing.T) {
+func TestDeployRecordsReportsAnInstanceThatAlreadyRunsItsNewestImage(t *testing.T) {
 	tag, release := currentTag(t)
 	status, document, diagnostic, writer := recordsDeploy(t, recordsTree(t), nil, answering(registrytest.Scenario{
 		Tags:   []string{tag},
@@ -96,7 +96,7 @@ func TestRecordsReportsAnInstanceThatAlreadyRunsItsNewestImage(t *testing.T) {
 	}
 }
 
-func TestRecordsWritesTheSelectedReleaseAndItsFiles(t *testing.T) {
+func TestDeployRecordsWritesTheSelectedReleaseAndItsFiles(t *testing.T) {
 	status, document, diagnostic, writer := recordsDeploy(t, recordsTree(t), nil, answering(registrytest.Scenario{
 		Tags:   []string{nextTag},
 		Images: map[string]registry.Image{nextTag: deployedImage(nextDigest, nextCommit)},
@@ -129,7 +129,7 @@ func TestRecordsWritesTheSelectedReleaseAndItsFiles(t *testing.T) {
 	}
 }
 
-func TestRecordsRefusesAnImageThatStatesNoDeclaration(t *testing.T) {
+func TestDeployRecordsRefusesAnImageThatStatesNoDeclaration(t *testing.T) {
 	status, document, diagnostic, writer := recordsDeploy(t, recordsTree(t), nil, answering(registrytest.Scenario{
 		Tags:   []string{nextTag},
 		Images: map[string]registry.Image{nextTag: {Digest: nextDigest, MediaType: kernel.ManifestMediaType}},
@@ -146,7 +146,7 @@ func TestRecordsRefusesAnImageThatStatesNoDeclaration(t *testing.T) {
 	}
 }
 
-func TestRecordsFailsWhenTheRegistryCannotBeRead(t *testing.T) {
+func TestDeployRecordsFailsWhenTheRegistryCannotBeRead(t *testing.T) {
 	unavailable := &registry.Error{Code: registry.Unavailable, Subject: "tags", Reason: "no answer"}
 	status, document, diagnostic, writer := recordsDeploy(t, recordsTree(t), nil,
 		func(string) (registry.Reader, error) {
@@ -165,7 +165,7 @@ func TestRecordsFailsWhenTheRegistryCannotBeRead(t *testing.T) {
 	}
 }
 
-func TestRecordsRefusesAHalfReadTreeAndDeliversNothing(t *testing.T) {
+func TestDeployRecordsRefusesAHalfReadTreeAndDeliversNothing(t *testing.T) {
 	half := filepath.Join(t.TempDir(), "v2-records")
 	folder := filepath.Join(half, recordsFixture, "staging")
 	if err := os.MkdirAll(folder, 0o755); err != nil {
@@ -191,7 +191,7 @@ func TestRecordsRefusesAHalfReadTreeAndDeliversNothing(t *testing.T) {
 }
 
 // The tree is read whole: an instance deploy does not deliver, missing its release, still refuses the run.
-func TestRecordsRefusesATreeWhoseOtherInstanceIsHalfRead(t *testing.T) {
+func TestDeployRecordsRefusesATreeWhoseOtherInstanceIsHalfRead(t *testing.T) {
 	root := recordsTree(t)
 	prod := filepath.Join(root, recordsFixture, "prod")
 	if err := os.MkdirAll(prod, 0o755); err != nil {
@@ -206,7 +206,7 @@ func TestRecordsRefusesATreeWhoseOtherInstanceIsHalfRead(t *testing.T) {
 	}
 }
 
-func TestRecordsGivesAnInstanceItsAllocationOnlyWhenItGrantsSomething(t *testing.T) {
+func TestDeployRecordsGivesAnInstanceItsAllocationOnlyWhenItGrantsSomething(t *testing.T) {
 	allocation := func(grants []string) string {
 		document := map[string]any{"kind": "v2-egress", "version": 1, "revision": nextCommit,
 			"instances": []map[string]any{{"application": recordsFixture, "environment": "staging",
@@ -245,7 +245,7 @@ func TestRecordsGivesAnInstanceItsAllocationOnlyWhenItGrantsSomething(t *testing
 	}
 }
 
-func TestRecordsIgnoresAnAppFolderWithNoStagingInstance(t *testing.T) {
+func TestDeployRecordsIgnoresAnAppFolderWithNoStagingInstance(t *testing.T) {
 	root := recordsTree(t)
 	if err := os.MkdirAll(filepath.Join(root, "another"), 0o755); err != nil {
 		t.Fatal(err)

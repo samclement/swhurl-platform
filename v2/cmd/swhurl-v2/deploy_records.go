@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
-	connectivityrules "github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/delivery"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
@@ -70,18 +69,18 @@ func (c cli) deployRecords(r request) int {
 	if c.appTreeRefused(r.out) {
 		return 2
 	}
-	instances, profile, calls, status := c.recordsInputs(r)
+	inputs, status := c.recordsInputs(r)
 	if status != 0 {
 		return status
 	}
-	egress, status := c.recordsEgress(r)
-	if status != 0 {
-		return status
+	deploys, err := delivery.DeployAll(context.Background(), inputs, c.registries, r.out, c.writer)
+	if err != nil {
+		return c.failure(err)
 	}
 	document := deployRecordsDocument{Kind: recordsKind, Version: 1, Records: r.records,
-		Instances: make([]deployRecordsEntry, 0, len(instances)), Note: recordsNote}
-	for _, one := range instances {
-		entry := c.deployOne(r, one, profile, calls, egress)
+		Instances: make([]deployRecordsEntry, 0, len(deploys)), Note: recordsNote}
+	for _, one := range deploys {
+		entry := recordsEntry(one)
 		document.Instances = append(document.Instances, entry)
 		fmt.Fprintf(c.diagnostic, "%s/%s: %s %s\n", entry.Application, entry.Environment, entry.Outcome, detail(entry))
 	}
@@ -96,47 +95,22 @@ func (c cli) deployRecords(r request) int {
 	return recordsStatus(document.Instances)
 }
 
-// deployOne runs one delivery: the registry its image is published to, the allocation document the use case gives
-// the instance only a granted place out of, and the decisions the single-instance command makes.
-func (c cli) deployOne(r request, one recordInstance, profile, calls, egress []byte) deployRecordsEntry {
-	entry := deployRecordsEntry{Application: one.application, Environment: one.environment}
-	images, err := c.registries(one.image)
-	if err != nil {
-		entry.Outcome, entry.Reason = outcomeRefused, err.Error()
-		return entry
-	}
-	inputs := delivery.DeployInputs{Instance: one.instance, Release: one.release, App: one.app,
-		Profile: profile, Calls: calls, Egress: egress, Expected: one.revision}
-	result, err := delivery.DeployImage(context.Background(), inputs, images, r.out, c.writer)
-	entry.Files = result.Written
+// recordsEntry is how the report states one instance's delivery: an error is a failure when it would exit 1 and a
+// refusal otherwise.
+func recordsEntry(one delivery.InstanceDeploy) deployRecordsEntry {
+	entry := deployRecordsEntry{Application: one.Application, Environment: one.Environment, Files: one.Deploy.Written}
 	switch {
-	case err != nil:
-		entry.Outcome, entry.Reason = outcomeRefused, err.Error()
-		if exitFor(err) == 1 {
+	case one.Err != nil:
+		entry.Outcome, entry.Reason = outcomeRefused, one.Err.Error()
+		if exitFor(one.Err) == 1 {
 			entry.Outcome = outcomeFailed
 		}
-	case result.Changed:
-		entry.Outcome, entry.Tag, entry.ReleaseID = outcomeChanged, result.Tag, string(result.Release.ReleaseID)
+	case one.Deploy.Changed:
+		entry.Outcome, entry.Tag, entry.ReleaseID = outcomeChanged, one.Deploy.Tag, string(one.Deploy.Release.ReleaseID)
 	default:
-		entry.Outcome, entry.Tag, entry.ReleaseID = outcomeUnchanged, result.Tag, string(result.Release.ReleaseID)
+		entry.Outcome, entry.Tag, entry.ReleaseID = outcomeUnchanged, one.Deploy.Tag, string(one.Deploy.Release.ReleaseID)
 	}
 	return entry
-}
-
-// recordsEgress reads the allocation once, so a malformed document refuses the whole run instead of being
-// discovered instance by instance. Which instances may take it is the use case's rule.
-func (c cli) recordsEgress(r request) ([]byte, int) {
-	if r.egressFile == "" {
-		return nil, 0
-	}
-	egress, status := c.read(r.egressFile, "egress")
-	if status != 0 {
-		return nil, status
-	}
-	if _, err := connectivityrules.DecodeEgressDocument(egress); err != nil {
-		return nil, fail(c.diagnostic, err)
-	}
-	return egress, 0
 }
 
 // recordsStatus is the worst outcome: an I/O or registry failure, else a refusal, else success.
@@ -171,40 +145,26 @@ func recordsSummary(entries []deployRecordsEntry) string {
 		counts[outcomeUnchanged], counts[outcomeRefused], counts[outcomeFailed])
 }
 
-// recordsInputs reads the platform profile, the resolution and every instance's own records. A tree that does not
-// hold what a delivery needs refuses the whole run: nothing is attempted from a half-read tree.
-func (c cli) recordsInputs(r request) ([]recordInstance, []byte, []byte, int) {
+// recordsInputs reads the platform profile, the two optional documents and every instance's records. A tree that
+// does not hold every record it names refuses the whole run: nothing is attempted from a half-read tree.
+func (c cli) recordsInputs(r request) (delivery.DeployAllInputs, int) {
 	profile, status := c.read(r.profile, "profile")
 	if status != 0 {
-		return nil, nil, nil, status
+		return delivery.DeployAllInputs{}, status
 	}
-	calls, status := c.recordsCalls(r)
+	calls, status := c.optional(r.callFile, "calls")
 	if status != 0 {
-		return nil, nil, nil, status
+		return delivery.DeployAllInputs{}, status
+	}
+	egress, status := c.optional(r.egressFile, "egress")
+	if status != 0 {
+		return delivery.DeployAllInputs{}, status
 	}
 	records, status := c.records(r.records)
 	if status != 0 {
-		return nil, nil, nil, status
+		return delivery.DeployAllInputs{}, status
 	}
-	instances := []recordInstance{}
-	for _, record := range records {
-		if record.Environment != stagingDir {
-			continue
-		}
-		one, status := c.describedRecord(record)
-		if status != 0 {
-			return nil, nil, nil, status
-		}
-		instances = append(instances, one)
-	}
-	return instances, profile, calls, 0
-}
-
-func (c cli) recordsCalls(r request) ([]byte, int) {
-	if r.callFile == "" {
-		return nil, 0
-	}
-	return c.read(r.callFile, "calls")
+	return delivery.DeployAllInputs{Records: records, Profile: profile, Calls: calls, Egress: egress}, 0
 }
 
 // records is every instance the records tree holds, as the files adapter reads it. A tree that names an instance

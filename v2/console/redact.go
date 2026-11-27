@@ -1,4 +1,4 @@
-package main
+package console
 
 import (
 	"slices"
@@ -10,16 +10,16 @@ import (
 // job's output only by accident — a token in a URL, an address in a command's words — and the record outlives the pod.
 const redacted = "<redacted>"
 
-// jobRedactor keeps secrets out of every line a job reports and every record it keeps. The console's tokens are added
+// Redactor keeps secrets out of every line a job reports and every record it keeps. The console's tokens are added
 // when it starts, and a channel's address when its form is read; a job's own context is never a reason to print one.
 // It is safe for concurrent use: jobs run in parallel.
-type jobRedactor struct {
+type Redactor struct {
 	mu      sync.Mutex
 	secrets []string // the longest first, so one secret inside another is replaced whole
 }
 
 // Add registers one secret. An empty value is not a secret, and a repeated one is already kept.
-func (r *jobRedactor) Add(secret string) {
+func (r *Redactor) Add(secret string) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return
@@ -34,7 +34,7 @@ func (r *jobRedactor) Add(secret string) {
 }
 
 // Redact is one text with every registered secret replaced.
-func (r *jobRedactor) Redact(text string) string {
+func (r *Redactor) Redact(text string) string {
 	r.mu.Lock()
 	secrets := slices.Clone(r.secrets)
 	r.mu.Unlock()

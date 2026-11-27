@@ -6,16 +6,10 @@ import (
 	"html"
 	"html/template"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
-	"github.com/samclement/swhurl-platform/v2/adapters/nats"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
-	"github.com/samclement/swhurl-platform/v2/producer"
 )
 
 // The app page, the page an app that is not deployed yet shows, a promotion's review, and the New app form.
@@ -122,7 +116,7 @@ func (s *consoleServer) pending(w http.ResponseWriter, r *http.Request, instance
 // readApp is one instance's page and the changes that made it.
 func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tree map[string][]byte,
 	rows []pages.AppRow, jobs []pages.Job) (appData, error) {
-	page, err := s.reads().AppPage(ctx, instance, tree, rows, jobs, s.flagCard)
+	page, err := s.reads().AppPage(ctx, instance, tree, rows, jobs, s.flags.Card)
 	if err != nil {
 		return appData{}, err
 	}
@@ -267,47 +261,3 @@ func prose(text string) template.HTML { return template.HTML(html.EscapeString(t
 
 // jsString is a value as JavaScript's own JSON text, which Jinja's tojson writes too.
 func jsString(value string) template.JS { return template.JS(pages.JinjaJSON(value)) }
-
-// flagStore opens the console's NATS store once and keeps it, since the store reconnects by itself. No key is no
-// store and no error; a failed sign-in is its reason, kept for a minute before the next attempt.
-func (s *consoleServer) flagStore(ctx context.Context) (nats.KV, error) {
-	s.flagsMu.Lock()
-	defer s.flagsMu.Unlock()
-	if s.flagsStore != nil {
-		return s.flagsStore, nil
-	}
-	if s.natsSeed == "" {
-		return nil, nil
-	}
-	if s.flagsErr != nil && s.now().Sub(s.flagsTriedAt) < time.Minute {
-		return nil, s.flagsErr
-	}
-	s.flagsTriedAt = s.now()
-	url := s.natsURL
-	if url == "" {
-		url = defaultNATSURL
-	}
-	open := s.natsOpen
-	if open == nil {
-		open = nats.Open
-	}
-	store, err := open(ctx, url, s.natsSeed, kernel.ConsoleInbox)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "console: feature flags: %v\n", err)
-		s.flagsErr = err
-		return nil, err
-	}
-	s.flagsStore, s.flagsErr = store, nil
-	return store, nil
-}
-
-// flagCard is an instance's card and whether its overrides can be changed: the store's overrides, or why there are
-// none.
-func (s *consoleServer) flagCard(ctx context.Context, instance pages.Instance, declaration []producer.Flag,
-	problem string) (orchestration.FlagCard, bool) {
-	store, err := s.flagStore(ctx)
-	if err != nil {
-		return orchestration.UnreachableFlags(instance.Env, declaration, problem, err, s.now()), false
-	}
-	return orchestration.Flags(ctx, store, instance.Env, instance.App, declaration, problem, s.now()), store != nil
-}

@@ -671,6 +671,10 @@ console: func (*ActivityFacts) Reach(job pages.Job, now time.Time)
 console: func (*ActivityFacts) WithReached(jobs []pages.Job) []pages.Job
 console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
 console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
+console: func (*FlagStore) Card(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
+console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (done, problem string, status int)
+console: func (*Redactor) Add(secret string)
+console: func (*Redactor) Redact(text string) string
 console: func (*Refusal) Error() string
 console: func (Change) Allows(env string) bool
 console: func (Change) Branch(name, env, revision string) (string, error)
@@ -759,6 +763,8 @@ console: type ConsoleEvidence struct {Bundle *orchestration.ConsoleBundle Max in
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
 console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
+console: type FlagChange struct {Name string Set bool Value string}
+console: type FlagStore struct {Seed string URL string Open func(ctx context.Context, url, seed, inbox string) (nats.KV, error) Now func() time.Time}
 console: type JobPage struct {Job ChangeJobView Track pages.Track Stage pages.Stage PR *OpenPullView CanResume bool}
 console: type Layer struct {Title, Text string Members []UnitRow}
 console: type NewAppRead struct {Contract []byte Catalogue pages.StackCatalogue Teams map[string]pages.TeamInfo Connectable pages.Connectable TeamsError string HookHost string}
@@ -770,6 +776,7 @@ console: type Platform struct {Checks pages.Checks Units []pages.Unit Problems [
 console: type PromoteStep struct {App, Env, Expected string}
 console: type PublishInputs struct {Change Change Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
 console: type Published struct {Branch string Paths []string Status map[string]string URL string}
+console: type Redactor struct {}
 console: type Refusal struct {Subject, Reason string}
 console: type RemoveStep struct {App, Env string}
 console: type RenderStep struct {}

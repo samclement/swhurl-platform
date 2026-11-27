@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -202,43 +200,14 @@ func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	store, err := s.flagStore(ctx)
-	if err != nil {
-		s.failure(w, r, http.StatusBadGateway, "Overrides could not be written: "+err.Error())
+	done, problem, status := s.flags.Change(ctx, instance, tree, console.FlagChange{Name: name,
+		Set: first(fields, "action") == "set", Value: first(fields, "value")})
+	if problem != "" {
+		s.failure(w, r, status, problem)
 		return
-	}
-	declaration, problem := orchestration.FlagDeclaration(tree[console.FlagDocument(instance)])
-	set := first(fields, "action") == "set"
-	if set {
-		err = orchestration.SetFlag(ctx, store, instance.Env, instance.App, name, first(fields, "value"), declaration)
-	} else {
-		err = orchestration.ClearFlag(ctx, store, instance.Env, instance.App, name)
-	}
-	if err != nil {
-		s.failure(w, r, http.StatusBadRequest, name+": "+err.Error())
-		return
-	}
-	card := orchestration.Flags(ctx, store, instance.Env, instance.App, declaration, problem, s.now())
-	done := "cleared"
-	if set {
-		done = "= " + storedValue(card, name)
 	}
 	s.audit("%s flag %s/%s %s %s", identityOf(r), instance.App, instance.Env, name, done)
 	http.Redirect(w, r, "/apps/"+instance.App+"/"+instance.Env+"?flag="+name+"#flags", http.StatusSeeOther)
-}
-
-// storedValue is the value the write left one flag at, as the card reads it back.
-func storedValue(card orchestration.FlagCard, name string) string {
-	for _, row := range card.Rows {
-		if row.Name == name && row.Overridden {
-			encoded, err := json.Marshal(row.Override.Value)
-			if err != nil {
-				return "unknown"
-			}
-			return string(encoded)
-		}
-	}
-	return "unknown"
 }
 
 // useOffer is the catalogue's Use: the app chosen there connects to the app whose offer was being read, as its own

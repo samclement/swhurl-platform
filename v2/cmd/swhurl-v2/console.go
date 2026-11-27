@@ -157,14 +157,8 @@ type consoleServer struct {
 	stackMu sync.Mutex
 	stacks  map[string]stackEntry
 
-	// Feature flag overrides are read from NATS, as the flags command reads them: one store, opened on first use.
-	natsSeed     string
-	natsURL      string
-	natsOpen     func(context.Context, string, string, string) (nats.KV, error)
-	flagsMu      sync.Mutex
-	flagsStore   nats.KV
-	flagsTriedAt time.Time
-	flagsErr     error // why the last sign-in failed, until the next attempt
+	// flags is the feature flag overrides in NATS, opened on first use.
+	flags *console.FlagStore
 
 	facts console.ActivityFacts
 
@@ -175,7 +169,7 @@ type consoleServer struct {
 	// jobs is the same registry as live, for the use cases that start and settle jobs; a server without one keeps no
 	// record and runs nothing.
 	jobs   *orchestration.Jobs
-	redact *jobRedactor
+	redact *console.Redactor
 	// log receives the console's audit lines: a flag change, and each job's start and end.
 	log io.Writer
 	// requests writes the console's own request and job lines, in one lock so a line is never interleaved; it is nil
@@ -196,7 +190,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		data: config.Data, now: config.Now,
 		appConsole: trace.traceGitHub(github.NewConsole(nil)), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		reposToken: config.ReposToken, hookToken: config.HookToken,
-		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
+		flags: flagStoreOf(config), redact: &console.Redactor{}, log: config.Log,
 		stacks:   map[string]stackEntry{},
 		events:   consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second},
 		requests: consoleLog(config.Log, config.Now)}
@@ -235,6 +229,23 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 	}
 	server.startJobs(config)
 	return server, nil
+}
+
+// flagStoreOf is the console's flag store, signing in at the broker's in-cluster address unless the environment
+// names another. A failed sign-in is logged as well as shown on the card.
+func flagStoreOf(config consoleConfig) *console.FlagStore {
+	url := config.NatsURL
+	if url == "" {
+		url = defaultNATSURL
+	}
+	open := func(ctx context.Context, url, seed, inbox string) (nats.KV, error) {
+		store, err := nats.Open(ctx, url, seed, inbox)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "console: feature flags: %v\n", err)
+		}
+		return store, err
+	}
+	return &console.FlagStore{Seed: config.NatsSeed, URL: url, Open: open, Now: config.Now}
 }
 
 // pin is the source every tree this server reads comes from: main's whole trees in bundle, and beside them the

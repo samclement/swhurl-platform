@@ -599,22 +599,10 @@ func appliedRevision(lines []string) string {
 }
 
 // PullTrack is the path of an open pull request whose job is no longer remembered.
-func PullTrack(pull Pull, branch string) Track {
-	action, target := BranchTarget(branch)
+func PullTrack(pull Pull, action, target string) Track {
 	rest, status, outcome := afterPull(pull, action, target, nil)
 	return Track{Stages: append([]Stage{{Key: "pull", Label: "Pull request #" + strconv.Itoa(pull.Number), State: "done",
 		Link: pull.URL}}, rest...), Status: status, Outcome: outcome}
-}
-
-// BranchTarget is a console pull request's action and what it changes (<app>/<env> or team:<name>), from its
-// branch console/<action>-<name>[-<env>]-<commit>; both empty for any other branch. The kinds are the one table in
-// console_change.go, which the command that opens a pull request reads too, so a branch and a change cannot disagree.
-func BranchTarget(branch string) (action, target string) {
-	change, name, env, ok := ParseConsoleBranch(branch)
-	if !ok {
-		return "", ""
-	}
-	return change.Name, change.Target(name, env)
 }
 
 var mergePlan = regexp.MustCompile(`(?m)^\*\*Merge plan:\*\* it (.+)\.$`)

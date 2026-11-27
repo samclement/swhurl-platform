@@ -276,3 +276,6 @@ func unique(names []string) []string {
 	}
 	return found
 }
+
+// consoleName is the DNS-label spelling accepted by app and team forms.
+var consoleName = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$`)

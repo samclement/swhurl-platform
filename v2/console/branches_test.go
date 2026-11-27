@@ -1,4 +1,4 @@
-package pages
+package console
 
 import "testing"
 
@@ -50,7 +50,7 @@ func TestConsoleChanges(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.kind, func(t *testing.T) {
-			change, found := ConsoleChangeNamed(test.kind)
+			change, found := ChangeNamed(test.kind)
 			if !found {
 				t.Fatalf("%s is not a kind", test.kind)
 			}
@@ -87,14 +87,14 @@ func TestConsoleChanges(t *testing.T) {
 
 // A promotion's branch names staging, but the change it makes is production's.
 func TestConsolePromotionTargetsProduction(t *testing.T) {
-	promote, _ := ConsoleChangeNamed("v2-promote")
+	promote, _ := ChangeNamed("v2-promote")
 	if promote.Allows("prod") {
 		t.Error("a promotion's branch may not name production")
 	}
 	if got := promote.Target("web", "staging"); got != "web/prod" {
 		t.Errorf("target = %q", got)
 	}
-	scale, _ := ConsoleChangeNamed("v2-scale")
+	scale, _ := ChangeNamed("v2-scale")
 	if !scale.Allows("prod") || !scale.Allows("staging") || scale.Allows("") {
 		t.Error("a scale's branch names one of the two instances")
 	}
@@ -120,7 +120,7 @@ func TestParseConsoleBranchRefusals(t *testing.T) {
 
 // Branch refuses to build a name it cannot read back, so the console cannot push a branch it would not recognise.
 func TestConsoleBranchRefusesWhatItCannotReadBack(t *testing.T) {
-	scale, _ := ConsoleChangeNamed("v2-scale")
+	scale, _ := ChangeNamed("v2-scale")
 	for _, test := range []struct{ name, env string }{
 		{"Web", "staging"}, // not a DNS label
 		{"", "staging"},    // no name at all
@@ -137,7 +137,7 @@ func TestConsoleBranchRefusesWhatItCannotReadBack(t *testing.T) {
 	} else if _, name, env, _ := ParseConsoleBranch(made); name != "web-staging" || env != "staging" {
 		t.Errorf("%q read back as %q %q", made, name, env)
 	}
-	team, _ := ConsoleChangeNamed("team-add")
+	team, _ := ChangeNamed("team-add")
 	if made, err := team.Branch("payments", "", "0123456"); err != nil || made != "console/team-add-payments-0123456" {
 		t.Errorf("team branch = %q, %v", made, err)
 	}
@@ -146,12 +146,12 @@ func TestConsoleBranchRefusesWhatItCannotReadBack(t *testing.T) {
 // ConsoleChanges is every kind, each reachable by the name its branch states, and each kind's own name is a kind.
 func TestConsoleChangesAreDistinct(t *testing.T) {
 	seen := map[string]bool{}
-	for _, change := range ConsoleChanges() {
+	for _, change := range Changes() {
 		if seen[change.Name] || change.Name == "" || change.Title == "" {
 			t.Fatalf("kind %q is stated twice or says nothing", change.Name)
 		}
 		seen[change.Name] = true
-		if found, ok := ConsoleChangeNamed(change.Name); !ok || found.Title != change.Title {
+		if found, ok := ChangeNamed(change.Name); !ok || found.Title != change.Title {
 			t.Errorf("%q is not readable by name", change.Name)
 		}
 	}
@@ -160,7 +160,7 @@ func TestConsoleChangesAreDistinct(t *testing.T) {
 			t.Errorf("%q is a kind the console does not open: %q", branch, change.Name)
 		}
 	}
-	if _, ok := ConsoleChangeNamed("v2-egress"); ok {
+	if _, ok := ChangeNamed("v2-egress"); ok {
 		t.Error("a kind the console does not open is readable")
 	}
 }
@@ -186,6 +186,24 @@ func TestMergePlanFor(t *testing.T) {
 	for _, test := range cases {
 		if got := MergePlanFor(test.kind, test.changed); got != test.plan {
 			t.Errorf("%s %v: plan = %q, want %q", test.kind, test.changed, got, test.plan)
+		}
+	}
+}
+
+func TestBranchTarget(t *testing.T) {
+	cases := map[string][2]string{
+		"console/new-my-app-staging-abc1234":         {"new", "my-app/staging"},
+		"console/v2-promote-web-staging-abc1234":     {"v2-promote", "web/prod"},
+		"console/v2-scale-my-api-prod-0123456789abc": {"v2-scale", "my-api/prod"},
+		"console/team-channel-set-payments-abc1234":  {"team-channel-set", "team:payments"},
+		"console/team-add-payments-abc1234":          {"team-add", "team:payments"},
+		"console/v2-scale-web-dev-abc1234":           {"", ""},
+		"console/v2-scale-Web-prod-abc1234":          {"", ""},
+		"renovate/flux-2.x":                          {"", ""},
+	}
+	for branch, want := range cases {
+		if action, target := BranchTarget(branch); [2]string{action, target} != want {
+			t.Errorf("%s = %s %s", branch, action, target)
 		}
 	}
 }

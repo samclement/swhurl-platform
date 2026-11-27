@@ -173,15 +173,15 @@ A team or channel PR is made by `swhurl-v2 change --kind team-…`, whose `team`
 
 ### How a pull request is made
 
-v2's kind table ([`pages.ConsoleChange`](../v2/pages/console_change.go)) owns each kind of console pull request: its
+v2's kind table ([`console.Change`](../v2/console/change.go)) owns each kind of console pull request: its
 branch, its title, the environments its branch may name, the instance it changes and the input paths it may carry, and
 Activity reads the branches the console opened back with the same table. A branch names a known kind, a valid name and
 an allowed environment or is not a console change. `swhurl-v2 change` applies exactly that kind in a scratch tree and
-publishes only the files it owns through GitHub's REST API. The server's own
-[`console_change.go`](../v2/cmd/swhurl-v2/console_change.go) keeps what its forms still need — the job a kind runs as, its
-target, and the form's fields read as v2's own flags by
-[`pages.ConsoleFormChange`](../v2/pages/console_form.go) — and nothing that decides what a pull request is or how it is
-written: it runs `swhurl-v2 change` in its own process, so a job's lines are the command's and the pull request it returns is the
+publishes only the files it owns through GitHub's REST API. The console's
+[`changes.go`](../v2/console/changes.go) turns a form into the job a kind runs as, with its target and the form's
+fields read as v2's own flags by [`pages.ConsoleFormChange`](../v2/pages/console_form.go); the server's
+[`console_change.go`](../v2/cmd/swhurl-v2/console_change.go) keeps only the HTTP handlers and nothing that decides
+what a pull request is or how it is written: it runs `swhurl-v2 change` in its own process, so a job's lines are the command's and the pull request it returns is the
 job's link. Nothing cross-app is implied: a kind's pull request carries its own records and what `render` derives from
 them.
 

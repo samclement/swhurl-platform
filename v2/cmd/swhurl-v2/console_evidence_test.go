@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"slices"
 	"strings"
 	"sync"
@@ -65,7 +66,7 @@ func githubServer(t *testing.T) (*consoleServer, *githubtest.ConsoleFake) {
 }
 
 // readsOf is the server's own reads, with only the cluster's injected.
-func readsOf(server *consoleServer) orchestration.ChangeReads {
+func readsOf(server *consoleServer) console.ChangeReads {
 	reads := server.changeReads()
 	reads.Rows = healthyWebProd
 	return reads

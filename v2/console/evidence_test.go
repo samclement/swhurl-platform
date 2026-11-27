@@ -1,6 +1,8 @@
-package orchestration_test
+package console_test
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
@@ -60,7 +63,7 @@ func archived(t *testing.T, files map[string]string) map[string]pages.Render {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renders, err := orchestration.ConsoleRenders(tree)
+	renders, err := console.ConsoleRenders(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +71,7 @@ func archived(t *testing.T, files map[string]string) map[string]pages.Render {
 }
 
 // targeted is a fresh evidence cache over GitHub's targeted read of the same commit, and the fake it reads.
-func targeted(files map[string]string) (*orchestration.ConsoleEvidence, *githubtest.ConsoleFake) {
+func targeted(files map[string]string) (*console.ConsoleEvidence, *githubtest.ConsoleFake) {
 	regular := map[string]string{}
 	for file, body := range files {
 		if !strings.HasSuffix(file, "/") { // GitHub lists a link with its own mode; the fake holds regular files only
@@ -77,7 +80,7 @@ func targeted(files map[string]string) (*orchestration.ConsoleEvidence, *githubt
 	}
 	fake := &githubtest.ConsoleFake{Commit: evidenceCommit, Files: regular, Archive: archive(files)}
 	source := orchestration.ConsoleSourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}
-	return &orchestration.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: source}}, fake
+	return &console.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: source}}, fake
 }
 
 // The targeted read finds what the archive path finds for every unit it is asked for, one at a time or together,
@@ -148,7 +151,7 @@ func TestConsoleEvidenceRefusesAMalformedRecord(t *testing.T) {
 func TestConsoleEvidenceRefusesOnlyTheUnitAskedFor(t *testing.T) {
 	files := evidenceTree()
 	files["v2-records/web/staging/release.json"] = "not json"
-	if _, err := orchestration.ConsoleRenders(mustFilter(t, files)); err == nil {
+	if _, err := console.ConsoleRenders(mustFilter(t, files)); err == nil {
 		t.Fatal("the archive path no longer refuses the whole commit; this test's premise is gone")
 	}
 	evidence, _ := targeted(files)
@@ -175,7 +178,7 @@ func mustFilter(t *testing.T, files map[string]string) map[string][]byte {
 }
 
 // evidenceOver is a fresh evidence cache over a recording source holding the commits' trees.
-func evidenceOver(max int, trees map[string]map[string]string) (*orchestration.ConsoleEvidence, *source) {
+func evidenceOver(max int, trees map[string]map[string]string) (*console.ConsoleEvidence, *source) {
 	held := &source{trees: map[string]map[string][]byte{}}
 	for commit, files := range trees {
 		held.trees[commit] = map[string][]byte{}
@@ -183,7 +186,7 @@ func evidenceOver(max int, trees map[string]map[string]string) (*orchestration.C
 			held.trees[commit][file] = []byte(body)
 		}
 	}
-	return &orchestration.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: held}, Max: max}, held
+	return &console.ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: held}, Max: max}, held
 }
 
 func (s *source) taken() []string {
@@ -342,4 +345,59 @@ func TestConsoleEvidenceIsSafeForPagesAtOnce(t *testing.T) {
 	for failure := range failures {
 		t.Errorf("an answer read at once: %s", failure)
 	}
+}
+
+// archive builds one tarball with GitHub's leading folder, from name → text; a name ending in "/" is a symlink.
+func archive(entries map[string]string) []byte {
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	for name, text := range entries {
+		header := &tar.Header{Name: "owner-repo-abc/" + name, Mode: 0o644, Size: int64(len(text)), Typeflag: tar.TypeReg}
+		if strings.HasSuffix(name, "/") {
+			header = &tar.Header{Name: "owner-repo-abc/" + name, Linkname: "/etc/passwd", Typeflag: tar.TypeSymlink}
+			text = ""
+		}
+		_ = writer.WriteHeader(header)
+		_, _ = writer.Write([]byte(text))
+	}
+	_ = writer.Close()
+	return buffer.Bytes()
+}
+
+type source struct {
+	revision string
+	trees    map[string]map[string][]byte
+	reads    []string
+	err      error
+	mu       sync.Mutex
+}
+
+func (s *source) Revision(context.Context) (string, error) { return s.revision, nil }
+
+func (s *source) Tree(_ context.Context, revision string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, revision)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.trees[revision], nil
+}
+
+// Files answers the paths a known commit's tree holds, and records each read as "files <commit>: <paths>".
+func (s *source) Files(_ context.Context, revision string, paths []string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, "files "+revision+": "+strings.Join(paths, " "))
+	tree, known := s.trees[revision]
+	if s.err != nil || !known {
+		return nil, errors.Join(s.err, errors.New("no such commit"))
+	}
+	found := map[string][]byte{}
+	for _, file := range paths {
+		if body, held := tree[file]; held {
+			found[file] = body
+		}
+	}
+	return found, nil
 }

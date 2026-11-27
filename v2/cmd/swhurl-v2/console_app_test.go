@@ -274,7 +274,7 @@ func TestPendingNewAppIsByteIdentical(t *testing.T) {
 	fixture := readAppFixture(t)
 	instance := pages.Instance{App: "shop", Env: "staging"}
 	jobs := fixture.fixtureJobs(t)
-	page := pages.PendingOf(instance, false, false, jobs, pages.PullsFor(fixture.fixturePulls(), instance), "")
+	page := pages.PendingOf(instance, false, false, jobs, console.PullsFor(fixture.fixturePulls(), instance), "")
 	data := pendingData{shell: shellWithJobs(t, "/apps/shop/staging", "shop/staging", jobs), Pending: page}
 	var rendered bytes.Buffer
 	if err := server.templates["pending.html"].ExecuteTemplate(&rendered, "base", data); err != nil {

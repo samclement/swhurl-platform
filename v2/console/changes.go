@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"
@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/samclement/swhurl-platform/v2/orchestration"
+	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,7 +32,7 @@ func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error) {
 		if !hasApp || !hasRelease {
 			continue
 		}
-		render, err := renderOf(appRecord, instance, release, tree[consoleApps+"/"+app+"/"+env+"/helmrelease.json"])
+		render, err := renderOf(appRecord, instance, release, tree[pages.ConsoleAppsRoot+"/"+app+"/"+env+"/helmrelease.json"])
 		if err != nil {
 			return nil, fmt.Errorf("cannot read render targets: %s/%s: %w", app, env, err)
 		}
@@ -208,7 +211,7 @@ func unclaimed(open []pages.OpenPull, proposed map[int]int) []pages.ChangeRow {
 	for i := range open {
 		if !covered[open[i].Number] {
 			rows = append(rows, pages.ChangeRow{ID: fmt.Sprintf("pr-%d", open[i].Number),
-				Track: pages.PullTrack(pages.PullOf(open[i]), open[i].Branch), PR: &open[i]})
+				Track: PullTrack(pages.PullOf(open[i]), open[i].Branch), PR: &open[i]})
 		}
 	}
 	return rows
@@ -345,4 +348,138 @@ func renderAt(tree map[string]pages.Render, unit string) *pages.Render {
 	}
 	found := tree[unit]
 	return &found
+}
+
+// PullTrack follows an open pull request whose job is no longer remembered.
+func PullTrack(pull pages.Pull, branch string) pages.Track {
+	action, target := BranchTarget(branch)
+	return pages.PullTrack(pull, action, target)
+}
+
+// ChangeProposal is a validated form's change, ready for v2 to open. Address is
+// channel input, never an argument or a quoted command; the HTTP edge registers it for redaction.
+type ChangeProposal struct {
+	Request
+	Kind, Identity, Repository string
+	Address                    string
+}
+
+// ChangeWork is the change job, through the command's own typed execution port.
+// Its result is the pull request address, never a URL extracted from output lines.
+func ChangeWork(proposal ChangeProposal,
+	open func(context.Context, ChangeProposal, func(string)) (string, error)) orchestration.JobWork {
+	return func(ctx context.Context, line func(string)) (string, error) {
+		return open(ctx, proposal, line)
+	}
+}
+
+// AppChange is what one form asks for: the instance's records as the pinned commit states them, the form's own
+// refusals and the flags v2's command takes. A problem comes with the status the console answers it with.
+func (s Server) AppChange(ctx context.Context, instance pages.Instance, one Change, change string,
+	fields map[string][]string, identity string) (*ChangeProposal, string, int) {
+	tree, rows, row, err := s.AppRow(ctx, instance)
+	if err != nil {
+		return nil, err.Error(), http.StatusBadGateway
+	}
+	if row == nil || row.Inventory == nil {
+		return nil, "its records are not in Git, so what it declares is unknown", http.StatusConflict
+	}
+	if problem, refused := appFormRefusal(change, one, instance.Env, row, rows); refused {
+		return nil, problem, http.StatusBadRequest
+	}
+	teams, _ := TeamRegistry(tree)
+	flags, err := pages.ConsoleFormChange(change, instance.App, fields, row.Inventory, teams)
+	if err != nil {
+		return nil, err.Error(), http.StatusBadRequest
+	}
+	if problem, refused := offered(change, instance.Env, instance.App, rows, tree, fields); refused {
+		return nil, problem, http.StatusBadRequest
+	}
+	return &ChangeProposal{Kind: one.Name, Identity: identity, Repository: s.Repository,
+		Request: Request{App: instance.App, Env: instance.Env, Settings: flags.Settings,
+			Calls: flags.Calls, Subscriptions: flags.Subscriptions, DropCalls: flags.DropCalls,
+			DropSubscriptions: flags.DropSubscriptions, Allows: flags.Allows, Disallows: flags.Disallows}}, "", 0
+}
+
+// appFormRefusal is what a change refuses before its fields are read: a change a page does not offer, an environment
+// the kind does not name, and the two things a form cannot ask for at all. A promotion also needs production to exist
+// and staging to be promotable, which is the cluster's answer rather than the form's.
+func appFormRefusal(change string, one Change, env string, row *pages.AppRow,
+	rows []pages.AppRow) (string, bool) {
+	switch change {
+	case "egress":
+		return "the console offers no egress form: grant a host with `swhurl-v2 edit --app " + row.Instance.App +
+			" --env=" + env + " --set egress=<host>` and run the render it asks for", true
+	case "schedule":
+		return "v2 does not model a schedule: the console offers no schedule form", true
+	}
+	if !one.Allows(env) {
+		return change + " from the " + strings.Join(one.Envs, " or ") + " instance", true
+	}
+	if change != "promote" {
+		return "", false
+	}
+	if !declaredIn(rows, row.Instance.App, "prod") {
+		return "v2 has no first promotion: production has no records yet", true
+	}
+	if row.Report != nil && !row.Report.Promotion.Ready {
+		return strings.ReplaceAll(row.Report.Promotion.Reason, "_", " "), true
+	}
+	return "", false
+}
+
+// declaredIn is whether one environment of an app has records the console could see.
+func declaredIn(rows []pages.AppRow, app, env string) bool {
+	for _, row := range rows {
+		if row.Instance.App == app && row.Instance.Env == env && row.Inventory != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// offered refuses a connection the form did not offer: a call to an app that is not a web app in that environment, or
+// an event nothing there publishes. The lists are the page's own, read at the same pinned commit.
+func offered(change, env, app string, rows []pages.AppRow, tree map[string][]byte,
+	fields map[string][]string) (string, bool) {
+	if change != "connect" {
+		return "", false
+	}
+	connectable := pages.ConnectableTo(rows, Offers(tree, rows, env), env, app)
+	callable := make(map[string]bool, len(connectable.Apps))
+	for _, one := range connectable.Apps {
+		callable[one.App] = true
+	}
+	published := make(map[string]bool, len(connectable.Events))
+	for _, one := range connectable.Events {
+		published[one.Name] = true
+	}
+	var missing []string
+	for _, name := range SplitNames(fields["calls"]) {
+		if !callable[name] {
+			missing = append(missing, name)
+		}
+	}
+	for _, name := range SplitNames(fields["subscribe"]) {
+		if !published[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return strings.Join(missing, ", ") + ": not a web app, or an event, that staging has now; reload the form", true
+	}
+	return "", false
+}
+
+// SplitNames reads every comma-separated name in a checkbox form, dropping empty values.
+func SplitNames(values []string) []string {
+	var found []string
+	for _, value := range values {
+		for _, name := range strings.Split(value, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				found = append(found, name)
+			}
+		}
+	}
+	return found
 }

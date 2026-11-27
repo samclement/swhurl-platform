@@ -4,71 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/samclement/swhurl-platform/v2/adapters/github"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
-
-// keptFacts is how many merged pull requests and first-seen ends the server remembers between page reads; the oldest
-// goes first. Both are facts that never change once read, never progress verdicts.
-const keptFacts = 60
 
 // recentJobs is how many finished jobs Overview lists.
 const recentJobs = 5
 
-// newApp is the kind a new-app job's resume record names: the New app form's choices, which a later job can finish.
-const newApp = "new-app"
-
-// activityData is Activity: every change, what is still moving or waiting for someone first.
 type activityData struct {
 	shell
-	Moving, Ended []changeView
-	PRsError      string
+	console.Activity
 }
 
-// jobData is one job's page: its change's whole path and its output.
 type jobData struct {
 	shell
-	Job       changeJobView
-	Track     pages.Track
-	Stage     pages.Stage
-	PR        *openPullView
-	CanResume bool
-}
-
-// changeView is one change's row.
-type changeView struct {
-	ID    string
-	Track pages.Track
-	Open  bool // its pull request waits for someone: the row opens to its controls
-	Job   *changeJobView
-	PR    *openPullView
-}
-
-// changeJobView is a change's job as its row and its page show it.
-type changeJobView struct {
-	ID                           int
-	Title, Label, Link, Unit     string
-	Identity, State, PullLink    string
-	StartedAt, StartedClock, Ago string
-	Finished                     bool
-	FinishedClock, Took          string
-	Running                      bool
-	Lines                        []string
-}
-
-// openPullView is an open console pull request as a change's row shows it.
-type openPullView struct {
-	Number                                int
-	URL, Branch, Title, Opened, OpenedAgo string
-	ChecksURL, Checks, Merging            string
+	console.JobPage
 }
 
 // activity shows every change the console started, as the stages it goes through and where it ends.
@@ -84,19 +39,8 @@ func (s *consoleServer) activity(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "activity.html", data)
 }
 
-// readActivity is every job as a change, and the open pull requests no remembered job opened: what is still moving
-// or waiting for someone first, then what ended, newest first.
-func (s *consoleServer) readActivity(ctx context.Context, jobs []pages.Job, reads orchestration.ChangeReads) activityData {
-	rows, prsError := orchestration.ConsoleChanges(ctx, jobs, reads, true)
-	data := activityData{PRsError: prsError}
-	for _, row := range rows {
-		if row.Track.Settled() {
-			data.Ended = append(data.Ended, changeViewOf(row, reads.Now))
-		} else {
-			data.Moving = append(data.Moving, changeViewOf(row, reads.Now))
-		}
-	}
-	return data
+func (s *consoleServer) readActivity(ctx context.Context, jobs []pages.Job, reads console.ChangeReads) activityData {
+	return activityData{Activity: console.ActivityOf(ctx, jobs, reads)}
 }
 
 // job shows one job: its change's whole path, its pull request while open, and its output.
@@ -122,17 +66,9 @@ func (s *consoleServer) job(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "job.html", data)
 }
 
-// readJob is one job's page; found is false when no remembered job has the id.
-func (s *consoleServer) readJob(ctx context.Context, jobs []pages.Job, id int, reads orchestration.ChangeReads) (jobData, bool) {
-	at := slices.IndexFunc(jobs, func(job pages.Job) bool { return job.ID == id })
-	if at < 0 {
-		return jobData{}, false
-	}
-	job := jobs[at]
-	rows, _ := orchestration.ConsoleChanges(ctx, []pages.Job{job}, reads, false)
-	row := changeViewOf(rows[0], reads.Now)
-	return jobData{Job: *row.Job, Track: row.Track, Stage: pages.Prepared(job), PR: row.PR,
-		CanResume: resumable(job, jobs) && s.hasGitHub && s.appRepos}, true
+func (s *consoleServer) readJob(ctx context.Context, jobs []pages.Job, id int, reads console.ChangeReads) (jobData, bool) {
+	page, found := console.JobPageOf(ctx, jobs, id, reads, s.hasGitHub && s.appRepos)
+	return jobData{JobPage: page}, found
 }
 
 // liveJobs is the registry of the jobs this server runs: the one a job page's stream re-reads.
@@ -241,65 +177,10 @@ func writeDone(w io.Writer, job pages.Job) {
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", body)
 }
 
-// resumable is whether a new-app job ended without its pull request, with nothing since taking its place.
-func resumable(job pages.Job, jobs []pages.Job) bool {
-	if (job.State != "failed" && job.State != "interrupted") || job.Link != "" || job.Resume["kind"] != newApp {
-		return false
-	}
-	for _, later := range jobs {
-		if later.Unit == job.Unit && later.ID > job.ID && (later.State == "running" || later.State == "succeeded") {
-			return false
-		}
-	}
-	return true
-}
-
-// changeViewOf is one change as its row shows it.
-func changeViewOf(row pages.ChangeRow, now time.Time) changeView {
-	view := changeView{ID: row.ID, Track: row.Track, Open: row.PR != nil && (row.Track.Status == "waiting" || row.Track.Status == "blocked")}
-	if row.PR != nil {
-		view.PR = openPullViewOf(*row.PR, now)
-	}
-	if row.Job != nil {
-		view.Job = changeJobViewOf(*row.Job, now)
-	}
-	return view
-}
-
-func openPullViewOf(pr pages.OpenPull, now time.Time) *openPullView {
-	checksURL := pr.ChecksURL
-	if checksURL == "" {
-		checksURL = pr.URL
-	}
-	return &openPullView{Number: pr.Number, URL: pr.URL, Branch: pr.Branch, Title: strings.ReplaceAll(pr.Title, "[console] ", ""),
-		Opened: pr.Opened, OpenedAgo: pages.Ago(pr.Opened, now), ChecksURL: checksURL, Checks: pr.Checks, Merging: pages.MergeMode(pr.Body)}
-}
-
-func changeJobViewOf(job pages.Job, now time.Time) *changeJobView {
-	label, link := pages.Target(job.Unit)
-	view := &changeJobView{ID: job.ID, Title: capitalize(job.Action), Label: label, Link: link, Unit: job.Unit,
-		Identity: job.Identity, State: job.State, PullLink: job.Link, Running: job.Running(), Lines: job.Lines,
-		StartedAt: job.Started.Format("2006-01-02 15:04:05"), StartedClock: job.Started.Format("15:04:05"),
-		Ago: pages.Ago(job.Started.Format(time.RFC3339Nano), now)}
-	if job.Finished != nil {
-		view.Finished, view.FinishedClock, view.Took = true, job.Finished.Format("15:04:05"), pages.Took(job.Started, *job.Finished)
-	}
-	return view
-}
-
-// capitalize is Python's str.capitalize: the first letter upper case and the rest lower.
-func capitalize(text string) string {
-	if text == "" {
-		return ""
-	}
-	runes := []rune(strings.ToLower(text))
-	return strings.ToUpper(string(runes[0])) + string(runes[1:])
-}
-
 // changeReads are the reads a change's row takes through this server: GitHub with its token, the pinned bundle for
 // main, the merge commits' evidence and the cluster. Without a token there are no pull request reads, so a merged change's progress is not known.
-func (s *consoleServer) changeReads() orchestration.ChangeReads {
-	reads := orchestration.ChangeReads{OpenPulls: s.consolePulls, Renders: s.evidence.Renders, Main: s.mainRenders,
+func (s *consoleServer) changeReads() console.ChangeReads {
+	reads := console.ChangeReads{OpenPulls: s.consolePulls, Renders: s.evidence.Renders, Main: s.mainRenders,
 		Cached: s.evidence.Cached, Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
 	if s.github != nil {
 		reads.Pull = s.pull
@@ -307,113 +188,22 @@ func (s *consoleServer) changeReads() orchestration.ChangeReads {
 	return reads
 }
 
-// consolePulls lists the console's open pull requests, or says why it could not.
 func (s *consoleServer) consolePulls(ctx context.Context) ([]pages.OpenPull, string) {
-	if s.github == nil {
-		return nil, "No GitHub token is configured, so open pull requests are not listed."
-	}
-	pulls, err := s.github.OpenPulls(ctx, s.repository, s.token)
-	if err != nil {
-		return nil, "Could not list open pull requests: " + err.Error()
-	}
-	found := make([]pages.OpenPull, 0, len(pulls))
-	for _, pull := range pulls {
-		found = append(found, pages.OpenPull{Number: pull.Number, Title: pull.Title, URL: pull.URL, Branch: pull.Branch,
-			Opened: pull.Opened, Body: pull.Body, Checks: pull.Checks, ChecksURL: pull.ChecksURL})
-	}
-	return found, ""
+	return console.OpenPulls(ctx, s.github, s.repository, s.token)
 }
 
-// pull is a pull request that is no longer open: a merged one is kept, since it cannot change again (a closed one
-// can be reopened).
 func (s *consoleServer) pull(ctx context.Context, number int) (pages.Pull, error) {
-	s.factsMu.Lock()
-	kept, known := s.merged[number]
-	s.factsMu.Unlock()
-	if known {
-		return kept, nil
-	}
-	read, err := s.github.Pull(ctx, s.repository, s.token, number)
-	if err != nil {
-		return pages.Pull{}, err
-	}
-	found := pullFacts(read)
-	if found.State == "merged" {
-		s.factsMu.Lock()
-		keep(s.merged, number, found)
-		s.factsMu.Unlock()
-	}
-	return found, nil
+	return s.facts.Pull(ctx, s.github, s.repository, s.token, number)
 }
 
-// pullFacts is a pull request read by number as the track reads it: how it ended, when, and the commit that merged it.
-func pullFacts(read github.Pull) pages.Pull {
-	found := pages.Pull{Number: read.Number, URL: read.URL, State: read.State}
-	switch read.State {
-	case "merged":
-		found.When, found.Commit = read.MergedAt, read.MergeCommit
-	case "closed":
-		found.When = read.ClosedAt
-	}
-	return found
-}
-
-// keep remembers one fact, forgetting the lowest key once keptFacts are held.
-func keep[V any](facts map[int]V, key int, value V) {
-	if len(facts) >= keptFacts {
-		oldest := key
-		for held := range facts {
-			oldest = min(oldest, held)
-		}
-		delete(facts, oldest)
-	}
-	facts[key] = value
-}
-
-// mainRenders is main's instances, from the whole tree at the commit every other read on the page is pinned to.
 func (s *consoleServer) mainRenders(ctx context.Context) (map[string]pages.Render, error) {
-	revision, err := s.bundle.Revision(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tree, err := s.bundle.Tree(ctx, revision)
-	if err != nil {
-		return nil, err
-	}
-	return orchestration.ConsoleRenders(tree)
+	return s.reads().MainRenders(ctx)
 }
 
-// rowsByInstance is every instance on the cluster, by <app>/<env>.
 func (s *consoleServer) rowsByInstance(ctx context.Context) (map[string]*pages.AppRow, error) {
-	_, rows, err := s.readRows(ctx)
-	if err != nil {
-		return nil, err
-	}
-	found := make(map[string]*pages.AppRow, len(rows))
-	for i := range rows {
-		found[rows[i].Instance.Name()] = &rows[i]
-	}
-	return found, nil
+	return s.reads().RowsByInstance(ctx)
 }
 
-// reach remembers when a job's change was first seen at its end. Only in memory: the job record is written by the
-// job's own pod, and this server writes nothing (docs/iteration-2-plan.md §23, step 1).
-func (s *consoleServer) reach(job pages.Job) {
-	s.factsMu.Lock()
-	defer s.factsMu.Unlock()
-	if _, known := s.reached[job.ID]; !known {
-		keep(s.reached, job.ID, s.now().UTC().Format(time.RFC3339Nano))
-	}
-}
+func (s *consoleServer) reach(job pages.Job) { s.facts.Reach(job, s.now()) }
 
-// withReached gives each job the end this server saw it reach when its record has none.
-func (s *consoleServer) withReached(jobs []pages.Job) []pages.Job {
-	s.factsMu.Lock()
-	defer s.factsMu.Unlock()
-	for i := range jobs {
-		if seen, known := s.reached[jobs[i].ID]; known && jobs[i].Reached == "" {
-			jobs[i].Reached = seen
-		}
-	}
-	return jobs
-}
+func (s *consoleServer) withReached(jobs []pages.Job) []pages.Job { return s.facts.WithReached(jobs) }

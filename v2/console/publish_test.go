@@ -1,4 +1,4 @@
-package orchestration_test
+package console_test
 
 import (
 	"context"
@@ -8,17 +8,16 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
-	"github.com/samclement/swhurl-platform/v2/pages"
+	"github.com/samclement/swhurl-platform/v2/console"
 )
 
 const publishRevision = "0123456789abcdef0123456789abcdef01234567"
 
 // published builds one change of a scale on web/staging whose record and unit changed, one shared file changed, and
 // one file of another app that must not travel.
-func published(t *testing.T) (orchestration.PublishInputs, *githubtest.PublisherFake, *[]string) {
+func published(t *testing.T) (console.PublishInputs, *githubtest.PublisherFake, *[]string) {
 	t.Helper()
-	change, found := pages.ConsoleChangeNamed("v2-scale")
+	change, found := console.ChangeNamed("v2-scale")
 	if !found {
 		t.Fatal("v2-scale is not a kind")
 	}
@@ -37,7 +36,7 @@ func published(t *testing.T) (orchestration.PublishInputs, *githubtest.Publisher
 		{Path: "v2-apps/instances/web/staging/kustomization.yaml", Body: []byte("resources:\n- helmrelease.json\n")},
 		{Path: "v2-check.sh", Executable: true, Body: []byte("#!/bin/sh\n")},
 	}
-	inputs := orchestration.PublishInputs{Change: change, Name: "web", Env: "staging",
+	inputs := console.PublishInputs{Change: change, Name: "web", Env: "staging",
 		Identity: "operator@example.test", Revision: publishRevision, Before: before, After: after,
 		Commands:   []string{"swhurl-v2 edit --records v2-records --app web --env=staging --set replicas=3", "swhurl-v2 render --records v2-records --revision @base"},
 		Repository: "owner/repo", Token: "token"}
@@ -49,7 +48,7 @@ func published(t *testing.T) (orchestration.PublishInputs, *githubtest.Publisher
 // A change carries only what its kind owns, in path order, with the letter each path gets, and says so as it goes.
 func TestPublishCarriesOnlyItsOwnPaths(t *testing.T) {
 	inputs, publisher, lines := published(t)
-	got, err := orchestration.Publish(context.Background(), inputs, publisher,
+	got, err := console.Publish(context.Background(), inputs, publisher,
 		func(line string) { *lines = append(*lines, line) })
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +91,7 @@ func TestPublishCarriesOnlyItsOwnPaths(t *testing.T) {
 // requester's trailer, and the console as author; the pull request repeats the body and adds the merge plan.
 func TestPublishCommitAndPullRequestBody(t *testing.T) {
 	inputs, publisher, _ := published(t)
-	if _, err := orchestration.Publish(context.Background(), inputs, publisher, func(string) {}); err != nil {
+	if _, err := console.Publish(context.Background(), inputs, publisher, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if len(publisher.Commits) != 1 || len(publisher.Pulls) != 1 || len(publisher.Refs) != 1 {
@@ -139,11 +138,11 @@ func TestPublishCommitAndPullRequestBody(t *testing.T) {
 // An executable's mode travels with it, and a change that only changes a mode is still a change.
 func TestPublishKeepsModes(t *testing.T) {
 	inputs, publisher, lines := published(t)
-	inputs.Change, _ = pages.ConsoleChangeNamed("v2-team")
+	inputs.Change, _ = console.ChangeNamed("v2-team")
 	inputs.Before = append(inputs.Before, files.TreeFile{Path: "v2-records/web/prod/run.sh", Executable: true,
 		Body: []byte("#!/bin/sh\n")})
 	inputs.After = append(inputs.After, files.TreeFile{Path: "v2-records/web/prod/run.sh", Body: []byte("#!/bin/sh\n")})
-	got, err := orchestration.Publish(context.Background(), inputs, publisher, func(line string) {
+	got, err := console.Publish(context.Background(), inputs, publisher, func(line string) {
 		*lines = append(*lines, line)
 	})
 	if err != nil {
@@ -164,7 +163,7 @@ func TestPublishWritesNothingWhenItShouldNot(t *testing.T) {
 	inputs, publisher, lines := published(t)
 	unchanged := orchestrator(inputs)
 	unchanged.After = unchanged.Before
-	if _, err := orchestration.Publish(context.Background(), unchanged, publisher, func(string) {}); err == nil {
+	if _, err := console.Publish(context.Background(), unchanged, publisher, func(string) {}); err == nil {
 		t.Error("a change that carries no file was published")
 	}
 	if len(publisher.Blobs)+len(publisher.Trees)+len(publisher.Commits)+len(publisher.Refs)+len(publisher.Pulls) != 0 {
@@ -172,7 +171,7 @@ func TestPublishWritesNothingWhenItShouldNot(t *testing.T) {
 	}
 	dry := orchestrator(inputs)
 	dry.DryRun = true
-	got, err := orchestration.Publish(context.Background(), dry, publisher, func(line string) {
+	got, err := console.Publish(context.Background(), dry, publisher, func(line string) {
 		*lines = append(*lines, line)
 	})
 	if err != nil {
@@ -188,7 +187,7 @@ func TestPublishWritesNothingWhenItShouldNot(t *testing.T) {
 }
 
 // orchestrator is published's inputs without its shared fixture, so a test can change one field.
-func orchestrator(inputs orchestration.PublishInputs) orchestration.PublishInputs {
+func orchestrator(inputs console.PublishInputs) console.PublishInputs {
 	before := append([]files.TreeFile(nil), inputs.Before...)
 	after := append([]files.TreeFile(nil), inputs.After...)
 	inputs.Before, inputs.After = before, after
@@ -197,8 +196,8 @@ func orchestrator(inputs orchestration.PublishInputs) orchestration.PublishInput
 
 // A team's change is the registry's and its channel's, and its merge plan needs the Secret's values set on the branch.
 func TestPublishTeamChannel(t *testing.T) {
-	change, _ := pages.ConsoleChangeNamed("team-channel-set")
-	inputs := orchestration.PublishInputs{Change: change, Name: "payments", Identity: "operator@example.test",
+	change, _ := console.ChangeNamed("team-channel-set")
+	inputs := console.PublishInputs{Change: change, Name: "payments", Identity: "operator@example.test",
 		Revision: publishRevision, Repository: "owner/repo", Token: "token",
 		Commands: []string{"swhurl-v2 team --records v2-records --team payments --action channel"},
 		Before: []files.TreeFile{{Path: "v2-records/teams.json", Body: []byte(`{}`)},
@@ -208,7 +207,7 @@ func TestPublishTeamChannel(t *testing.T) {
 			{Path: "platform/notify/channels/channel-payments.sops.yaml", Body: []byte("ENC[\n")}}}
 	publisher := githubtest.NewPublisher(githubtest.PublisherScenario())
 	lines := []string{}
-	got, err := orchestration.Publish(context.Background(), inputs, publisher, func(line string) {
+	got, err := console.Publish(context.Background(), inputs, publisher, func(line string) {
 		lines = append(lines, line)
 	})
 	if err != nil {
@@ -234,7 +233,7 @@ func TestPublishTeamChannel(t *testing.T) {
 func TestPublishRefusesAnImpossibleBranch(t *testing.T) {
 	inputs, publisher, _ := published(t)
 	inputs.Name = "Web"
-	if _, err := orchestration.Publish(context.Background(), inputs, publisher, func(string) {}); err == nil {
+	if _, err := console.Publish(context.Background(), inputs, publisher, func(string) {}); err == nil {
 		t.Error("a name that is not a DNS label was published")
 	}
 	if len(publisher.Blobs) != 0 {
@@ -246,11 +245,11 @@ func TestPublishRefusesAnImpossibleBranch(t *testing.T) {
 // the commit it carries.
 func TestPublishPreface(t *testing.T) {
 	inputs, publisher, _ := published(t)
-	change, _ := pages.ConsoleChangeNamed("v2-scale")
+	change, _ := console.ChangeNamed("v2-scale")
 	inputs.Change = change
 	inputs.Preface = "The console created https://github.com/owner/web from [the template](https://github.com/owner/t) " +
 		"and waited for its first image.\n\n"
-	if _, err := orchestration.Publish(context.Background(), inputs, publisher, func(string) {}); err != nil {
+	if _, err := console.Publish(context.Background(), inputs, publisher, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(publisher.Pulls[0].Body, inputs.Preface+"Generated by the console with:\n\n    ") {

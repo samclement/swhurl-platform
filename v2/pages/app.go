@@ -475,18 +475,6 @@ func PendingOf(instance Instance, removing, inGit bool, jobs []Job, pulls []Pend
 		Jobs: found, PRs: pulls, PRsError: prsError}
 }
 
-// PullsFor are the open pull requests that add or promote one instance.
-func PullsFor(pulls []OpenPull, instance Instance) []PendingPull {
-	found := []PendingPull{}
-	for _, pull := range pulls {
-		action, target := BranchTarget(pull.Branch)
-		if (action == "new" || action == "v2-promote") && target == instance.Name() {
-			found = append(found, PendingPullOf(pull))
-		}
-	}
-	return found
-}
-
 // PromotionPage is the promotion review: a staging instance's image and what production runs now.
 type PromotionPage struct {
 	App    string

@@ -21,7 +21,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/sops/sopstest"
 	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/kernel"
-	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 const changeRevision = "0123456789abcdef0123456789abcdef01234567"
@@ -143,7 +142,7 @@ func TestChangeCLIScale(t *testing.T) {
 		t.Errorf("the author is %#v", commit.Author)
 	}
 	// every path the tree states is one the change owns, and an unchanged input is not carried
-	change, _ := pages.ConsoleChangeNamed("v2-scale")
+	change, _ := console.ChangeNamed("v2-scale")
 	paths := make([]string, 0, len(publisher.Trees[0].Entries))
 	for _, entry := range publisher.Trees[0].Entries {
 		paths = append(paths, entry.Path)

@@ -135,7 +135,7 @@ type consoleConfig struct {
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
 type consoleServer struct {
 	bundle     *orchestration.ConsoleBundle
-	evidence   *orchestration.ConsoleEvidence // merge commits' renders for Activity, read through bundle's source
+	evidence   *console.ConsoleEvidence // merge commits' renders for Activity, read through bundle's source
 	reader     kube.Reader
 	writer     kube.Writer
 	collector  kube.Collector
@@ -166,9 +166,7 @@ type consoleServer struct {
 	flagsTriedAt time.Time
 	flagsErr     error // why the last sign-in failed, until the next attempt
 
-	factsMu sync.Mutex
-	merged  map[int]pages.Pull // merged pull requests, by number
-	reached map[int]string     // when this server first saw a job's change at its end, by job
+	facts console.ActivityFacts
 
 	// live is the registry of the jobs this server runs; nil is a server that runs none, and then no job has a
 	// stream here (a page still reads every record the console keeps).
@@ -199,7 +197,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		appConsole: trace.traceGitHub(github.NewConsole(nil)), repository: config.Repository, token: config.Token, appRepos: config.AppRepos,
 		reposToken: config.ReposToken, hookToken: config.HookToken,
 		natsSeed: config.NatsSeed, natsURL: config.NatsURL, redact: &jobRedactor{}, log: config.Log,
-		stacks: map[string]stackEntry{}, merged: map[int]pages.Pull{}, reached: map[int]string{},
+		stacks:   map[string]stackEntry{},
 		events:   consoleEvents{poll: 250 * time.Millisecond, keepAlive: 15 * time.Second},
 		requests: consoleLog(config.Log, config.Now)}
 	for _, secret := range config.Secrets {
@@ -243,7 +241,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 // merge commits' evidence Activity follows a change by, read through the same source.
 func (s *consoleServer) pin(source orchestration.ConsoleSource) {
 	s.bundle = &orchestration.ConsoleBundle{Source: source}
-	s.evidence = &orchestration.ConsoleEvidence{Bundle: s.bundle}
+	s.evidence = &console.ConsoleEvidence{Bundle: s.bundle}
 }
 
 // reads is what this server's pages read, composed from the server as it stands: the tree pin last chose, the

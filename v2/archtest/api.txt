@@ -666,13 +666,26 @@ console: const Promote Operation = "promote"
 console: const Remove Operation = "remove"
 console: const Render Operation = "render"
 console: const Team Operation = "team"
+console: func (*ActivityFacts) Pull(ctx context.Context, client github.Console, repository, token string, number int) (pages.Pull, error)
+console: func (*ActivityFacts) Reach(job pages.Job, now time.Time)
+console: func (*ActivityFacts) WithReached(jobs []pages.Job) []pages.Job
+console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
+console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 console: func (*Refusal) Error() string
+console: func (Change) Allows(env string) bool
+console: func (Change) Branch(name, env, revision string) (string, error)
 console: func (Change) CheckFlags(stated map[string]bool) error
+console: func (Change) Heading(name, env string) string
+console: func (Change) Owns(name, env, file string) bool
 console: func (Change) Steps(request Request, tree files.Checkout) ([]Step, error)
+console: func (Change) Target(name, env string) string
+console: func (Change) Team() bool
 console: func (CreateStep) Operation() Operation
 console: func (CreateStep) Quote() string
 console: func (EditStep) Operation() Operation
 console: func (EditStep) Quote() string
+console: func (NewAppRead) Callable() map[string]bool
+console: func (NewAppRead) Offered() map[string]bool
 console: func (PromoteStep) Operation() Operation
 console: func (PromoteStep) Quote() string
 console: func (RemoveStep) Operation() Operation
@@ -680,6 +693,7 @@ console: func (RemoveStep) Quote() string
 console: func (RenderStep) Operation() Operation
 console: func (RenderStep) Quote() string
 console: func (Request) Name() string
+console: func (Server) AppChange(ctx context.Context, instance pages.Instance, one Change, change string, fields map[string][]string, identity string) (*ChangeProposal, string, int)
 console: func (Server) AppPage(ctx context.Context, instance pages.Instance, tree map[string][]byte, rows []pages.AppRow, jobs []pages.Job, cards FlagCards) (pages.AppPage, error)
 console: func (Server) AppRow(ctx context.Context, instance pages.Instance) (map[string][]byte, []pages.AppRow, *pages.AppRow, error)
 console: func (Server) Apps(ctx context.Context, input pages.AppsInput) (pages.AppsPage, error)
@@ -687,40 +701,75 @@ console: func (Server) Catalogue(ctx context.Context, env, kind, team string) (p
 console: func (Server) Checks(ctx context.Context) (pages.Checks, error)
 console: func (Server) Dashboards(ctx context.Context) map[string]string
 console: func (Server) Egress(ctx context.Context) (pages.EgressPage, error)
+console: func (Server) MainRenders(ctx context.Context) (map[string]pages.Render, error)
+console: func (Server) NewApp(ctx context.Context) (NewAppRead, error)
 console: func (Server) Overview(ctx context.Context) (Overview, error)
 console: func (Server) PinnedTree(ctx context.Context) (map[string][]byte, error)
 console: func (Server) Platform(ctx context.Context) (Platform, error)
 console: func (Server) Rows(ctx context.Context) (map[string][]byte, []pages.AppRow, error)
+console: func (Server) RowsByInstance(ctx context.Context) (map[string]*pages.AppRow, error)
 console: func (Server) Teams(ctx context.Context) (pages.TeamsPage, error)
 console: func (Server) UnitPage(ctx context.Context, name string) (UnitPage, bool, error)
 console: func (Server) Units(ctx context.Context) ([]pages.Unit, error)
 console: func (TeamStep) Operation() Operation
 console: func (TeamStep) Quote() string
+console: func ActivityOf(ctx context.Context, jobs []pages.Job, reads ChangeReads) Activity
 console: func AppStack(ctx context.Context, console github.Console, owner, app string) (stack string, reachable bool)
+console: func BranchTarget(branch string) (action, target string)
+console: func ChangeJobViewOf(job pages.Job, now time.Time) *ChangeJobView
 console: func ChangeNamed(kind string) (Change, bool)
+console: func ChangeViewOf(row pages.ChangeRow, now time.Time) ChangeView
+console: func ChangeWork(proposal ChangeProposal, open func(context.Context, ChangeProposal, func(string)) (string, error)) orchestration.JobWork
 console: func Changes() []Change
+console: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
+console: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
+console: func ConsoleTeamInput(file string) bool
 console: func DesiredVariables(tree map[string][]byte, app, env string) ([]pages.NamedValue, bool)
 console: func FlagDocument(instance pages.Instance) string
 console: func FlagView(environment string, card orchestration.FlagCard) pages.FlagView
+console: func JobPageOf(ctx context.Context, jobs []pages.Job, id int, reads ChangeReads, canCreate bool) (JobPage, bool)
+console: func MergePlanFor(kind string, changed []string) string
+console: func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead, open func(context.Context, NewAppRequest, func(string)) (string, error)) orchestration.JobWork
 console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]pages.Offers
+console: func OpenPullViewOf(pr pages.OpenPull, now time.Time) *OpenPullView
+console: func OpenPulls(ctx context.Context, client github.Console, repository, token string) ([]pages.OpenPull, string)
+console: func ParseConsoleBranch(branch string) (change Change, name, env string, ok bool)
 console: func PlatformOf(checks pages.Checks, units []pages.Unit) Platform
 console: func PromotionReview(app string, rows []pages.AppRow) (pages.PromotionReview, string)
+console: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
+console: func PullTrack(pull pages.Pull, branch string) pages.Track
+console: func PullsFor(pulls []pages.OpenPull, instance pages.Instance) []pages.PendingPull
+console: func Resumable(job pages.Job, jobs []pages.Job) bool
 console: func Settings(tree map[string][]byte, app, env string) map[string]string
 console: func Site(files map[string][]byte, repository string) (pages.Site, error)
+console: func SplitNames(values []string) []string
 console: func StackCatalogue(tree map[string][]byte) (pages.StackCatalogue, error)
 console: func TeamRegistry(tree map[string][]byte) (map[string]pages.TeamInfo, error)
 console: func UnitPageOf(unit pages.Unit) UnitPage
 console: func UnitWork(cluster orchestration.Cluster, now func() time.Time, action, unit string) orchestration.JobWork
 console: func WorkingCopy(dir string) files.Checkout
-console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
+console: type Activity struct {Moving, Ended []ChangeView PRsError string}
+console: type ActivityFacts struct {}
+console: type Change struct {Name string Title string Envs []string TargetEnv string BothEnvs bool Takes, Needs, Any []string Operations []Operation}
+console: type ChangeJobView struct {ID int Title, Label, Link, Unit string Identity, State, PullLink string StartedAt, StartedClock, Ago string Finished bool FinishedClock, Took string Running bool Lines []string}
+console: type ChangeProposal struct {Request Kind, Identity, Repository string Address string}
+console: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
+console: type ChangeView struct {ID string Track pages.Track Open bool Job *ChangeJobView PR *OpenPullView}
+console: type ConsoleEvidence struct {Bundle *orchestration.ConsoleBundle Max int}
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
 console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
+console: type JobPage struct {Job ChangeJobView Track pages.Track Stage pages.Stage PR *OpenPullView CanResume bool}
 console: type Layer struct {Title, Text string Members []UnitRow}
+console: type NewAppRead struct {Contract []byte Catalogue pages.StackCatalogue Teams map[string]pages.TeamInfo Connectable pages.Connectable TeamsError string HookHost string}
+console: type NewAppRequest struct {Choices pages.NewAppChoices Finishing bool Identity, HookHost string Contract []byte}
+console: type OpenPullView struct {Number int URL, Branch, Title, Opened, OpenedAgo string ChecksURL, Checks, Merging string}
 console: type Operation string
 console: type Overview struct {Checks pages.Checks AppCount int Units []pages.Unit Problems []pages.Problem Updating []pages.Problem}
 console: type Platform struct {Checks pages.Checks Units []pages.Unit Problems []pages.Problem Updating []pages.Problem Groups []pages.Group Unhealthy []pages.Unit Elsewhere []pages.Unit Layers []Layer Revision string}
 console: type PromoteStep struct {App, Env, Expected string}
+console: type PublishInputs struct {Change Change Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
+console: type Published struct {Branch string Paths []string Status map[string]string URL string}
 console: type Refusal struct {Subject, Reason string}
 console: type RemoveStep struct {App, Env string}
 console: type RenderStep struct {}
@@ -1533,10 +1582,9 @@ orchestration: const FluxSuspend FluxAction = "suspend"
 orchestration: const NoFlagsProblem = "This console has no NATS key (console-nats Secret), so overrides cannot be read or set."
 orchestration: const StaleDays = 14
 orchestration: func (*ConsoleBundle) Cached(revision string) bool
+orchestration: func (*ConsoleBundle) Held(revision string) (map[string][]byte, bool)
 orchestration: func (*ConsoleBundle) Revision(ctx context.Context) (string, error)
 orchestration: func (*ConsoleBundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
-orchestration: func (*ConsoleEvidence) Cached(commit string, units []string) bool
-orchestration: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 orchestration: func (*Jobs) Drain(timeout time.Duration) bool
 orchestration: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
 orchestration: func (*Jobs) Reach(ctx context.Context, id int)
@@ -1564,9 +1612,7 @@ orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.
 orchestration: func CheckWorkstreams(root string, reader git.Reader, read func(path string) ([]byte, error)) ([]workstreams.Result, error)
 orchestration: func ClearFlag(ctx context.Context, store nats.KV, environment, application, name string) error
 orchestration: func ClickStackRunners(reader kube.Reader, executor kube.Executor) (mongo, app clickstack.Runner)
-orchestration: func ConsoleChanges(ctx context.Context, jobs []pages.Job, reads ChangeReads, others bool) ([]pages.ChangeRow, string)
 orchestration: func ConsoleJobs(ctx context.Context, data kube.Data, reader kube.Reader, now time.Time) []pages.Job
-orchestration: func ConsoleRenders(tree map[string][]byte) (map[string]pages.Render, error)
 orchestration: func DecodeOrdered(data []byte) (OrderedValue, error)
 orchestration: func DestroyData(ctx context.Context, inputs DestroyInputs) (DestroyOutcome, error)
 orchestration: func FilterTarball(content []byte, prefixed bool) (map[string][]byte, error)
@@ -1577,7 +1623,6 @@ orchestration: func ImageDeclaration(reader appsource.Reader, root string) (stri
 orchestration: func LifecycleTest(ctx context.Context, inputs LifecycleTestInputs) ([]lifecycletest.Line, error)
 orchestration: func Mint(inputs MintInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (MintOutcome, error)
 orchestration: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
-orchestration: func Publish(ctx context.Context, inputs PublishInputs, publisher github.Publisher, note func(string)) (Published, error)
 orchestration: func ReadStackContract(data []byte) (StackContract, error)
 orchestration: func RenderPath(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error), path string, rendered []byte) (string, error)
 orchestration: func ScalarText(value any) string
@@ -1598,10 +1643,8 @@ orchestration: type BootstrapOptions struct {DryRun bool Wait, Interval time.Dur
 orchestration: type BootstrapPorts struct {Data kube.Data Installer clickstack.Installer}
 orchestration: type BootstrapReport struct {Lines []BootstrapLine}
 orchestration: type CertIssuerInputs struct {Issuers []files.TreeFile Settings []byte}
-orchestration: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
 orchestration: type Cluster struct {Reader kube.Reader Writer kube.Writer}
 orchestration: type ConsoleBundle struct {Source ConsoleSource Max int}
-orchestration: type ConsoleEvidence struct {Bundle *ConsoleBundle Max int}
 orchestration: type ConsoleSource interface {Revision(ctx context.Context) (string, error) Tree(ctx context.Context, revision string) (map[string][]byte, error) // Files is the regular files among paths at one commit, without the rest of its tree. A path is missing from the // answer only when the commit's whole tree was known not to hold it; anything less is an error. Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)}
 orchestration: type ConsoleSourceOf struct {Console github.Console Repository string Token string}
 orchestration: type DashboardLine struct {Changed bool Text string}
@@ -1628,8 +1671,6 @@ orchestration: type Named struct {Name, Value string}
 orchestration: type OrderedField struct {Name string Value OrderedValue}
 orchestration: type OrderedValue struct {Kind byte Fields []OrderedField Items []OrderedValue Scalar any}
 orchestration: type PolicyResult struct {Application string `json:"application"` Environment string `json:"environment"` RenderFailure string `json:"renderFailure,omitempty"` Findings []policy.Finding `json:"findings"`}
-orchestration: type PublishInputs struct {Change pages.ConsoleChange Name, Env string Identity string Revision string Before []files.TreeFile After []files.TreeFile Commands []string Preface string Repository string Token string DryRun bool}
-orchestration: type Published struct {Branch string Paths []string Status map[string]string URL string}
 orchestration: type RecordedInstance struct {Application, Environment string Release []byte}
 orchestration: type Refusal struct {Subject, Reason string}
 orchestration: type RegistryInputs struct {Registry []byte RegistryPath string Apps, Instances [][]byte Profile []byte Change kernel.TeamChange Address string}
@@ -1680,12 +1721,6 @@ pages: func (ConnectionRow) Kind() string
 pages: func (ConnectionRow) Name() string
 pages: func (ConnectionRow) Verb() string
 pages: func (ConnectionRow) What() string
-pages: func (ConsoleChange) Allows(env string) bool
-pages: func (ConsoleChange) Branch(name, env, revision string) (string, error)
-pages: func (ConsoleChange) Heading(name, env string) string
-pages: func (ConsoleChange) Owns(name, env, file string) bool
-pages: func (ConsoleChange) Target(name, env string) string
-pages: func (ConsoleChange) Team() bool
 pages: func (EnvView) ActionLabel() string
 pages: func (Instance) Name() string
 pages: func (Instance) Namespace() string
@@ -1721,7 +1756,6 @@ pages: func Ago(value string, now time.Time) string
 pages: func AppMapOf(rows []AppRow, env string) AppMap
 pages: func AppPageOf(input AppInput) AppPage
 pages: func AppsPageOf(input AppsInput) AppsPage
-pages: func BranchTarget(branch string) (action, target string)
 pages: func CataloguePageOf(input CatalogueInput) CataloguePage
 pages: func CheckGroups(checks Checks) []Group
 pages: func ChecksOf(checks []Check) Checks
@@ -1730,11 +1764,8 @@ pages: func Compare(staging, prod *AppRow) string
 pages: func Condensed(entries []Entry) []Entry
 pages: func ConnectableTo(rows []AppRow, offers map[string]Offers, env, app string) Connectable
 pages: func ConnectionsOf(inventory *Inventory, teams map[string]string, env string) Connections
-pages: func ConsoleChangeNamed(kind string) (ConsoleChange, bool)
-pages: func ConsoleChanges() []ConsoleChange
 pages: func ConsoleFormChange(kind, name string, fields map[string][]string, declared *Inventory, teams map[string]TeamInfo) (ConsoleFormFlags, error)
 pages: func ConsoleTeamChange(kind, name string, fields map[string][]string) (ConsoleFormFlags, error)
-pages: func ConsoleTeamInput(file string) bool
 pages: func DecodeReport(data []byte) (Report, error)
 pages: func EgressPageOf(rows []AppRow, site Site) EgressPage
 pages: func EnvironmentNamed(name string) string
@@ -1749,12 +1780,10 @@ pages: func Lands(action, target string) bool
 pages: func LayerOf(name string) string
 pages: func MergeMode(body string) string
 pages: func MergePlan(body string) string
-pages: func MergePlanFor(kind string, changed []string) string
 pages: func Named(app, env string) (Instance, bool)
 pages: func NewAppChoose(fields map[string][]string, catalogue StackCatalogue, teams map[string]TeamInfo, callable, offered map[string]bool) (NewAppChoices, error)
 pages: func NewAppFromRecord(record map[string]any, catalogue StackCatalogue) (NewAppChoices, error)
 pages: func NewAppPageOf(input NewAppInput) NewAppPage
-pages: func ParseConsoleBranch(branch string) (change ConsoleChange, name, env string, ok bool)
 pages: func PendingOf(instance Instance, removing, inGit bool, jobs []Job, pulls []PendingPull, prsError string) Pending
 pages: func PendingPullOf(open OpenPull) PendingPull
 pages: func Prepared(job Job) Stage
@@ -1763,8 +1792,7 @@ pages: func ProgressOf(action string, merged, main *Render, live Observed, reach
 pages: func PromotionOf(app string, staging, prod *AppRow) PromotionReview
 pages: func PullNumber(job Job) int
 pages: func PullOf(open OpenPull) Pull
-pages: func PullTrack(pull Pull, branch string) Track
-pages: func PullsFor(pulls []OpenPull, instance Instance) []PendingPull
+pages: func PullTrack(pull Pull, action, target string) Track
 pages: func RemovedRow(app, env, reason string) (AppRow, bool)
 pages: func ScaleFieldsOf(settings map[string]string) []ScaleField
 pages: func StackLabelOf(stack string) string
@@ -1805,7 +1833,6 @@ pages: type ConnectableEvent struct {Name, App, Team, Says string}
 pages: type Connection struct {Role string `json:"role"` App string `json:"app,omitempty"` Event string `json:"event,omitempty"` Host string `json:"host,omitempty"` Outcome string `json:"outcome,omitempty"` Reason string `json:"reason,omitempty"`}
 pages: type ConnectionRow struct {Role, App, Event, Team, Status string}
 pages: type Connections struct {Address, API string Calls, Callers, Publishes, Subscribes, Egress []string Subscribers [][2]string Rows []ConnectionRow Offers string ProxyPort int32}
-pages: type ConsoleChange struct {Name string Title string Envs []string TargetEnv string BothEnvs bool}
 pages: type ConsoleFormFlags struct {Settings []string Calls, Subscriptions []string DropCalls, DropSubscriptions []string Allows, Disallows []string Image string Description, Rename string Transport, Address string}
 pages: type Currentness struct {State string `json:"state"` Reason string `json:"reason"` AppliedRevision string `json:"appliedRevision"`}
 pages: type Database struct {Kind string `json:"kind"` Path string `json:"path"`}

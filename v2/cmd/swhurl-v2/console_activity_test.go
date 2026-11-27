@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -74,7 +74,7 @@ func activityGitHub() *githubtest.ConsoleFake {
 }
 
 // activityServer is a console with the fixture's GitHub and token, whose cluster and trees are the fixture's.
-func activityServer(t *testing.T) (*consoleServer, orchestration.ChangeReads) {
+func activityServer(t *testing.T) (*consoleServer, console.ChangeReads) {
 	t.Helper()
 	server, err := newConsoleServer(consoleConfig{Dev: true, Now: func() time.Time { return activityNow }})
 	if err != nil {
@@ -194,14 +194,14 @@ func TestJobEventsAreAnotherPodsJob(t *testing.T) {
 
 func TestResumable(t *testing.T) {
 	jobs := activityJobs()
-	if !resumable(jobs[4], jobs) {
+	if !console.Resumable(jobs[4], jobs) {
 		t.Fatal("an interrupted new app with no later job can be finished")
 	}
 	later := append([]pages.Job{{ID: 10, Unit: "shop/staging", State: "running"}}, jobs...)
-	if resumable(jobs[4], later) {
+	if console.Resumable(jobs[4], later) {
 		t.Fatal("a later job on the same app takes its place")
 	}
-	if resumable(jobs[3], jobs) {
+	if console.Resumable(jobs[3], jobs) {
 		t.Fatal("only a new app's job is finished")
 	}
 }

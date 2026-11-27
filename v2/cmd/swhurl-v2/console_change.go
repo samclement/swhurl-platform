@@ -29,7 +29,7 @@ import (
 func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
 	app, env, change := r.PathValue("app"), r.PathValue("env"), r.PathValue("change")
 	kind := "v2-" + change
-	one, _ := pages.ConsoleChangeNamed(kind)
+	one, _ := console.ChangeNamed(kind)
 	instance, instanceKnown := pages.Named(app, env)
 	if !instanceKnown || !oneOf(change, appChanges) {
 		s.failure(w, r, http.StatusNotFound, "No such app instance or change.")
@@ -50,12 +50,12 @@ func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), writeTimeout)
 	defer cancel()
-	spec, problem, status := s.changeSpecOf(ctx, instance, one, change, fields, identityOf(r))
+	spec, problem, status := s.reads().AppChange(ctx, instance, one, change, fields, identityOf(r))
 	if status != 0 {
 		s.failure(w, r, status, problem)
 		return
 	}
-	job, err := s.jobs.Start(ctx, one.Name, one.Target(app, env), identityOf(r), nil, s.changeWork(spec))
+	job, err := s.jobs.Start(ctx, one.Name, one.Target(app, env), identityOf(r), nil, console.ChangeWork(*spec, s.openProposal))
 	if err != nil {
 		if inPlace(r) {
 			s.refusalAnswer(w, r, err.Error())
@@ -65,33 +65,6 @@ func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.started(w, r, job)
-}
-
-// changeSpecOf is what one form asks for: the instance's records as the pinned commit states them, the form's own
-// refusals and the flags v2's command takes. A problem comes with the status the console answers it with.
-func (s *consoleServer) changeSpecOf(ctx context.Context, instance pages.Instance, one pages.ConsoleChange, change string,
-	fields map[string][]string, identity string) (*changeSpec, string, int) {
-	tree, rows, row, err := s.reads().AppRow(ctx, instance)
-	if err != nil {
-		return nil, err.Error(), http.StatusBadGateway
-	}
-	if row == nil || row.Inventory == nil {
-		return nil, "its records are not in Git, so what it declares is unknown", http.StatusConflict
-	}
-	if problem, refused := appFormRefusal(change, one, instance.Env, row, rows); refused {
-		return nil, problem, http.StatusBadRequest
-	}
-	teams, _ := console.TeamRegistry(tree)
-	flags, err := pages.ConsoleFormChange(change, instance.App, fields, row.Inventory, teams)
-	if err != nil {
-		return nil, err.Error(), http.StatusBadRequest
-	}
-	if problem, refused := offered(change, instance.Env, instance.App, rows, tree, fields); refused {
-		return nil, problem, http.StatusBadRequest
-	}
-	return &changeSpec{kind: one.Name, app: instance.App, env: instance.Env, requestedBy: identity, repository: s.repository,
-		settings: flags.Settings, calls: flags.Calls, subscriptions: flags.Subscriptions, dropCalls: flags.DropCalls,
-		dropSubscriptions: flags.DropSubscriptions, allows: flags.Allows, disallows: flags.Disallows}, "", 0
 }
 
 // appChanges are the changes an app's forms may start. The egress grant and a schedule are not among them: neither is a
@@ -107,76 +80,6 @@ func oneOf(value string, list []string) bool {
 		}
 	}
 	return false
-}
-
-// appFormRefusal is what a change refuses before its fields are read: a change a page does not offer, an environment
-// the kind does not name, and the two things a form cannot ask for at all. A promotion also needs production to exist
-// and staging to be promotable, which is the cluster's answer rather than the form's.
-func appFormRefusal(change string, one pages.ConsoleChange, env string, row *pages.AppRow,
-	rows []pages.AppRow) (string, bool) {
-	switch change {
-	case "egress":
-		return "the console offers no egress form: grant a host with `swhurl-v2 edit --app " + row.Instance.App +
-			" --env=" + env + " --set egress=<host>` and run the render it asks for", true
-	case "schedule":
-		return "v2 does not model a schedule: the console offers no schedule form", true
-	}
-	if !one.Allows(env) {
-		return change + " from the " + strings.Join(one.Envs, " or ") + " instance", true
-	}
-	if change != "promote" {
-		return "", false
-	}
-	if !declaredIn(rows, row.Instance.App, "prod") {
-		return "v2 has no first promotion: production has no records yet", true
-	}
-	if row.Report != nil && !row.Report.Promotion.Ready {
-		return strings.ReplaceAll(row.Report.Promotion.Reason, "_", " "), true
-	}
-	return "", false
-}
-
-// declaredIn is whether one environment of an app has records the console could see.
-func declaredIn(rows []pages.AppRow, app, env string) bool {
-	for _, row := range rows {
-		if row.Instance.App == app && row.Instance.Env == env && row.Inventory != nil {
-			return true
-		}
-	}
-	return false
-}
-
-// offered refuses a connection the form did not offer: a call to an app that is not a web app in that environment, or
-// an event nothing there publishes. The lists are the page's own, read at the same pinned commit.
-func offered(change, env, app string, rows []pages.AppRow, tree map[string][]byte,
-	fields map[string][]string) (string, bool) {
-	if change != "connect" {
-		return "", false
-	}
-	connectable := pages.ConnectableTo(rows, console.Offers(tree, rows, env), env, app)
-	callable := make(map[string]bool, len(connectable.Apps))
-	for _, one := range connectable.Apps {
-		callable[one.App] = true
-	}
-	published := make(map[string]bool, len(connectable.Events))
-	for _, one := range connectable.Events {
-		published[one.Name] = true
-	}
-	var missing []string
-	for _, name := range splitNames(fields["calls"]) {
-		if !callable[name] {
-			missing = append(missing, name)
-		}
-	}
-	for _, name := range splitNames(fields["subscribe"]) {
-		if !published[name] {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		return strings.Join(missing, ", ") + ": not a web app, or an event, that staging has now; reload the form", true
-	}
-	return "", false
 }
 
 // writeTimeout bounds a form's own checks: the cluster reads a change's decision needs, never the change itself, which
@@ -211,38 +114,28 @@ func formFields(r *http.Request) (map[string][]string, error) {
 	return fields, nil
 }
 
-// splitNames is a form's list of names: every value, split on commas, without the empty ones.
-func splitNames(values []string) []string {
-	var found []string
-	for _, value := range values {
-		for _, name := range strings.Split(value, ",") {
-			if name = strings.TrimSpace(name); name != "" {
-				found = append(found, name)
-			}
-		}
-	}
-	return found
-}
-
-// changeWork is one app change as a job's work: v2's own command in this process, whose lines are the job's and whose
-// pull request is the link the job keeps.
-func (s *consoleServer) changeWork(spec *changeSpec) orchestration.JobWork {
-	return func(ctx context.Context, line func(string)) (string, error) {
-		return s.openChangeInput(spec, "", line)
-	}
-}
-
-// openChange runs one change: it downloads the pinned commit, applies the change in a working copy of its own, publishes
-// what its kind owns and opens the pull request. A refusal is the whole of what the command wrote, in v2's words.
-func (s *consoleServer) openChangeInput(spec *changeSpec, input string, line func(string)) (string, error) {
+// openProposal runs v2's command in this process. The capability supplies the request;
+// the command owns its environment, filesystem and diagnostic stream.
+func (s *consoleServer) openProposal(ctx context.Context, proposal console.ChangeProposal, line func(string)) (string, error) {
 	var refusal strings.Builder
 	c := s.command(&refusal, line)
-	c.stdin = strings.NewReader(input)
+	c.stdin = strings.NewReader(proposal.Address)
+	spec := proposalSpec(proposal)
 	opened, status := c.openChange(spec)
 	if status != 0 {
 		return "", errors.New(strings.TrimSpace(refusal.String()))
 	}
 	return opened, nil
+}
+
+// proposalSpec translates the console's typed request to the command's flag representation.
+func proposalSpec(proposal console.ChangeProposal) *changeSpec {
+	one := proposal.Request
+	return &changeSpec{kind: proposal.Kind, app: one.App, env: one.Env, team: one.Team,
+		settings: one.Settings, calls: one.Calls, subscriptions: one.Subscriptions,
+		dropCalls: one.DropCalls, dropSubscriptions: one.DropSubscriptions, allows: one.Allows,
+		disallows: one.Disallows, description: one.Description, rename: one.Rename, transport: one.Transport,
+		image: one.Image, requestedBy: proposal.Identity, repository: proposal.Repository}
 }
 
 // command is one of v2's commands run in the console's own process: its lines are the job's, its refusal is the text
@@ -415,7 +308,7 @@ func (s *consoleServer) changeChannel(w http.ResponseWriter, r *http.Request) {
 // proposeTeam starts one team change as a job, or says why the form was refused: the Teams page again, with the
 // sentence, as the console always answered a team form.
 func (s *consoleServer) proposeTeam(w http.ResponseWriter, r *http.Request, kind string) {
-	one, known := pages.ConsoleChangeNamed(kind)
+	one, known := console.ChangeNamed(kind)
 	fields, err := formFields(r)
 	if !known {
 		s.teamsRefusal(w, r, "no such team change")
@@ -444,10 +337,13 @@ func (s *consoleServer) proposeTeam(w http.ResponseWriter, r *http.Request, kind
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), writeTimeout)
 	defer cancel()
-	spec := &changeSpec{kind: kind, team: name, description: flags.Description, rename: flags.Rename,
-		transport: flags.Transport, requestedBy: identityOf(r), repository: s.repository}
+	proposal := console.ChangeProposal{Kind: kind, Identity: identityOf(r), Repository: s.repository,
+		Request: console.Request{Team: name, Description: flags.Description, Rename: flags.Rename, Transport: flags.Transport}}
+	if flags.Address != "" {
+		proposal.Address = flags.Address + "\n"
+	}
 	job, err := s.jobs.Start(ctx, teamJobActions[kind], one.Target(name, ""), identityOf(r), nil,
-		s.teamWork(spec, flags.Address))
+		console.ChangeWork(proposal, s.openProposal))
 	if err != nil {
 		if inPlace(r) {
 			s.refusalAnswer(w, r, err.Error())
@@ -457,17 +353,6 @@ func (s *consoleServer) proposeTeam(w http.ResponseWriter, r *http.Request, kind
 		return
 	}
 	s.started(w, r, job)
-}
-
-// teamWork is one team change as a job's work, with the channel's address on the command's standard input.
-func (s *consoleServer) teamWork(spec *changeSpec, address string) orchestration.JobWork {
-	return func(ctx context.Context, line func(string)) (string, error) {
-		input := ""
-		if address != "" {
-			input = address + "\n"
-		}
-		return s.openChangeInput(spec, input, line)
-	}
 }
 
 // teamsRefusal answers a refused team form as the Teams page with its sentence, which is where its button was.

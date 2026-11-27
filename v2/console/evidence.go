@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -21,7 +22,7 @@ const keptEvidence = 240
 // nothing, so the next page reads again. It never adds to Bundle's trees, which stay whole: a commit whose tree
 // Bundle already holds is answered from it, and Bundle's source does every read.
 type ConsoleEvidence struct {
-	Bundle *ConsoleBundle
+	Bundle *orchestration.ConsoleBundle
 	// Max is how many renders are kept, the oldest going first; zero is keptEvidence.
 	Max int
 
@@ -46,7 +47,7 @@ func (e *ConsoleEvidence) Cached(commit string, units []string) bool {
 // Renders is each unit's render at commit, as ConsoleRenders reads the commit's tree: a unit the commit holds no
 // instance for is the zero Render (absent). The units not in hand are read together, in one read of their files.
 func (e *ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) {
-	if tree, held := e.Bundle.held(commit); held {
+	if tree, held := e.Bundle.Held(commit); held {
 		return unitRenders(tree, units)
 	}
 	found, missing := e.inHand(commit, units)
@@ -119,7 +120,7 @@ func unitFiles(unit string) ([]string, bool) {
 		return nil, false
 	}
 	return []string{kernel.AppRecordPath(kernel.RecordsRoot, app), kernel.InstanceRecordPath(kernel.RecordsRoot, app, env),
-		kernel.ReleaseRecordPath(kernel.RecordsRoot, app, env), consoleApps + "/" + unit + "/helmrelease.json"}, true
+		kernel.ReleaseRecordPath(kernel.RecordsRoot, app, env), pages.ConsoleAppsRoot + "/" + unit + "/helmrelease.json"}, true
 }
 
 // pathSegment is one folder name a record path may hold.

@@ -24,7 +24,7 @@ import (
 type appData struct {
 	shell
 	pages.AppPage
-	Changes []changeView
+	Changes []console.ChangeView
 }
 
 // pendingData is what an instance not deployed yet shows.
@@ -109,7 +109,7 @@ func (s *consoleServer) app(w http.ResponseWriter, r *http.Request) {
 func (s *consoleServer) pending(w http.ResponseWriter, r *http.Request, instance pages.Instance, removing, inGit bool,
 	jobs []pages.Job) {
 	pulls, prsError := s.consolePulls(r.Context())
-	prs := pages.PullsFor(pulls, instance)
+	prs := console.PullsFor(pulls, instance)
 	pending := pages.PendingOf(instance, removing, inGit, jobs, prs, prsError)
 	if !removing && len(pending.Jobs) == 0 && len(pending.PRs) == 0 {
 		s.failure(w, r, http.StatusNotFound, "No such app instance.")
@@ -133,10 +133,10 @@ func (s *consoleServer) readApp(ctx context.Context, instance pages.Instance, tr
 			own = append(own, job)
 		}
 	}
-	rows_, _ := orchestration.ConsoleChanges(ctx, own, reads, false)
-	changes := make([]changeView, 0, len(rows_))
+	rows_, _ := console.ConsoleChanges(ctx, own, reads, false)
+	changes := make([]console.ChangeView, 0, len(rows_))
 	for _, change := range rows_ {
-		changes = append(changes, changeViewOf(change, reads.Now))
+		changes = append(changes, console.ChangeViewOf(change, reads.Now))
 	}
 	return appData{AppPage: page, Changes: changes}, nil
 }
@@ -158,7 +158,7 @@ func (s *consoleServer) promotion(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusConflict, prsError)
 		return
 	}
-	existing := pages.PullsFor(pulls, pages.Instance{App: app, Env: "prod"})
+	existing := console.PullsFor(pulls, pages.Instance{App: app, Env: "prod"})
 	if len(existing) > 0 {
 		page := promotionData{shell: s.page(r, false), PromotionPage: pages.PromotionPage{App: app, PRs: existing}}
 		s.render(w, r, http.StatusOK, "promotion.html", page)
@@ -185,29 +185,11 @@ func (s *consoleServer) newApp(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
 	defer cancel()
-	tree, rows, err := s.readRows(ctx)
+	read, err := s.reads().NewApp(ctx)
 	if err != nil {
 		s.failure(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	catalogue, err := console.StackCatalogue(tree)
-	if err != nil {
-		s.failure(w, r, http.StatusBadGateway, err.Error())
-		return
-	}
-	site, err := console.Site(tree, s.repository)
-	if err != nil {
-		s.failure(w, r, http.StatusBadGateway, err.Error())
-		return
-	}
-	registry, registryErr := console.TeamRegistry(tree)
-	teamsError := ""
-	if registryErr != nil {
-		registry, teamsError = map[string]pages.TeamInfo{}, registryErr.Error()
-	}
-	read := newAppRead{tree: tree, catalogue: catalogue, teams: registry, teamsError: teamsError,
-		connectable: pages.ConnectableTo(rows, console.Offers(tree, rows, "staging"), "staging", ""),
-		hookHost:    "flux-webhook." + site.Domain}
 	s.renderNewApp(w, r, read, pages.NewAppForm{}, nil, nil, "", http.StatusOK)
 }
 

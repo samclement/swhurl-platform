@@ -86,12 +86,12 @@ func (b *ConsoleBundle) Revision(ctx context.Context) (string, error) {
 
 // Cached is whether one commit's tree is already in hand: a page's bounded reads are spent on the ones it must fetch.
 func (b *ConsoleBundle) Cached(revision string) bool {
-	_, found := b.held(revision)
+	_, found := b.Held(revision)
 	return found
 }
 
-// held is one commit's tree when it is in hand, without reading it.
-func (b *ConsoleBundle) held(revision string) (map[string][]byte, bool) {
+// Held is one commit's tree when it is in hand, without reading it.
+func (b *ConsoleBundle) Held(revision string) (map[string][]byte, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	found, ok := b.trees[revision]

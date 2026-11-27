@@ -12,7 +12,6 @@ import (
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/orchestration"
 )
 
 // A change is the console's one way to open a pull request. It downloads main at one commit, applies its kind's
@@ -230,8 +229,8 @@ func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revisio
 	for _, step := range steps {
 		commands = append(commands, step.Quote())
 	}
-	published, err := orchestration.Publish(context.Background(), orchestration.PublishInputs{
-		Change: change.ConsoleChange, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
+	published, err := console.Publish(context.Background(), console.PublishInputs{
+		Change: change, Name: spec.name(), Env: spec.env, Identity: spec.requestedBy, Revision: revision,
 		Before: before, After: after, Commands: commands, Preface: spec.preface, Repository: repository,
 		Token: token, DryRun: spec.dryRun,
 	}, publisher, func(line string) { fmt.Fprintln(c.out, line) })

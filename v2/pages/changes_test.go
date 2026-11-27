@@ -287,27 +287,9 @@ func TestAClosedNewAppKeepsItsRepository(t *testing.T) {
 			t.Fatalf("%s = %q", action, got.Outcome)
 		}
 	}
-	track := PullTrack(Pull{Number: 9, URL: pullURL, State: "open", Checks: "passed"}, "console/v2-promote-web-staging-abc1234")
+	track := PullTrack(Pull{Number: 9, URL: pullURL, State: "open", Checks: "passed"}, "v2-promote", "web/prod")
 	if last := track.Stages[len(track.Stages)-1].Label; last != "Live in prod" {
 		t.Fatalf("a promotion's branch ends in production: %s", last)
-	}
-}
-
-func TestBranchTarget(t *testing.T) {
-	cases := map[string][2]string{
-		"console/new-my-app-staging-abc1234":         {"new", "my-app/staging"},
-		"console/v2-promote-web-staging-abc1234":     {"v2-promote", "web/prod"},
-		"console/v2-scale-my-api-prod-0123456789abc": {"v2-scale", "my-api/prod"},
-		"console/team-channel-set-payments-abc1234":  {"team-channel-set", "team:payments"},
-		"console/team-add-payments-abc1234":          {"team-add", "team:payments"},
-		"console/v2-scale-web-dev-abc1234":           {"", ""},
-		"console/v2-scale-Web-prod-abc1234":          {"", ""},
-		"renovate/flux-2.x":                          {"", ""},
-	}
-	for branch, want := range cases {
-		if action, target := BranchTarget(branch); [2]string{action, target} != want {
-			t.Errorf("%s = %s %s", branch, action, target)
-		}
 	}
 }
 

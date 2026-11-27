@@ -1,27 +1,9 @@
 package console
 
 import (
-	"reflect"
 	"slices"
 	"testing"
-
-	"github.com/samclement/swhurl-platform/v2/pages"
 )
-
-// The table names exactly pages' kinds, in pages' order, each with pages' own row, so a branch Activity reads and a
-// change the command opens cannot disagree.
-func TestChangesAreThePagesKinds(t *testing.T) {
-	branches := pages.ConsoleChanges()
-	ours := Changes()
-	if len(ours) != len(branches) {
-		t.Fatalf("console has %d kinds, pages %d", len(ours), len(branches))
-	}
-	for i, one := range ours {
-		if !reflect.DeepEqual(one.ConsoleChange, branches[i]) {
-			t.Errorf("kind %d is %+v here and %+v in pages", i, one.ConsoleChange, branches[i])
-		}
-	}
-}
 
 // Every kind plans what it runs, each operation once, and needs only flags it takes.
 func TestChangesAreWhole(t *testing.T) {

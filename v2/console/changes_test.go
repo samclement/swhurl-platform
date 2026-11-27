@@ -1,4 +1,4 @@
-package orchestration
+package console
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samclement/swhurl-platform/v2/orchestration"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -248,7 +249,7 @@ func unitTree() map[string][]byte {
 // evidencePage is the reads one Activity page takes through a real evidence cache: each job's pull request merged at
 // the commit merges names by job, main the same tree, and both instances healthy on the cluster.
 func evidencePage(source *treeSource, merges map[int]string) ChangeReads {
-	evidence := &ConsoleEvidence{Bundle: &ConsoleBundle{Source: source}}
+	evidence := &ConsoleEvidence{Bundle: &orchestration.ConsoleBundle{Source: source}}
 	main, _ := ConsoleRenders(unitTree())
 	healthy := map[string]*pages.AppRow{}
 	for _, unit := range []string{"web/prod", "web/staging"} {

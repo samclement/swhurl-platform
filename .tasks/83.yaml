@@ -1,9 +1,11 @@
 id: 83
 title: Move the console's audit handler into v2/console and retire its remaining orchestration edges and files
-state: ready
+state: active
 scope:
   - v2/console/*.go
   - v2/cmd/swhurl-v2/console*.go
+  - v2/cmd/swhurl-v2/telemetry_reads.go
+  - v2/cmd/swhurl-v2/telemetry_test.go
   - v2/orchestration/console*.go
   - v2/orchestration/jobs.go
   - v2/archtest/api.txt
@@ -16,4 +18,7 @@ checks:
 after:
   - 82
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T18:27:28.224Z
+    commit: 1e7edde59204
+    text: "Widen to telemetry_reads.go and telemetry_test.go and move remaining orchestration console types, or leave them? -> operator approved option 1: add both v2/cmd/swhurl-v2 files; move as console.Bundle, console.Source, console.SourceOf and console.FilterTarball with tests, deleting orchestration/console*.go."

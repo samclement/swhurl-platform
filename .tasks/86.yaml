@@ -11,6 +11,7 @@ scope:
   - v2/orchestration/jobs_test.go
   - v2/cmd/swhurl-v2/*.go
   - docs/architecture.md
+  - docs/v2-status.md
 checks:
   - cd v2 && go test ./archtest/
   - make check-v2
@@ -22,3 +23,6 @@ notes:
   - at: 2026-11-27T19:50:45.429Z
     commit: d5c096f103ba
     text: "Move job registry to enforce pages boundary, include tests too, or split prerequisite? -> operator: go with 1. Scope adds v2/orchestration/jobs.go and jobs_test.go; move to console/jobs.go and jobs_test.go, update console/cmd callers and api.txt/budgets.json. New pages import rule covers production source only, matching layer checks. apps/status_state_test.go cross-layer page assertions remain a followup. No baseline/exception for orchestration."
+  - at: 2026-11-27T19:56:28.221Z
+    commit: 29739a876044
+    text: "May task 86 update docs/v2-status.md for required check-docs? -> operator approved bounded scope addition: record pages boundary completed offline and check-required change inventory. Next gate pending operator choice unless an already-approved gate exists; do not invent or approve a further migration. No live verification claim."

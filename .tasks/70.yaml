@@ -1,6 +1,6 @@
 id: 70
 title: Move batch deploy into delivery.DeployAll, taking the records reader
-state: active
+state: done
 scope:
   - v2/delivery/deployall.go
   - v2/delivery/deployall_test.go
@@ -15,4 +15,13 @@ checks:
 after:
   - 69
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T07:37:26.251Z
+    commit: bc613a7a471c
+    text: "done: delivery.DeployAll(ctx, DeployAllInputs{Records []files.InstanceRecords, Profile, Calls, Egress}, images factory, out, writer) owns the batch: staging filter, up-front describe and egress check refuse the whole run, per-instance isolation. cmd keeps reading, outcome/exit mapping and report. TestRecords* renamed TestDeployRecords*. Not verified live."
+  - at: 2026-11-27T07:37:26.251Z
+    commit: bc613a7a471c
+    text: "followup: cmd's describeRecords/describedRecord (promote.go, render.go, status_all.go via readInstance) duplicate delivery's private describeRecords check (folder vs spec, release app): have them share one"
+  - at: 2026-11-27T07:37:26.251Z
+    commit: bc613a7a471c
+    text: "followup: docs/workstreams.md (v2 workstream) and docs/v2-status.md not updated for DeployAll: outside this task's scope"

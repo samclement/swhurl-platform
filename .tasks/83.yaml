@@ -11,6 +11,7 @@ scope:
   - v2/archtest/api.txt
   - v2/archtest/budgets.json
   - v2/archtest/rules_test.go
+  - v2/archtest/checks_test.go
   - docs/iteration-2-plan.md
 checks:
   - cd v2 && go test ./...
@@ -22,3 +23,9 @@ notes:
   - at: 2026-11-27T18:27:28.224Z
     commit: 1e7edde59204
     text: "Widen to telemetry_reads.go and telemetry_test.go and move remaining orchestration console types, or leave them? -> operator approved option 1: add both v2/cmd/swhurl-v2 files; move as console.Bundle, console.Source, console.SourceOf and console.FilterTarball with tests, deleting orchestration/console*.go."
+  - at: 2026-11-27T18:30:12.363Z
+    commit: f6da75e2279d
+    text: "released: First attempt reached workflow token budget (3.14M input) and was stopped; partial edits retained in task-83 worktree. One allowed recovery relaunch."
+  - at: 2026-11-27T19:21:43.234Z
+    commit: f6da75e2279d
+    text: "Retire orchestration health/apps edges by updating checks_test.go fixtures, or retain obsolete permissions? -> operator approved option 1: scope adds v2/archtest/checks_test.go; fixtures use console importing health/apps, retain every reverse/peer refusal, orchestration workflow edges become {provisioning}."

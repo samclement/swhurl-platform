@@ -1,6 +1,6 @@
 id: 83
 title: Move the console's audit handler into v2/console and retire its remaining orchestration edges and files
-state: active
+state: done
 scope:
   - v2/console/*.go
   - v2/cmd/swhurl-v2/console*.go
@@ -29,3 +29,18 @@ notes:
   - at: 2026-11-27T19:21:43.234Z
     commit: f6da75e2279d
     text: "Retire orchestration health/apps edges by updating checks_test.go fixtures, or retain obsolete permissions? -> operator approved option 1: scope adds v2/archtest/checks_test.go; fixtures use console importing health/apps, retain every reverse/peer refusal, orchestration workflow edges become {provisioning}."
+  - at: 2026-11-27T19:23:35.914Z
+    commit: 1e7edde59204
+    text: "done: Moved ConsoleBundle/Source/SourceOf/FilterTarball to console.Bundle/Source/SourceOf/FilterTarball with tests; deleted orchestration/console*.go. Flag audit line now worded by console.FlagStore (Audit func), written by cmd. Retired orchestration->health/apps edges; fixtures now use console. api.txt updated; plan doc updated. Not verified live; cmd's audit wiring has no test."
+  - at: 2026-11-27T19:23:35.914Z
+    commit: 1e7edde59204
+    text: "followup: docs/workstreams.md v2 row not updated for task 83 (outside scope)"
+  - at: 2026-11-27T19:23:35.914Z
+    commit: 1e7edde59204
+    text: "followup: docs/git-history-rewrite-rehearsal.md and docs/current-state.md still name orchestration.ConsoleBundle/ConsoleSource and orchestration/console*.go paths"
+  - at: 2026-11-27T19:23:35.914Z
+    commit: 1e7edde59204
+    text: "followup: orchestration/jobs.go ConsoleJobs and the job registry remain in orchestration; console -> orchestration edge also covers flag operations and DecodeOrdered"
+  - at: 2026-11-27T19:25:16.325Z
+    commit: 259ab6a98faa
+    text: branch dsa/01M8F3B508JH6ZZEWKY35NBVD1/task-83

@@ -27,6 +27,8 @@ scope:
   - v2/orchestration/jobs_test.go
   - v2/orchestration/ordered.go
   - v2/orchestration/ordered_test.go
+  - v2/orchestration/apprepo.go
+  - v2/orchestration/apprepo_test.go
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -40,3 +42,6 @@ notes:
   - at: 2026-11-27T14:05:48.555Z
     commit: 8734653ad026
     text: "callers of moved readers are out of scope: widen or move less? -> conductor: option 1, widen to call-site edits (no pass-throughs left behind: no-compatibility-shims rule); ConsoleJobs to orchestration/jobs.go; ordered decoder to orchestration/ordered.go, EXPORTED and used by both apprepo.go and console (no copy)"
+  - at: 2026-11-27T14:14:20.164Z
+    commit: 85ac5cd4c8c2
+    text: "conductor: added v2/orchestration/apprepo.go (+_test) to scope; my earlier widening named the cmd file by mistake"

@@ -1,6 +1,6 @@
 id: 73
 title: Run the record kinds' steps (edit, remove, promote, render) as typed calls to apps and delivery, return the PR address instead of scraping "Opened", and derive each quoted line from its typed step
-state: ready
+state: active
 scope:
   - v2/console/steps.go
   - v2/console/steps_test.go
@@ -13,6 +13,26 @@ scope:
   - v2/pages/console_change.go
   - docs/console.md
   - v2/archtest/api.txt
+  - v2/console/*.go
+  - v2/cmd/swhurl-v2/edit.go
+  - v2/cmd/swhurl-v2/edit_test.go
+  - v2/cmd/swhurl-v2/remove.go
+  - v2/cmd/swhurl-v2/remove_test.go
+  - v2/cmd/swhurl-v2/promote.go
+  - v2/cmd/swhurl-v2/promote_test.go
+  - v2/cmd/swhurl-v2/render.go
+  - v2/cmd/swhurl-v2/render_test.go
+  - v2/cmd/swhurl-v2/apprepo.go
+  - v2/cmd/swhurl-v2/apprepo_test.go
+  - v2/cmd/swhurl-v2/change_test.go
+  - v2/cmd/swhurl-v2/console_change_test.go
+  - v2/cmd/swhurl-v2/console_new_test.go
+  - v2/apps/*.go
+  - v2/delivery/*.go
+  - v2/provisioning/*.go
+  - v2/adapters/files/*.go
+  - v2/archtest/rules_test.go
+  - v2/archtest/budgets.json
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -26,3 +46,6 @@ notes:
   - at: 2026-11-26T07:29:27.780Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T07:49:12.803Z
+    commit: c00f1aead0f0
+    text: "Shape of task 73? -> operator: option 3 as one task: change runner calls use cases directly (apps.Edit, apps.SetTeam, apps.Remove, delivery.Promote, and a render use case in delivery or provisioning, not a cmd function); edit/remove/promote/render commands become assemble inputs -> typed call -> print; input assembly moves onto shared readers below cmd (like files.ReadRecords) so v2/console (layer 2) never imports cmd; appRepo returns the PR URL so console_new stops scraping; change prints a one-line summary. Scope widened by the conductor accordingly."

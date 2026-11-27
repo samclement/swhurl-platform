@@ -1,6 +1,6 @@
 id: 74
 title: Run the new-app, connection, allow, team and channel kinds through their typed calls, leaving one table as the only kind list
-state: active
+state: done
 scope:
   - v2/console/steps.go
   - v2/console/steps_test.go
@@ -62,3 +62,15 @@ notes:
   - at: 2026-11-27T13:44:29.707Z
     commit: a0f7d59f9d75
     text: "deleting v2/connectivity needs checks_test.go, v2-status.md, current-state.md links -> conductor: option 1, widen; these are direct consequences of the operator's option-2 decision (delete the package), and leaving dead links breaks docs"
+  - at: 2026-11-27T13:47:57.354Z
+    commit: cebb701034d7
+    text: "done: Every kind's steps are typed and built by console's table (Change.Steps, Request; Create/TeamStep); cmd's kind switch deleted; runner calls apps.CreateIn, orchestration.ChangeRegistryIn. connectivity settings moved to connectivity/rules, root pkg deleted. team cmd reads via files.Checkout (now needs release records). Offline only; not live."
+  - at: 2026-11-27T13:47:57.354Z
+    commit: cebb701034d7
+    text: "followup: pages still names kinds by literal: pages/app.go PullsFor (new, v2-promote), pages/console_change.go MergePlanFor (new), pages/console_form.go, cmd/swhurl-v2/console_change.go's kind-label map; for task 77"
+  - at: 2026-11-27T13:47:57.354Z
+    commit: cebb701034d7
+    text: "followup: docs/workstreams.md and docs/current-state.md need a dated entry for task 74 when it is committed and recorded"
+  - at: 2026-11-27T13:49:42.815Z
+    commit: 7bad3f7faba5
+    text: branch dsa/01M8E2V7EJ6YM4ES7EE0SW0WVW/task-74

@@ -1,5 +1,6 @@
-// Package rules is connectivity's reading of its two documents: the platform's egress allocation, which says which
-// port names each instance to the proxy, and the resolution, which says which pairs are connected. Both are versioned
+// Package rules is connectivity's pure model: the settings a change to an instance's declarations writes, and its
+// reading of its two documents: the platform's egress allocation, which says which port names each instance to the
+// proxy, and the resolution, which says which pairs are connected. Both documents are versioned
 // documents that name the commit they were read at, so a compilation's evidence includes where its relationships
 // came from. Their shapes are the kernel's model types; this package owns their bytes and what one instance takes
 // from them, so every use case and command that reads them reads them the same way.

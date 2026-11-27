@@ -1,10 +1,13 @@
 package apps
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/adapters/registry"
+	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 	provisioningrules "github.com/samclement/swhurl-platform/v2/provisioning/rules"
 )
@@ -12,6 +15,38 @@ import (
 // The apps use cases over a checkout: each reads what its change needs from the records tree and the documents the
 // checkout names, then applies the change and writes under the checkout's root. A command and a console change call
 // the same ones, so a line a person types and the change that quotes it run the same thing.
+
+// CreateRequest is a create as its caller asks for it: the app and its team, the image reference the operator named,
+// the instance's exposure, and the seed the caller obtained for its broker identity.
+type CreateRequest struct {
+	Application, Team, Image, Exposure string
+	Seed                               [32]byte
+}
+
+// CreateIn states a new app's staging records in the checkout from the image its repository published. An app the
+// records already hold anything of is refused: a create states what an app starts with, so a second one would
+// overwrite a release an instance may be selecting.
+func CreateIn(ctx context.Context, checkout files.Checkout, request CreateRequest,
+	images func(image string) (registry.Reader, error), writer files.Writer, encrypter sops.Encrypter) (Created, error) {
+	empty, err := files.Empty(filepath.Join(checkout.Records, request.Application), "records")
+	if err != nil {
+		return Created{}, err
+	}
+	if !empty {
+		return Created{}, &Refusal{Subject: "app", Reason: "the_app_already_has_records"}
+	}
+	profile, err := files.Read(checkout.Profile, "profile")
+	if err != nil {
+		return Created{}, err
+	}
+	root, err := checkout.Relative(checkout.Records)
+	if err != nil {
+		return Created{}, err
+	}
+	return Create(ctx, CreateInputs{Application: request.Application, Team: request.Team, Image: request.Image,
+		Profile: profile, RecordsRoot: root, Exposure: request.Exposure, Seed: request.Seed}, images, checkout.Root,
+		writer, encrypter)
+}
 
 // EditIn applies one instance-level setting to one instance's records in the checkout.
 func EditIn(checkout files.Checkout, application, environment string, setting Setting,
@@ -176,4 +211,10 @@ func (t TeamChange) Summary() string {
 func (r Removal) Summary() string {
 	return fmt.Sprintf("%s/%s removed: %d files removed, %d written", r.Application, r.Environment, len(r.Removed),
 		len(r.Written))
+}
+
+// Summary is the creation's one line: the instance, the image tag it was created from and how many files it wrote.
+func (c Created) Summary() string {
+	return fmt.Sprintf("%s/%s created from %s: %d files", c.Instance.Application, c.Instance.Environment, c.Tag,
+		len(c.Written))
 }

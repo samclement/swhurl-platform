@@ -82,6 +82,7 @@ adapters/files: func (*Error) Error() string
 adapters/files: func (Checkout) Folder(record InstanceRecords) (InstanceFolder, error)
 adapters/files: func (Checkout) Folders() ([]InstanceFolder, error)
 adapters/files: func (Checkout) Holds(file kernel.File) (bool, error)
+adapters/files: func (Checkout) Instance(application, environment string) ([]byte, error)
 adapters/files: func (Checkout) Instances() ([]InstanceRecords, error)
 adapters/files: func (Checkout) Names(relative string) ([]string, error)
 adapters/files: func (Checkout) Present(relative, what string) ([]byte, error)
@@ -89,6 +90,7 @@ adapters/files: func (Checkout) Relative(path string) (string, error)
 adapters/files: func (Disk) Prune(dir, folder string, rendered []string) ([]Outcome, error)
 adapters/files: func (Disk) Remove(dir, path string) ([]Outcome, error)
 adapters/files: func (Disk) Write(dir string, docs []kernel.File) ([]Outcome, error)
+adapters/files: func Empty(path, what string) (bool, error)
 adapters/files: func Find(records []InstanceRecords, application, environment string) (InstanceRecords, error)
 adapters/files: func New() Writer
 adapters/files: func Optional(path, what string) ([]byte, error)
@@ -495,11 +497,13 @@ adapters/sops: type Decrypter interface {Decrypt(path, keyFile string) ([]byte, 
 adapters/sops: type Encrypter interface {Encrypt(document []byte, recipient string) ([]byte, error)}
 adapters/sops: type Error struct {Reason string}
 apps: func (*Refusal) Error() string
+apps: func (Created) Summary() string
 apps: func (Edition) Summary() string
 apps: func (Removal) Summary() string
 apps: func (Setting) AppLevel() bool
 apps: func (TeamChange) Summary() string
 apps: func Create(ctx context.Context, inputs CreateInputs, images func(image string) (registry.Reader, error), destination string, writer files.Writer, encrypter sops.Encrypter) (Created, error)
+apps: func CreateIn(ctx context.Context, checkout files.Checkout, request CreateRequest, images func(image string) (registry.Reader, error), writer files.Writer, encrypter sops.Encrypter) (Created, error)
 apps: func Edit(editable Editable, destination string, writer files.Writer) (Edition, error)
 apps: func EditIn(checkout files.Checkout, application, environment string, setting Setting, writer files.Writer) (Edition, error)
 apps: func ParseSetting(setting string) (Setting, error)
@@ -510,6 +514,7 @@ apps: func SetTeamIn(checkout files.Checkout, application, team string, writer f
 apps: func Status(ctx context.Context, inputs StatusInputs) (observe.Report, error)
 apps: func StatusAll(ctx context.Context, inputs StatusInputs, instances []provisioningrules.Inputs) (observe.Collection, error)
 apps: type CreateInputs struct {Application, Team string Image string Profile []byte RecordsRoot string Exposure string Seed [32]byte}
+apps: type CreateRequest struct {Application, Team, Image, Exposure string Seed [32]byte}
 apps: type Created struct {Tag string Release kernel.ReleaseBundle Instance kernel.InstanceSpec App kernel.AppSpec Public string Written []files.Outcome}
 apps: type Editable struct {InstanceInputs Change string Apply func(kernel.InstanceSpec, kernel.ReleaseBundle) (kernel.InstanceSpec, error)}
 apps: type Edition struct {Application, Environment, Change string Before, After kernel.InstanceSpec Compilation kernel.Compilation ResolutionStale bool AllocationStale bool Written []files.Outcome}
@@ -638,7 +643,10 @@ connectivity/rules/events: type Error struct {Application, Environment, Field, R
 connectivity/rules/events: type Resolved struct {Connected []Subscription Pending []string}
 connectivity/rules/events: type Subscription struct {Publisher, Event string Stream, Consumer string Subject, Object string}
 connectivity/rules: const ResolutionRecordName = "calls.json"
+connectivity/rules: func (*Refusal) Error() string
 connectivity/rules: func Allocation(revision string, instances []Records, previous kernel.EgressDocument, backupHost string) (kernel.EgressDocument, error)
+connectivity/rules: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
+connectivity/rules: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
 connectivity/rules: func ConnectionsOf(data []byte, application, environment string) (kernel.Connections, error)
 connectivity/rules: func DecodeConnectionsDocument(data []byte) (kernel.ConnectionsDocument, error)
 connectivity/rules: func DecodeEgressDocument(data []byte) (kernel.EgressDocument, error)
@@ -650,17 +658,18 @@ connectivity/rules: func InstanceEgress(document []byte, application, environmen
 connectivity/rules: func Resolve(revision string, instances []Records) (kernel.ConnectionsDocument, error)
 connectivity/rules: func SubscribersOf(data []byte, application, environment string) ([]string, error)
 connectivity/rules: type Records struct {Application, Environment string Instance, Release, App []byte}
-connectivity: func (*Refusal) Error() string
-connectivity: func AllowSettings(current kernel.InstanceSpec, allows, disallows []string) ([]string, error)
-connectivity: func ConnectionSettings(current kernel.InstanceSpec, calls, subscriptions, dropCalls, dropSubscriptions []string) ([]string, error)
-connectivity: type Refusal struct {Subject, Reason string}
+connectivity/rules: type Refusal struct {Subject, Reason string}
 console: const Create Operation = "create"
 console: const Edit Operation = "edit"
 console: const Promote Operation = "promote"
 console: const Remove Operation = "remove"
 console: const Render Operation = "render"
 console: const Team Operation = "team"
+console: func (*Refusal) Error() string
 console: func (Change) CheckFlags(stated map[string]bool) error
+console: func (Change) Steps(request Request, tree files.Checkout) ([]Step, error)
+console: func (CreateStep) Operation() Operation
+console: func (CreateStep) Quote() string
 console: func (EditStep) Operation() Operation
 console: func (EditStep) Quote() string
 console: func (PromoteStep) Operation() Operation
@@ -669,16 +678,23 @@ console: func (RemoveStep) Operation() Operation
 console: func (RemoveStep) Quote() string
 console: func (RenderStep) Operation() Operation
 console: func (RenderStep) Quote() string
+console: func (Request) Name() string
+console: func (TeamStep) Operation() Operation
+console: func (TeamStep) Quote() string
 console: func ChangeNamed(kind string) (Change, bool)
 console: func Changes() []Change
 console: func WorkingCopy(dir string) files.Checkout
 console: type Change struct {pages.ConsoleChange Takes, Needs, Any []string Operations []Operation}
+console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
 console: type Operation string
 console: type PromoteStep struct {App, Env, Expected string}
+console: type Refusal struct {Subject, Reason string}
 console: type RemoveStep struct {App, Env string}
 console: type RenderStep struct {}
+console: type Request struct {App, Env, Team string Settings []string Calls, Subscriptions, DropCalls, DropSubscriptions []string Allows, Disallows []string Description, Rename, Transport, Image string}
 console: type Step interface {// Operation is the planned operation the step runs. Operation() Operation // Quote is the line a person could type in a checkout to run the same step. Quote() string}
+console: type TeamStep struct {Change kernel.TeamChange}
 dashboards: const AlertPrefix = "swhurl:"
 dashboards: const AlertsAnnotation = "platform.swhurl.com/alerts"
 dashboards: const Create Action = "create"
@@ -1475,6 +1491,7 @@ observe: type WorkloadFacts struct {Status string `json:"status"` Reason string 
 orchestration: const BootstrapInfo BootstrapLevel = "info"
 orchestration: const BootstrapOK BootstrapLevel = "ok"
 orchestration: const BootstrapWarn BootstrapLevel = "warn"
+orchestration: const DefaultTransport = "ntfy"
 orchestration: const FluxReconcile FluxAction = "reconcile"
 orchestration: const FluxResume FluxAction = "resume"
 orchestration: const FluxSuspend FluxAction = "suspend"
@@ -1494,6 +1511,7 @@ orchestration: func (*Refusal) Error() string
 orchestration: func (ConsoleSourceOf) Files(ctx context.Context, revision string, paths []string) (map[string][]byte, error)
 orchestration: func (ConsoleSourceOf) Revision(ctx context.Context) (string, error)
 orchestration: func (ConsoleSourceOf) Tree(ctx context.Context, revision string) (map[string][]byte, error)
+orchestration: func (RegistryOutcome) Summary() string
 orchestration: func (StackContract) Stack(name string) (Stack, bool)
 orchestration: func (StackContract) Type(key string) (AppType, bool)
 orchestration: func AcquireChart(profile kernel.PlatformProfile, repositories []byte, cache string, acquirer helm.Acquirer) (string, error)
@@ -1502,6 +1520,7 @@ orchestration: func AppRepo(ctx context.Context, inputs AppRepoInputs) (AppRepos
 orchestration: func AppTemplateTest(ctx context.Context, inputs AppTemplateTestInputs) ([]apptemplatetest.Line, error)
 orchestration: func BootstrapClickStack(ctx context.Context, ports BootstrapPorts, options BootstrapOptions) (BootstrapReport, error)
 orchestration: func ChangeRegistry(inputs RegistryInputs, destination string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
+orchestration: func ChangeRegistryIn(checkout files.Checkout, change kernel.TeamChange, address string, writer files.Writer, encrypter sops.Encrypter) (RegistryOutcome, error)
 orchestration: func CheckPolicy(inputs []provisioningrules.Inputs, chart string, renderer helm.Renderer) ([]PolicyResult, error)
 orchestration: func CheckRepo(root string, reader git.Reader, decoder manifests.Decoder, read func(path string) ([]byte, error)) (checkrepo.Report, error)
 orchestration: func CheckSecrets(root string, reader git.Reader, decrypter sops.Decrypter, decoder manifests.Decoder, keyFile string) (secretcheck.Report, error)

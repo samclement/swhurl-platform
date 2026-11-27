@@ -1,6 +1,9 @@
 package orchestration
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/sops"
 	"github.com/samclement/swhurl-platform/v2/kernel"
@@ -8,6 +11,9 @@ import (
 
 // platformRoot is where, from the destination, the platform's documents live.
 const platformRoot = "platform"
+
+// DefaultTransport is a channel's transport when its change names none.
+const DefaultTransport = "ntfy"
 
 // RegistryInputs is one change to the team registry: the registry record and where it is written, every app and
 // instance record (a rename or a removal must not leave one naming a team that is gone), and for a channel the
@@ -28,6 +34,53 @@ type RegistryOutcome struct {
 	Action  kernel.TeamAction
 	Channel string
 	Written []files.Outcome
+}
+
+// Summary is the change's one line: the team, the action and how many files it wrote or removed.
+func (o RegistryOutcome) Summary() string {
+	return fmt.Sprintf("team %s %s: %d files", o.Team, o.Action, len(o.Written))
+}
+
+// ChangeRegistryIn applies one change to the registry in the checkout, judged against every record it holds. A channel's
+// address is the caller's, read where no process listing or log can see it.
+func ChangeRegistryIn(checkout files.Checkout, change kernel.TeamChange, address string, writer files.Writer,
+	encrypter sops.Encrypter) (RegistryOutcome, error) {
+	inputs, err := registryIn(checkout, change, address)
+	if err != nil {
+		return RegistryOutcome{}, err
+	}
+	return ChangeRegistry(inputs, checkout.Root, writer, encrypter)
+}
+
+// registryIn assembles one change to the registry: the registry where the records keep it, the profile, and each app
+// record once with every instance record.
+func registryIn(checkout files.Checkout, change kernel.TeamChange, address string) (RegistryInputs, error) {
+	path := filepath.Join(checkout.Records, kernel.TeamsRecordName)
+	registryPath, err := checkout.Relative(path)
+	if err != nil {
+		return RegistryInputs{}, err
+	}
+	if change.Action == kernel.GiveChannel && change.Transport == "" {
+		change.Transport = DefaultTransport
+	}
+	inputs := RegistryInputs{RegistryPath: registryPath, Change: change, Address: address}
+	if inputs.Registry, err = files.Read(path, "teams"); err != nil {
+		return RegistryInputs{}, err
+	}
+	if inputs.Profile, err = files.Read(checkout.Profile, "profile"); err != nil {
+		return RegistryInputs{}, err
+	}
+	records, err := checkout.Instances()
+	if err != nil {
+		return RegistryInputs{}, err
+	}
+	for index, record := range records {
+		if index == 0 || records[index-1].Application != record.Application {
+			inputs.Apps = append(inputs.Apps, record.App)
+		}
+		inputs.Instances = append(inputs.Instances, record.Instance)
+	}
+	return inputs, nil
 }
 
 // ChangeRegistry applies one change to the registry and writes the registry with the notification routes and the

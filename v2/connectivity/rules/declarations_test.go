@@ -1,10 +1,10 @@
-package connectivity_test
+package rules_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/samclement/swhurl-platform/v2/connectivity"
+	"github.com/samclement/swhurl-platform/v2/connectivity/rules"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -26,7 +26,7 @@ func TestConnectionSettingsAreADelta(t *testing.T) {
 			want: "nothing_changed"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			got, err := connectivity.ConnectionSettings(current, scenario.calls, scenario.subscriptions,
+			got, err := rules.ConnectionSettings(current, scenario.calls, scenario.subscriptions,
 				scenario.dropCalls, scenario.dropSubscriptions)
 			if strings.Contains(scenario.want, "nothing_changed") {
 				if err == nil || !strings.Contains(err.Error(), "nothing_changed") {
@@ -47,10 +47,10 @@ func TestConnectionSettingsAreADelta(t *testing.T) {
 // A connect with nothing to add is refused before a command runs, and so is an empty change.
 func TestConnectionSettingsRefusals(t *testing.T) {
 	current := kernel.InstanceSpec{Calls: []string{"orders"}}
-	if _, err := connectivity.ConnectionSettings(current, nil, nil, nil, nil); err != nil {
+	if _, err := rules.ConnectionSettings(current, nil, nil, nil, nil); err != nil {
 		t.Errorf("an empty change is the caller's to refuse before this: %v", err)
 	}
-	if _, err := connectivity.ConnectionSettings(current, []string{"orders"}, nil, nil, nil); err == nil {
+	if _, err := rules.ConnectionSettings(current, []string{"orders"}, nil, nil, nil); err == nil {
 		t.Error("a change that alters no list was not refused")
 	}
 }
@@ -59,21 +59,21 @@ func TestConnectionSettingsRefusals(t *testing.T) {
 // written.
 func TestAllowSettings(t *testing.T) {
 	current := kernel.InstanceSpec{Allows: []string{"web", "team:payments"}}
-	got, err := connectivity.AllowSettings(current, []string{"billing"}, []string{"web"})
+	got, err := rules.AllowSettings(current, []string{"billing"}, []string{"web"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(got, ",") != "allows=team:payments,billing" {
 		t.Errorf("settings = %v", got)
 	}
-	if got, err := connectivity.AllowSettings(current, nil, nil); err != nil || got != nil {
+	if got, err := rules.AllowSettings(current, nil, nil); err != nil || got != nil {
 		t.Errorf("an empty change = %v, %v", got, err)
 	}
 	// removing a grant the record does not state is nothing, and nothing is a refusal
-	if _, err := connectivity.AllowSettings(current, nil, []string{"billing"}); err == nil {
+	if _, err := rules.AllowSettings(current, nil, []string{"billing"}); err == nil {
 		t.Error("a change that removes an absent grant was not refused")
 	}
-	if got, err := connectivity.AllowSettings(current, []string{"billing"}, []string{"billing"}); err != nil ||
+	if got, err := rules.AllowSettings(current, []string{"billing"}, []string{"billing"}); err != nil ||
 		strings.Join(got, ",") != "allows=web,team:payments,billing" {
 		t.Errorf("an addition beside its own removal = %v, %v", got, err)
 	}
@@ -98,7 +98,7 @@ func TestConnectionSettingsMergeDeclarations(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			before := strings.Join(scenario.current, ",")
-			got, err := connectivity.ConnectionSettings(kernel.InstanceSpec{Calls: scenario.current}, scenario.adds, nil, scenario.drops, nil)
+			got, err := rules.ConnectionSettings(kernel.InstanceSpec{Calls: scenario.current}, scenario.adds, nil, scenario.drops, nil)
 			if (err != nil) != scenario.refused {
 				t.Fatalf("settings = %v, error = %v, want refused = %v", got, err, scenario.refused)
 			}

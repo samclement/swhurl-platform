@@ -1,9 +1,4 @@
-// Package connectivity is the connectivity capability's use cases: a change to what an instance connects to, asked for
-// as a delta — what to connect and what to disconnect, applied to the list the pinned record states. The console's
-// reader shows what the cluster holds now, and a change that was merged but not yet applied is not in it; asking for
-// additions and removals instead of a whole list is what keeps that change from being silently undone by the next
-// one, whichever way round the two arrive. Its pure resolvers and its reading of the documents live in rules.
-package connectivity
+package rules
 
 import (
 	"slices"
@@ -11,7 +6,12 @@ import (
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
-// Refusal is the use case's own refusal: it will not start, and nothing was changed.
+// A declaration change is a change to what an instance connects to, asked for as a delta — what to connect and what
+// to disconnect, applied to the list the pinned record states. The console's reader shows what the cluster holds now,
+// and a change that was merged but not yet applied is not in it; asking for additions and removals instead of a whole
+// list is what keeps that change from being silently undone by the next one, whichever way round the two arrive.
+
+// Refusal is a declaration change that would change nothing: it is refused before any file is written.
 type Refusal struct{ Subject, Reason string }
 
 func (r *Refusal) Error() string { return "refused: " + r.Subject + ": " + r.Reason }

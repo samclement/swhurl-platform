@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -12,12 +11,8 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
-	"github.com/samclement/swhurl-platform/v2/apps"
 	"github.com/samclement/swhurl-platform/v2/console"
-	"github.com/samclement/swhurl-platform/v2/delivery"
-	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/orchestration"
-	"github.com/samclement/swhurl-platform/v2/provisioning"
 )
 
 // A change is the console's one way to open a pull request. It downloads main at one commit, applies its kind's
@@ -214,7 +209,7 @@ func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revisio
 		return "", fail(c.diagnostic, err)
 	}
 	tree := console.WorkingCopy(dir)
-	steps, err := c.changeSteps(change.ConsoleChange, spec, tree)
+	steps, err := change.Steps(spec.request(), tree)
 	if err != nil {
 		return "", fail(c.diagnostic, err)
 	}
@@ -244,63 +239,6 @@ func (c cli) changeApplied(change console.Change, spec *changeSpec, dir, revisio
 		return "", fail(c.diagnostic, err)
 	}
 	return published.URL, 0
-}
-
-// runChangeStep runs one step on the working copy: a typed step as one call, which prints its one line, and a command
-// as v2 runs it. A refusal is v2's own words, on the diagnostic, not a paraphrase.
-func (c cli) runChangeStep(step console.Step, tree files.Checkout, revision string) int {
-	command, isCommand := step.(commandStep)
-	if !isCommand {
-		summary, err := runTyped(step, tree, revision, c.writer)
-		if err != nil {
-			return c.failure(err)
-		}
-		fmt.Fprintln(c.out, summary)
-		return 0
-	}
-	return c.runCommandStep(command)
-}
-
-// runTyped is one record kind's step as the call its capability owns, and the line it reports.
-func runTyped(step console.Step, tree files.Checkout, revision string, writer files.Writer) (string, error) {
-	switch step := step.(type) {
-	case console.EditStep:
-		setting, err := apps.ParseSetting(step.Setting)
-		if err != nil {
-			return "", err
-		}
-		if setting.AppLevel() {
-			result, err := apps.SetTeamIn(tree, step.App, setting.Team, writer)
-			return result.Summary(), err
-		}
-		result, err := apps.EditIn(tree, step.App, step.Env, setting, writer)
-		return result.Summary(), err
-	case console.RemoveStep:
-		result, err := apps.RemoveIn(tree, step.App, step.Env, writer)
-		return result.Summary(), err
-	case console.PromoteStep:
-		result, err := delivery.PromoteIn(tree, step.App, step.Env, kernel.InstanceRevision(step.Expected), writer)
-		return result.Summary(), err
-	case console.RenderStep:
-		result, err := provisioning.Render(tree, revision, writer)
-		return result.Summary(), err
-	}
-	return "", fmt.Errorf("invalid: step: %s has no call", step.Operation())
-}
-
-// runCommandStep runs one of v2's own commands on the working copy, and shows what it said where it said it.
-func (c cli) runCommandStep(step commandStep) int {
-	var shown bytes.Buffer
-	quiet := c
-	quiet.out, quiet.diagnostic = &shown, &shown
-	r := step.request
-	r.command = step.command
-	if status := commands()[step.command](quiet, r); status != 0 {
-		c.diagnostic.Write(shown.Bytes())
-		return status
-	}
-	c.out.Write(shown.Bytes())
-	return 0
 }
 
 // changeSource is the GitHub reader a change downloads through: the console's own, unless a test supplied one.

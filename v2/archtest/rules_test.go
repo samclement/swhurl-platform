@@ -141,10 +141,9 @@ var Layers = map[string]int{
 	// files after updating its registrations.
 	"apps": 2,
 
-	// The connectivity capability: its declaration-change use case (what a connect, disconnect or allow writes), its
-	// pure resolvers of which calls and event subscriptions connect, and its reading of the resolution and allocation
-	// documents.
-	"connectivity": 2, "connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
+	// The connectivity capability, pure throughout: the settings a connect, disconnect or allow writes, its resolvers
+	// of which calls and event subscriptions connect, and its reading of the resolution and allocation documents.
+	"connectivity/rules": 0, "connectivity/rules/calls": 0, "connectivity/rules/events": 0,
 
 	// The console capability: its interaction flows, starting with the kinds of change it opens. Its view models and
 	// pages still live in pages and its composition in orchestration until their tasks move them.
@@ -175,7 +174,7 @@ var PureDependencies = map[string][]string{
 // capability's own use-case package. They sequence pure decisions and the effects a use case performs, are held
 // to OrchestrationImports and OrchestrationCalls, and import another use-case package only through
 // a named directional edge in WorkflowDependencies.
-var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning", "connectivity", "console"}
+var Orchestration = []string{"orchestration", "recovery", "delivery", "notifications", "health", "apps", "provisioning", "console"}
 
 // WorkflowDependencies are the reviewed workflow-to-workflow imports allowed, by importer. Reuse the
 // owner's pure verdict first; add an edge only when a use case needs the owner's workflow. Endpoints

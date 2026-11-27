@@ -77,6 +77,17 @@ func (c Checkout) Relative(path string) (string, error) {
 // Instances is every instance the records tree holds, as ReadRecords reads it.
 func (c Checkout) Instances() ([]InstanceRecords, error) { return ReadRecords(c.Records) }
 
+// Instance is one instance's record alone, as the records tree states it, for a caller that reads what the record
+// declares and nothing else of the instance.
+func (c Checkout) Instance(application, environment string) ([]byte, error) {
+	data, err := Read(filepath.Join(c.Records, application, environment, kernel.InstanceRecordName), "instance")
+	var failure *Error
+	if errors.As(err, &failure) {
+		return nil, &Error{IO, "instance", "cannot read the record of " + application + "/" + environment}
+	}
+	return data, err
+}
+
 // Find is one instance's records among a tree's, or a refusal when the tree holds no such instance.
 func Find(records []InstanceRecords, application, environment string) (InstanceRecords, error) {
 	for _, one := range records {
@@ -175,6 +186,19 @@ func (c Checkout) Names(relative string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// Empty is whether the folder the caller named holds nothing at all, folders included; an absent folder is empty. A
+// folder that cannot be read is an I/O failure, named by what and the folder.
+func Empty(path, what string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return true, nil
+	case err != nil:
+		return false, &Error{IO, what, "cannot read " + path}
+	}
+	return len(entries) == 0, nil
 }
 
 // Holds is whether the tree under Root holds exactly one file's bytes. A missing file does not; a path the writer

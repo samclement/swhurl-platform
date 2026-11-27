@@ -235,8 +235,9 @@ func TestChangeStepsPromote(t *testing.T) {
 	writeChangeRecord(t, dir, "demo-orders/staging/instance.json", "staging.json")
 	writeChangeRecord(t, dir, "demo-orders/prod/instance.json", "prod.json")
 	tree := console.WorkingCopy(dir)
-	change, _ := pages.ConsoleChangeNamed("v2-promote")
-	steps, err := cli{}.changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"}, tree)
+	change, _ := console.ChangeNamed("v2-promote")
+	request := console.Request{App: "demo-orders", Env: "staging"}
+	steps, err := change.Steps(request, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,8 +255,7 @@ func TestChangeStepsPromote(t *testing.T) {
 	if err := os.Remove(dir + "/v2-records/demo-orders/prod/instance.json"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (cli{}).changeSteps(change, &changeSpec{kind: "v2-promote", app: "demo-orders", env: "staging"},
-		tree); err == nil || !strings.Contains(err.Error(), "demo-orders/prod") {
+	if _, err := change.Steps(request, tree); err == nil || !strings.Contains(err.Error(), "demo-orders/prod") {
 		t.Errorf("a promotion without production's record gave %v", err)
 	}
 }
@@ -329,7 +329,7 @@ func TestChangeStepsQuoteTheirRequests(t *testing.T) {
 		if !found {
 			t.Fatalf("%s is not a kind", spec.kind)
 		}
-		steps, err := cli{}.changeSteps(change.ConsoleChange, &spec, tree)
+		steps, err := change.Steps(spec.request(), tree)
 		if err != nil {
 			t.Fatalf("%s: %v", spec.kind, err)
 		}
@@ -385,10 +385,13 @@ func stepCommands(steps []console.Step) []string {
 	return ran
 }
 
-// stepRequest is the command line a step is the same call as: a typed step's command makes its call from these flags
-// (request.checkout and the step's own fields), and a command step runs its request as it is.
+// stepRequest is the command line a step is the same call as: each step's command makes its call from these flags
+// (request.checkout and the step's own fields).
 func stepRequest(step console.Step, tree files.Checkout, revision string) request {
 	switch step := step.(type) {
+	case console.CreateStep:
+		return request{command: "create", records: tree.Records, app: step.App, team: step.Team, image: step.Image,
+			exposure: step.Exposure, profile: tree.Profile, out: tree.Root}
 	case console.EditStep:
 		return request{command: "edit", records: tree.Records, app: step.App, env: step.Env, change: step.Setting,
 			profile: tree.Profile, out: tree.Root, callFile: tree.Calls, egressFile: tree.Egress}
@@ -401,10 +404,10 @@ func stepRequest(step console.Step, tree files.Checkout, revision string) reques
 	case console.RenderStep:
 		return request{command: "render", records: tree.Records, profile: tree.Profile, out: tree.Root,
 			revision: revision}
-	case commandStep:
-		r := step.request
-		r.command = step.command
-		return r
+	case console.TeamStep:
+		return request{command: "team", records: tree.Records, team: step.Change.Team,
+			action: string(step.Change.Action), description: step.Change.Description, rename: step.Change.Rename,
+			transport: step.Change.Transport, profile: tree.Profile, out: tree.Root}
 	}
 	return request{}
 }
@@ -447,40 +450,38 @@ func quotedRequest(t *testing.T, line, root, revision string) request {
 	return r
 }
 
-// A team's channel change carries its transport on the command line and its address on standard input, and never
-// quotes the address.
-func TestChangeStepsChannel(t *testing.T) {
-	tree := console.WorkingCopy(t.TempDir())
-	steps, err := cli{}.changeSteps(channelChange(t, "team-channel-set"),
-		&changeSpec{kind: "team-channel-set", team: "payments"}, tree)
-	if err != nil {
-		t.Fatal(err)
+// A channel is one team step, run as the registry's call: the address comes from standard input, the pull request
+// carries the registry and the encrypted Secret, and neither the job's log nor the pull request holds the address.
+func TestChangeCLIGivesATeamItsChannel(t *testing.T) {
+	source, publisher := changeSources(t)
+	var stdout, diagnostic bytes.Buffer
+	c := cli{readFile: os.ReadFile, writer: files.Disk{}, consoleSource: source, publisher: publisher,
+		stdin: strings.NewReader(teamAddress + "\n"), encrypter: sopstest.New(),
+		getenv: func(name string) string {
+			return map[string]string{consoleTokenEnv: "fixture-token", consoleRepositoryEnv: "owner/repo"}[name]
+		}}
+	status := runWith([]string{"change", "--kind", "team-channel-set", "--team", "demo",
+		"--requested-by", "operator@example.test"}, &stdout, &diagnostic, c)
+	if status != 0 {
+		t.Fatalf("change exited %d: %s%s", status, &diagnostic, &stdout)
 	}
-	set, isCommand := steps[0].(commandStep)
-	if len(steps) != 1 || !isCommand || set.request.action != "channel" || set.request.team != "payments" {
-		t.Fatalf("a channel change runs %v", steps)
+	if !strings.Contains(stdout.String(), "team demo channel: ") || strings.Contains(stdout.String(), "a-private-topic") {
+		t.Errorf("the change printed:\n%s", &stdout)
 	}
-	if strings.Contains(set.Quote(), "address") || !strings.Contains(set.Quote(), "--transport=ntfy") {
-		t.Errorf("the quoted channel change is %q", set.Quote())
+	if len(publisher.Pulls) != 1 || strings.Contains(publisher.Pulls[0].Body, "a-private-topic") ||
+		!strings.Contains(publisher.Pulls[0].Body, "swhurl-v2 team --records v2-records --team demo --action channel "+
+			"--transport=ntfy ") {
+		t.Fatalf("the pull requests are %+v", publisher.Pulls)
 	}
-	steps, err = cli{}.changeSteps(channelChange(t, "team-channel-remove"),
-		&changeSpec{kind: "team-channel-remove", team: "payments"}, tree)
-	if err != nil {
-		t.Fatal(err)
+	carried := map[string]bool{}
+	for _, entry := range publisher.Trees[0].Entries {
+		carried[entry.Path] = true
 	}
-	if drop, isCommand := steps[0].(commandStep); len(steps) != 1 || !isCommand || drop.request.action != "drop-channel" {
-		t.Errorf("dropping a channel runs %v", steps)
+	for _, path := range []string{"v2-records/teams.json", "platform/notify/channels/channel-demo.sops.yaml"} {
+		if !carried[path] {
+			t.Errorf("the change did not carry %s: %v", path, carried)
+		}
 	}
-}
-
-// channelChange is one kind of team change, or a test that cannot name it.
-func channelChange(t *testing.T, kind string) pages.ConsoleChange {
-	t.Helper()
-	change, found := pages.ConsoleChangeNamed(kind)
-	if !found {
-		t.Fatalf("%s is not a kind", kind)
-	}
-	return change
 }
 
 // writeChangeRecord puts one fixture in a working copy's records.

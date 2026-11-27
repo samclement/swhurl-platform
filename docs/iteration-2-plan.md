@@ -324,7 +324,7 @@ An ownership map, not a directory list: a capability's directory earns a package
 | apps | App and environment records, instance lifecycle, the intent to run a selected release, and an instance's status | `apps/` creation, editing, SetTeam, removal, status and status-all; pure instance records and lifecycle rules remain in `kernel` |
 | delivery | Release identity and selection, staging-to-production promotion, deployment, the evidence that the requested revision landed, and a deployment's health | `delivery/` and `delivery/rules/` (including deployment health in `health.go` and image acceptance in `image.go`); release selection in `kernel/select.go`; `observe/explain.go` presents delivery’s currentness as `unit.revision`, without its own revision parser |
 | provisioning | Translating declared intent into platform configuration: resource generation, allocation and validation of rendered objects | an instance's compilation, declaration and optional-document validation in `provisioning/rules`; its folder/record writers and encrypted seed construction in `provisioning/`; the compiler and whole-tree rendering in `kernel`, egress allocation, `policy` |
-| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/` declaration-change workflow; `connectivity/rules` document readers and `connectivity/rules/{calls,events}` resolvers; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
+| connectivity | What an app may call, publish, subscribe to or reach: the meaning of those declarations and grants | `connectivity/rules` declaration changes (`ConnectionSettings`, `AllowSettings`) and document readers, and `connectivity/rules/{calls,events}` resolvers, all pure; `kernel` retains document types and rendering; provisioning turns declarations into enforcement |
 | recovery | Backup eligibility and freshness, archive selection, restore sequencing and verification of the recovered data | `recovery/` and `recovery/rules/`; the backup job's verdict in `observe/backup.go`; the restore Job's rendering in `kernel/restore.go` |
 | health | Operational checks and their verdicts, and the report that assembles them for the operator | `health/` collectors and `health/rules/` platform model, catalogue and checks; service health checks elsewhere await their owning slices |
 | notifications | Incident lifecycle, routing, delivery, retry and deduplication | `notifications/` and `notifications/rules/{incident,heartbeat,notify}` |
@@ -3190,8 +3190,8 @@ v2/provisioning/rules/  compilation, declaration and optional-document validatio
                         Documents), from orchestration and the former root validator (layer 0)
 v2/provisioning/        CompileInto, WriteCompiled, InstanceDocuments, RecordFiles and EncryptedSeed (layer 2),
                         replacing orchestration's writers, delivery/write.go and copied seed construction
-v2/connectivity/        ConnectionSettings and AllowSettings: declaration changes (layer 2)
-v2/connectivity/rules/  optional-document readers and calls/ and events/ resolvers (layer 0)
+v2/connectivity/rules/  ConnectionSettings and AllowSettings (declaration changes; a layer-2 root package until
+                        slice 6 found them pure), optional-document readers and calls/ and events/ resolvers (layer 0)
 v2/apps/                creation, editing, SetTeam, removal, status and status-all use cases (layer 2)
 v2/recovery/            Prepare and Prepared.Confirm: restore's observe → refuse → plan sequencing, from
                         cmd/swhurl-v2/restore.go
@@ -3206,8 +3206,8 @@ v2/cmd/swhurl-v2/       status's, status-all's and restore's flags, wiring and o
   used by `swhurl-v2 change`. Kernel retains document types, lifecycle rules and resource generation.
 - **Stays put.** Console composition (`ConsoleChecks`, `ConsoleStatus` and interaction flows) stays in
   `orchestration` for a separately approved console slice; it is not unfinished slice-5 scope.
-- **Checks.** `provisioning/rules` and `connectivity/rules` (including calls/events) are pure; `apps`,
-  `provisioning` and `connectivity` are layer-2 use-case packages. Pure dependencies include
+- **Checks.** `provisioning/rules` and `connectivity/rules` (including calls/events) are pure; `apps` and
+  `provisioning` are layer-2 use-case packages, and connectivity has none. Pure dependencies include
   `provisioning/rules` → `connectivity/rules` → `kernel` and incident → `delivery/rules`.
   Named workflow edges are listed in the [policy below](#workflow-dependency-policy-approved-22-november-2026).
   Restore still takes apps' status as a port, with a fixture refusing `recovery` → `apps`; API snapshots record
@@ -3242,7 +3242,14 @@ open a pull request.
 - **The change-kind table.** `console.Changes` is one row per kind: pages' branch facts for it (name, title,
   environments, target environment, both environments, owned paths), the flags it takes, needs or needs one of
   (`CheckFlags`, from the command's former `changeShapes`), and the operations it runs, in order (`create`, `edit`,
-  `remove`, `promote`, `render`, `team`). The command reads a kind only through it.
+  `remove`, `promote`, `render`, `team`), and how a request (`console.Request`, what the change's flags state)
+  becomes those operations' typed steps (`Change.Steps`). The command reads a kind only through it: it holds no
+  list of kinds, and runs each typed step (`CreateStep`, `EditStep`, `RemoveStep`, `PromoteStep`, `RenderStep`,
+  `TeamStep`) as one call to its owner (`apps.CreateIn`, `apps.EditIn`, `apps.SetTeamIn`, `apps.RemoveIn`,
+  `delivery.PromoteIn`, `provisioning.Render`, `orchestration.ChangeRegistryIn`), quoting the line derived from
+  the step. A step that reads the working copy reads it through `adapters/files`; connect, disconnect and allow
+  use connectivity's pure `ConnectionSettings` and `AllowSettings`, so console needs no workflow edge to
+  connectivity, whose root package is deleted.
 - **Branch facts stay in `pages` for now.** Activity and the app page read branches in `pages`, which is layer 0
   and cannot import `console`, so the table looks each kind's row up in `pages.ConsoleChanges` rather than
   re-typing it, and a test holds both to the same kinds in the same order. The list moves into `console` when
@@ -3259,7 +3266,7 @@ open a pull request.
   contribute no facts. Supplied malformed documents are refused even when no facts are needed. Calls are
   validated before egress.
 - **Connectivity's declaration deltas:** ordered merging, deduplication and removals are private to
-  `connectivity`; `kernel.MergeDeclarations` is deleted. Kernel retains record transformations and document types.
+  `connectivity/rules`; `kernel.MergeDeclarations` is deleted. Kernel retains record transformations and document types.
 - **Provisioning's encrypted seed:** `provisioning.EncryptedSeed` constructs, encrypts and validates ciphertext
   for apps' Create and orchestration's Mint. A missing recipient returns `provisioning.Refusal` directly
   (`refused: sops: the_profile_states_no_recipient`), with unchanged text and CLI exits, before encryption or writes.

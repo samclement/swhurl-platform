@@ -2,11 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/apps"
@@ -56,25 +52,13 @@ func (c cli) create(r request) int {
 	if c.appTreeRefused(r.out) {
 		return 2
 	}
-	if status := c.appAbsent(r.records, r.app); status != 0 {
-		return status
-	}
-	profile, status := c.read(r.profile, "profile")
-	if status != 0 {
-		return status
-	}
-	root, err := underOut(r.out, r.records)
-	if err != nil {
-		return fail(c.diagnostic, err)
-	}
 	seed, err := c.seed()
 	if err != nil {
 		fmt.Fprintln(c.diagnostic, "io: randomness: cannot read a seed")
 		return 1
 	}
-	result, err := apps.Create(context.Background(), apps.CreateInputs{
-		Application: r.app, Team: r.team, Image: r.image, Profile: profile, RecordsRoot: root,
-		Exposure: r.exposure, Seed: seed}, c.registries, r.out, c.writer, c.encrypter)
+	result, err := apps.CreateIn(context.Background(), r.checkout(), apps.CreateRequest{Application: r.app,
+		Team: r.team, Image: r.image, Exposure: r.exposure, Seed: seed}, c.registries, c.writer, c.encrypter)
 	if err != nil {
 		return c.wrote(result.Written, err)
 	}
@@ -84,24 +68,6 @@ func (c cli) create(r request) int {
 	}
 	fmt.Fprintln(c.diagnostic, createSummary(result))
 	return emit(c.out, c.diagnostic, document)
-}
-
-// appAbsent refuses an app that already has records: a create states what an app starts with, so a second one would
-// overwrite a release an instance may be selecting.
-func (c cli) appAbsent(records, application string) int {
-	folder := filepath.Join(records, application)
-	entries, err := os.ReadDir(folder)
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0
-	}
-	if err != nil {
-		fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", folder)
-		return 1
-	}
-	if len(entries) == 0 {
-		return 0
-	}
-	return c.failure(&apps.Refusal{Subject: "app", Reason: "the_app_already_has_records"})
 }
 
 // encodeCreate is the report of one creation.

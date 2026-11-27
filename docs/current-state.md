@@ -59,7 +59,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Documentation:** task 61 replaces the capability/status registry row and removes the resolved helper
   duplication deferral; the canonical status page stays within 250 lines. Tests live in provisioning's
   [document cases](../v2/provisioning/rules/documents_test.go), [seed cases](../v2/provisioning/seed_test.go),
-  [connectivity cases](../v2/connectivity/connectivity_test.go), delivery's
+  [connectivity cases](../v2/connectivity/rules/declarations_test.go), delivery's
   [image cases](../v2/delivery/rules/image_test.go) and orchestration's
   [job cases](../v2/orchestration/jobs_test.go), with Create/Deploy/Mint entry-point regressions.
 - **Task 61 verification:** `make check-repo`, `make check-v2`, `make check-docs` and `git diff --check`
@@ -94,7 +94,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 - **Evidence:** [status regressions](../v2/apps/status_state_test.go),
   [delivery health cases](../v2/delivery/rules/health_test.go),
   [writer contracts](../v2/provisioning/provisioning_test.go),
-  [connectivity deltas](../v2/connectivity/connectivity_test.go), and apps'
+  [connectivity deltas](../v2/connectivity/rules/declarations_test.go), and apps'
   [create](../v2/apps/create_test.go), [edit/team](../v2/apps/edit_test.go) and
   [remove](../v2/apps/remove_test.go) regressions cover the completed ownership moves.
   This documentation change overwrites the capability row, removes the resolved copied-writer deferral,

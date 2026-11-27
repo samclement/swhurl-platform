@@ -8,8 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
@@ -75,83 +73,21 @@ func (c cli) team(r request) int {
 	if c.appTreeRefused(r.out) {
 		return 2
 	}
-	inputs, status := c.teamInputs(r)
-	if status != 0 {
-		return status
+	address := ""
+	if kernel.TeamAction(r.action) == kernel.GiveChannel {
+		var err error
+		if address, err = readAddress(c.stdin); err != nil {
+			return fail(c.diagnostic, err)
+		}
 	}
-	outcome, err := orchestration.ChangeRegistry(inputs, r.out, c.writer, c.encrypter)
+	outcome, err := orchestration.ChangeRegistryIn(r.checkout(), kernel.TeamChange{Action: kernel.TeamAction(r.action),
+		Team: r.team, Description: r.description, Rename: r.rename, Transport: r.transport}, address, c.writer,
+		c.encrypter)
 	if err != nil {
 		return c.wrote(outcome.Written, err)
 	}
-	fmt.Fprintf(c.diagnostic, "team %s %s: %d files\n", outcome.Team, outcome.Action, len(outcome.Written))
+	fmt.Fprintln(c.diagnostic, outcome.Summary())
 	return c.emitTeam(outcome)
-}
-
-// teamInputs is what a change is decided from: the change, the registry, the profile, every record and, for a
-// channel, the address.
-func (c cli) teamInputs(r request) (orchestration.RegistryInputs, int) {
-	registryPath, err := underOut(r.out, filepath.Join(r.records, kernel.TeamsRecordName))
-	if err != nil {
-		return orchestration.RegistryInputs{}, fail(c.diagnostic, err)
-	}
-	inputs := orchestration.RegistryInputs{RegistryPath: registryPath, Change: kernel.TeamChange{
-		Action: kernel.TeamAction(r.action), Team: r.team, Description: r.description, Rename: r.rename,
-		Transport: r.transport}}
-	if inputs.Change.Action == kernel.GiveChannel && inputs.Change.Transport == "" {
-		inputs.Change.Transport = "ntfy"
-	}
-	var status int
-	if inputs.Registry, status = c.read(filepath.Join(r.records, kernel.TeamsRecordName), "teams"); status != 0 {
-		return inputs, status
-	}
-	if inputs.Profile, status = c.read(r.profile, "profile"); status != 0 {
-		return inputs, status
-	}
-	if inputs.Apps, inputs.Instances, status = c.allRecords(r.records); status != 0 {
-		return inputs, status
-	}
-	if inputs.Change.Action == kernel.GiveChannel {
-		if inputs.Address, err = readAddress(c.stdin); err != nil {
-			return inputs, fail(c.diagnostic, err)
-		}
-	}
-	return inputs, 0
-}
-
-// allRecords is every app record and every instance record under the records tree, which a rename or removal is
-// judged against.
-func (c cli) allRecords(root string) (apps, instances [][]byte, status int) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", root)
-		return nil, nil, 1
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		environments, err := appEnvironments(root, entry.Name())
-		if err != nil {
-			fmt.Fprintf(c.diagnostic, "io: records: cannot read %s\n", filepath.Join(root, entry.Name()))
-			return nil, nil, 1
-		}
-		if len(environments) == 0 {
-			continue
-		}
-		app, status := c.read(filepath.Join(root, entry.Name(), appFile), "app")
-		if status != 0 {
-			return nil, nil, status
-		}
-		apps = append(apps, app)
-		for _, environment := range environments {
-			instance, status := c.read(filepath.Join(root, entry.Name(), environment, instanceFile), "instance")
-			if status != 0 {
-				return nil, nil, status
-			}
-			instances = append(instances, instance)
-		}
-	}
-	return apps, instances, 0
 }
 
 // readAddress is the first line of standard input, without its line ending.

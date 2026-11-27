@@ -6,11 +6,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 // A change is one kind of pull request the console opens, as the command that opens it reads it: the branch and
-// pull request pages states for the kind, the flags the kind takes, and the operations it runs, in order. Branch
+// pull request pages states for the kind, the flags the kind takes, the operations it runs, in order, and how a
+// request becomes those operations' steps. This table is the only list of kinds the command reads. Branch
 // facts stay in pages until Activity's reading of a branch moves here; a kind is looked up there, never re-typed,
 // and a test holds both lists to the same kinds.
 
@@ -42,31 +45,37 @@ type Change struct {
 	// Operations are what the change runs, in this order; an operation may run more than once or not at all, as
 	// an edit runs once per setting.
 	Operations []Operation
+	// steps turns the change's request into the steps it runs.
+	steps stepsOf
 }
 
 // changes are every kind, in pages' order.
 var changes = []Change{
 	{ConsoleChange: branchOf("new"), Takes: []string{"set", "image", "preface"}, Needs: []string{"set", "image"},
-		Operations: []Operation{Create, Edit, Render}},
-	{ConsoleChange: branchOf("team-add"), Takes: []string{"description"}, Operations: []Operation{Team}},
-	{ConsoleChange: branchOf("team-edit"), Takes: []string{"description", "rename"}, Operations: []Operation{Team}},
-	{ConsoleChange: branchOf("team-remove"), Operations: []Operation{Team}},
-	{ConsoleChange: branchOf("team-channel-set"), Takes: []string{"transport"}, Operations: []Operation{Team}},
-	{ConsoleChange: branchOf("team-channel-remove"), Operations: []Operation{Team}},
+		Operations: []Operation{Create, Edit, Render}, steps: newSteps},
+	{ConsoleChange: branchOf("team-add"), Takes: []string{"description"}, Operations: []Operation{Team},
+		steps: teamSteps(kernel.AddTeam)},
+	{ConsoleChange: branchOf("team-edit"), Takes: []string{"description", "rename"}, Operations: []Operation{Team},
+		steps: editTeamSteps},
+	{ConsoleChange: branchOf("team-remove"), Operations: []Operation{Team}, steps: teamSteps(kernel.RemoveTeam)},
+	{ConsoleChange: branchOf("team-channel-set"), Takes: []string{"transport"}, Operations: []Operation{Team},
+		steps: teamSteps(kernel.GiveChannel)},
+	{ConsoleChange: branchOf("team-channel-remove"), Operations: []Operation{Team},
+		steps: teamSteps(kernel.DropChannel)},
 	{ConsoleChange: branchOf("v2-scale"), Takes: []string{"set"}, Needs: []string{"set"},
-		Operations: []Operation{Edit, Render}},
+		Operations: []Operation{Edit, Render}, steps: instanceSettingSteps},
 	{ConsoleChange: branchOf("v2-expose"), Takes: []string{"set"}, Needs: []string{"set"},
-		Operations: []Operation{Edit, Render}},
+		Operations: []Operation{Edit, Render}, steps: instanceSettingSteps},
 	{ConsoleChange: branchOf("v2-connect"), Takes: []string{"call", "subscribe"}, Any: []string{"call", "subscribe"},
-		Operations: []Operation{Edit, Render}},
+		Operations: []Operation{Edit, Render}, steps: connectionSteps},
 	{ConsoleChange: branchOf("v2-disconnect"), Takes: []string{"drop-call", "drop-subscription"},
-		Any: []string{"drop-call", "drop-subscription"}, Operations: []Operation{Edit, Render}},
+		Any: []string{"drop-call", "drop-subscription"}, Operations: []Operation{Edit, Render}, steps: connectionSteps},
 	{ConsoleChange: branchOf("v2-allow"), Takes: []string{"allow", "disallow"}, Any: []string{"allow", "disallow"},
-		Operations: []Operation{Edit, Render}},
+		Operations: []Operation{Edit, Render}, steps: allowSteps},
 	{ConsoleChange: branchOf("v2-team"), Takes: []string{"set"}, Needs: []string{"set"},
-		Operations: []Operation{Edit, Render}},
-	{ConsoleChange: branchOf("v2-remove"), Operations: []Operation{Remove, Render}},
-	{ConsoleChange: branchOf("v2-promote"), Operations: []Operation{Promote, Render}},
+		Operations: []Operation{Edit, Render}, steps: appSettingSteps},
+	{ConsoleChange: branchOf("v2-remove"), Operations: []Operation{Remove, Render}, steps: removeSteps},
+	{ConsoleChange: branchOf("v2-promote"), Operations: []Operation{Promote, Render}, steps: promoteSteps},
 }
 
 // branchOf is pages' row for one kind; a kind pages does not know has no name, which the table's test refuses.
@@ -86,6 +95,11 @@ func ChangeNamed(kind string) (Change, bool) {
 		}
 	}
 	return Change{}, false
+}
+
+// Steps is what the change runs for one request, in order, as typed steps the command runs and quotes.
+func (c Change) Steps(request Request, tree files.Checkout) ([]Step, error) {
+	return c.steps(request, tree)
 }
 
 // CheckFlags refuses a change that states a flag its kind does not take, or omits one it needs, in the change's own

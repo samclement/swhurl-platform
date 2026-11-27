@@ -1,6 +1,6 @@
 id: 76
 title: Move the app and instance pages, actions and their readers into v2/console
-state: ready
+state: active
 scope:
   - v2/console/app.go
   - v2/console/actions.go
@@ -16,6 +16,17 @@ scope:
   - v2/orchestration/console_offers.go
   - v2/orchestration/console_app_test.go
   - v2/archtest/api.txt
+  - v2/console/server.go
+  - v2/console/pages.go
+  - v2/cmd/swhurl-v2/console_pages.go
+  - v2/cmd/swhurl-v2/console_test.go
+  - v2/cmd/swhurl-v2/console_new.go
+  - v2/cmd/swhurl-v2/console_change.go
+  - v2/cmd/swhurl-v2/apprepo.go
+  - v2/orchestration/jobs.go
+  - v2/orchestration/jobs_test.go
+  - v2/orchestration/ordered.go
+  - v2/orchestration/ordered_test.go
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -26,3 +37,6 @@ notes:
   - at: 2026-11-26T07:29:28.269Z
     commit: 0a81414b2703
     text: operator approved the section-36 console slice (2026-11-26)
+  - at: 2026-11-27T14:05:48.555Z
+    commit: 8734653ad026
+    text: "callers of moved readers are out of scope: widen or move less? -> conductor: option 1, widen to call-site edits (no pass-throughs left behind: no-compatibility-shims rule); ConsoleJobs to orchestration/jobs.go; ordered decoder to orchestration/ordered.go, EXPORTED and used by both apprepo.go and console (no copy)"

@@ -1,6 +1,6 @@
 id: 75
 title: Move the console's composition root and page rendering into v2/console, leaving thin HTTP handlers in cmd
-state: active
+state: done
 scope:
   - v2/console/server.go
   - v2/console/pages.go
@@ -29,3 +29,24 @@ notes:
   - at: 2026-11-27T13:52:17.957Z
     commit: e3aca48345e3
     text: "how to split the console server between console and cmd; widen to two test files? -> conductor: option 1 (composition and page models into console, HTTP shell stays in cmd; edges console->{orchestration, health, apps}, orchestration loses health and apps); settled by the task title (thin HTTP handlers in cmd) and 76-78's own handler moves; tests of moved code belong to the task"
+  - at: 2026-11-27T14:02:06.172Z
+    commit: e3aca48345e3
+    text: "cmd keeps consoleServer's fields as the one source (out-of-scope files and tests read s.bundle/s.reader/s.now/s.repository and call pin); reads() composes a console.Server from them per request. readRows, pinnedTree, readTeams and dashboardsOf in cmd only forward to it until 76/77 move their callers. Orchestration's health and apps edges are now unused but kept: archtest/checks_test.go (outside 75's scope) asserts them; 78 retires them."
+  - at: 2026-11-27T14:02:06.344Z
+    commit: e3aca48345e3
+    text: "done: console.Server (server.go) now owns the pages' reads: checks, status, units, rows, pinned tree, dashboards. pages.go holds the Overview/Platform/Unit/Catalogue/Apps/Egress/Teams models. cmd handlers are thin. Moved from orchestration: ConsoleChecks/Status/Units/Records. Their tests (internal, health) moved into console. New edges: console->health,apps. Offline only; not live."
+  - at: 2026-11-27T14:02:06.344Z
+    commit: e3aca48345e3
+    text: "followup: orchestration->health and orchestration->apps WorkflowDependencies are no longer imported; retiring them needs archtest/checks_test.go (TestHealth/AppsWorkflowDependency fixtures) and the plan's workflow-policy paragraph updated (task 78/79)"
+  - at: 2026-11-27T14:02:06.344Z
+    commit: e3aca48345e3
+    text: "followup: v2/console/console.go package doc still says it holds only the change kinds; update it to name the page reads (outside 75's scope)"
+  - at: 2026-11-27T14:02:06.344Z
+    commit: e3aca48345e3
+    text: "followup: Platform page unit rows' Job/RefreshURL (console.UnitRow) are never filled, so a unit with a running job still shows its actions on /platform; pre-existing, kept as is"
+  - at: 2026-11-27T14:02:06.344Z
+    commit: e3aca48345e3
+    text: "followup: docs: plan §36 slice 6 / capability map row and workflow-dependency paragraph still place console composition in orchestration; record with task 79"
+  - at: 2026-11-27T14:03:40.355Z
+    commit: 2071446aafa8
+    text: branch dsa/01M8EM9WYFCAZZZXFGK2FHZ155/task-75

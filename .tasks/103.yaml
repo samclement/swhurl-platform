@@ -1,6 +1,6 @@
 id: 103
 title: Use bounded checked HTTPS for DNS address discovery with deterministic failure tests (audit 4)
-state: ready
+state: active
 scope:
   - host/aws-dns-updater.sh
   - tests/host/dns-updater.sh
@@ -14,3 +14,6 @@ notes:
   - at: 2026-11-27T22:44:19.935Z
     commit: 21567fbb7dac
     text: "Approved acceptance: HTTPS, HTTP-failure handling and bounded timeout; deterministic fake-curl tests must prove failures stop before DNS writes. No actual DNS/network changes."
+  - at: 2026-11-27T22:48:12.154Z
+    commit: ebc85053ba9d
+    text: "Pre-existing broken docs/current-state.md:87 link blocks make check; fix here or separately? -> Operator approved option 1: separate one-line documentation repair task pointing to ../v2/console/jobs_test.go; resume task 103 after repair is merged."

@@ -1,0 +1,10 @@
+id: 104
+title: Repair broken current-state evidence link to v2/console/jobs_test.go; one-line documentation fix unblocking task 103
+state: ready
+scope:
+  - docs/current-state.md
+checks:
+  - make check-repo
+after: []
+reason: null
+notes: []

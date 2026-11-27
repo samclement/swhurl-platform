@@ -1,6 +1,6 @@
 id: 87
 title: Restore claims instance before effects, drains backups and fails closed on existing claim (audit 1,9)
-state: ready
+state: active
 scope:
   - v2/recovery/restore.go
   - v2/recovery/restore_test.go

@@ -15,3 +15,6 @@ notes:
   - at: 2026-11-27T22:44:19.595Z
     commit: 21567fbb7dac
     text: "Approved trade-off: use non-overlapping single-console rollout, accepting brief console downtime; do not substitute a still-racy max+1 shared-store recheck. Prove rendered strategy with a deterministic check, without cluster changes."
+  - at: 2026-11-27T22:59:09.542Z
+    commit: e41e7ccfac60
+    text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."

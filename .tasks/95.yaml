@@ -26,3 +26,6 @@ notes:
   - at: 2026-11-27T22:44:19.775Z
     commit: 21567fbb7dac
     text: "Approved acceptance: carry reviewed image through HTTP proposal to worker pinned tree; reject staging mismatch before promotion. Do not weaken architecture guardrails or make CLI compatibility changes beyond this contract without asking."
+  - at: 2026-11-27T22:59:10.247Z
+    commit: e41e7ccfac60
+    text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."

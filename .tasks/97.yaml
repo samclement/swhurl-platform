@@ -13,4 +13,7 @@ checks:
 after:
   - 96
 reason: null
-notes: []
+notes:
+  - at: 2026-11-27T22:59:10.616Z
+    commit: e41e7ccfac60
+    text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."

@@ -41,8 +41,11 @@ const (
 const (
 	pollInterval    = 2 * time.Second
 	podsGoneTimeout = 3 * time.Minute
-	rolloutTimeout  = 3 * time.Minute
-	logTailLines    = 100
+	// drainTimeout bounds the wait for a backup run that was already writing when the schedule was suspended.
+	// Nothing has stopped the app yet, so a run that outlasts it fails the restore and costs nothing.
+	drainTimeout   = 3 * time.Minute
+	rolloutTimeout = 3 * time.Minute
+	logTailLines   = 100
 	// jobTimeout is the Job's own deadline plus a minute: the pod is bounded first, and this wait only has
 	// to outlive it.
 	jobTimeout = kernel.RestoreDeadline + time.Minute
@@ -123,10 +126,11 @@ type Refusal struct{ Subject, Reason string }
 
 func (r *Refusal) Error() string { return "refused: " + r.Subject + ": " + r.Reason }
 
-// Restore performs one restore from the plan it is given: it suspends the release, stops the app, runs the
-// backup image's restore job on the app's own claim, reads the job's log, then puts the app back. Every
-// failure from the first change onward unwinds in the order the restore took the app apart — job, secret,
-// replicas, release — and each undo is attempted even when an earlier one failed.
+// Restore performs one restore from the plan it is given: it claims the instance by creating the restore's
+// Secret, suspends the release and the backup schedule, waits out a backup already running, stops the app,
+// runs the backup image's restore job on the app's own claim, reads the job's log, then puts the app back.
+// Every failure from the first change onward unwinds in the order the restore took the app apart — job,
+// secret, replicas, release — and each undo is attempted even when an earlier one failed.
 func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error) {
 	if !inputs.Plan.Ready() {
 		return RestoreOutcome{}, &Refusal{"restore.plan", "not_ready"}
@@ -156,7 +160,29 @@ func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error) 
 	r := &restorer{ctx: ctx, cluster: inputs.Cluster, target: inputs.Target, sleep: inputs.Sleep,
 		now: inputs.Now, replicas: replicas,
 		out: RestoreOutcome{Job: RestoreJobOutcome{Name: job.Name, State: JobUnknown}, Started: inputs.Now()}}
+	if err := r.attempt("claim", func() error { return r.claim(objects.Secret) }); err != nil {
+		if answered(err) {
+			return RestoreOutcome{}, &Refusal{"restore.claim", failureReason(err)}
+		}
+		// The create may have been accepted, but the Secret may as well be another run's: this run owns
+		// nothing, so it changes and deletes nothing and leaves the Secret for the operator.
+		return r.failed(err)
+	}
 	return r.run(objects)
+}
+
+// answered is whether a failed write was the server's own refusal, or one never sent, so it changed nothing.
+// A request that timed out, broke or returned more than it could read may have been applied.
+func answered(err error) bool {
+	var failure *kube.Error
+	if !errors.As(err, &failure) {
+		return false
+	}
+	switch failure.Reason {
+	case observe.ReasonTimedOut, observe.ReasonTransport, observe.ReasonTooLarge:
+		return false
+	}
+	return true
 }
 
 // decodeRestoreDocuments reads the three records a restore renders from.
@@ -273,17 +299,15 @@ func (r *restorer) run(objects kernel.RestoreObjects) (RestoreOutcome, error) {
 	return r.out, nil
 }
 
-// takeDown stops the app before anything touches its database: Flux first, then the replicas, then the pods
-// themselves, and only then the two transient objects.
+// takeDown stops the app before anything touches its database: Flux first, then the backup schedule and any
+// run it already started, then the replicas, then the pods themselves, and only then the Job.
 func (r *restorer) takeDown(objects kernel.RestoreObjects) error {
 	steps := []struct {
 		name   string
 		action func() error
 	}{
-		{"suspend", r.suspend}, {"backup-suspend", r.suspendBackup}, {"scale-down", r.scaleDown},
-		{"pods-gone", r.podsGone},
-		{"secret", func() error { return r.create("", "Secret", objects.Secret) }},
-		{"job", func() error { return r.create("batch", "Job", objects.Job) }},
+		{"suspend", r.suspend}, {"backup-suspend", r.suspendBackup}, {"backup-drain", r.drainBackup},
+		{"scale-down", r.scaleDown}, {"pods-gone", r.podsGone}, {"job", r.createJob(objects.Job)},
 	}
 	return r.attemptAll(steps)
 }
@@ -447,17 +471,45 @@ func (r *restorer) resumeBackup() error {
 	return nil
 }
 
+// drainBackup waits, bounded, until the schedule states no active run: suspending it stops new runs, not one
+// already copying the database the restore is about to replace.
+func (r *restorer) drainBackup() error {
+	return r.wait(drainTimeout, func() (bool, error) {
+		read, err := r.cluster.Reader.Read(r.ctx, r.target.Backup.CronJob)
+		if err != nil {
+			return false, err
+		}
+		if read.Status != observe.Present {
+			return false, unavailable("backup", reasonOf(read))
+		}
+		cronJob, err := cronJobOf(read.Object)
+		return len(cronJob.Status.Active) == 0, err
+	})
+}
+
 // cronJobSuspended is a CronJob's own suspension fact: absent means not suspended.
 func cronJobSuspended(document []byte) (bool, error) {
-	var cronJob struct {
-		Spec struct {
-			Suspend *bool `json:"suspend"`
-		} `json:"spec"`
+	cronJob, err := cronJobOf(document)
+	return cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend, err
+}
+
+// backupSchedule is the two facts a restore reads from the backup CronJob: whether it is suspended, and the
+// runs its controller states are active.
+type backupSchedule struct {
+	Spec struct {
+		Suspend *bool `json:"suspend"`
+	} `json:"spec"`
+	Status struct {
+		Active []json.RawMessage `json:"active"`
+	} `json:"status"`
+}
+
+func cronJobOf(document []byte) (backupSchedule, error) {
+	var read backupSchedule
+	if err := json.Unmarshal(document, &read); err != nil {
+		return backupSchedule{}, unavailable("backup", observe.ReasonMalformed)
 	}
-	if err := json.Unmarshal(document, &cronJob); err != nil {
-		return false, unavailable("backup", observe.ReasonMalformed)
-	}
-	return cronJob.Spec.Suspend != nil && *cronJob.Spec.Suspend, nil
+	return read, nil
 }
 
 // scaleDown stops the app: the restore replaces the files under it, so nothing may be writing. The intent is
@@ -482,20 +534,33 @@ func (r *restorer) podsGone() error {
 	})
 }
 
-// create makes one of the restore's two transient objects under the kind the write table states.
-func (r *restorer) create(group, kind string, object kernel.RestoreObject) error {
-	ref, err := kube.WritableRefOf(group, kind, r.target.Namespace, object.Name)
+// claim creates the restore's Secret, named after the instance, before anything else changes: the API
+// server creates one object of a name once, so a second run's create is refused while the first holds it.
+// The run owns the Secret, and so deletes it, only once the server said it created it.
+func (r *restorer) claim(secret kernel.RestoreObject) error {
+	ref, err := kube.WritableRefOf("", "Secret", r.target.Namespace, secret.Name)
 	if err != nil {
 		return err
 	}
-	// Recorded before the request: a create that timed out may still have been accepted, and a Secret left
-	// behind holds the age identity.
-	if kind == "Secret" {
-		r.secretName = object.Name
-	} else {
-		r.jobName = object.Name
+	if err := r.cluster.Writer.Create(r.ctx, ref, secret.Document); err != nil {
+		return err
 	}
-	return r.cluster.Writer.Create(r.ctx, ref, object.Document)
+	r.secretName = secret.Name
+	return nil
+}
+
+// createJob creates the restore's Job under the kind the write table states.
+func (r *restorer) createJob(job kernel.RestoreObject) func() error {
+	return func() error {
+		ref, err := kube.WritableRefOf("batch", "Job", r.target.Namespace, job.Name)
+		if err != nil {
+			return err
+		}
+		// Recorded before the request: a create that timed out may still have been accepted. The name is
+		// this run's own, under the claim, so deleting it cannot remove another run's Job.
+		r.jobName = job.Name
+		return r.cluster.Writer.Create(r.ctx, ref, job.Document)
+	}
 }
 
 // waitForJob waits until the Job reports Complete or Failed, and states which. Running out of time is a

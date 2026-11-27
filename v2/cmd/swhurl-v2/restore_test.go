@@ -238,7 +238,7 @@ func TestRestorePerformsItWhenConfirmed(t *testing.T) {
 		t.Fatalf("the job's evidence is %v", job)
 	}
 	steps := action["steps"].([]any)
-	if len(steps) == 0 || steps[0].(map[string]any)["name"] != "suspend" ||
+	if len(steps) == 0 || steps[0].(map[string]any)["name"] != "claim" ||
 		steps[len(steps)-1].(map[string]any)["name"] != "available" {
 		t.Fatalf("the steps are %v", steps)
 	}
@@ -267,8 +267,8 @@ func TestRestorePerformsItWhenConfirmed(t *testing.T) {
 		}
 	}
 	want := []string{
-		`patch helmreleases {"spec":{"suspend":true}}`, `patch cronjobs {"spec":{"suspend":true}}`,
-		`patch deployments {"spec":{"replicas":0}}`, "create secret", "create job", "delete job", "delete secret",
+		"create secret", `patch helmreleases {"spec":{"suspend":true}}`, `patch cronjobs {"spec":{"suspend":true}}`,
+		`patch deployments {"spec":{"replicas":0}}`, "create job", "delete job", "delete secret",
 		`patch cronjobs {"spec":{"suspend":false}}`, `patch deployments {"spec":{"replicas":1}}`,
 		`patch helmreleases {"spec":{"suspend":false}}`,
 	}

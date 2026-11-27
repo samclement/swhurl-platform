@@ -1,6 +1,6 @@
 id: 71
 title: Put the archive prefix rule and the minimum presigned-URL TTL in recovery/rules, reading the profile once
-state: ready
+state: active
 scope:
   - v2/recovery/rules/*.go
   - v2/cmd/swhurl-v2/status.go

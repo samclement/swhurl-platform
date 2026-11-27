@@ -51,6 +51,7 @@ scope:
   - v2/connectivity/rules/*/*.go
   - v2/cmd/swhurl-v2/policy.go
   - v2/cmd/swhurl-v2/policy_test.go
+  - docs/v2-status.md
 checks:
   - cd v2 && go test ./console/... ./cmd/swhurl-v2/ ./orchestration/
   - make check-v2
@@ -73,3 +74,6 @@ notes:
   - at: 2026-11-27T08:33:59.256Z
     commit: ed8447d8892c
     text: "policy.go calls render's internals: widen scope or keep cmd wrappers? -> conductor: widen scope to policy.go (and policy_test.go); call provisioning.DecideTree directly. Settled by the operator's option-3 decision (direct use-case calls) and the no-compatibility-shims rule; output and exit codes unchanged."
+  - at: 2026-11-27T08:42:06.915Z
+    commit: 09cb4f1c554e
+    text: "May docs/v2-status.md change so make check-docs (a check of this task) passes? -> conductor: yes, only what check-docs needs; the task's own check settles it."

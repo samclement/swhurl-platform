@@ -1,6 +1,6 @@
 id: 82
 title: Move the console's flag and secret handlers into v2/console
-state: active
+state: done
 scope:
   - v2/console/*.go
   - v2/cmd/swhurl-v2/console_secrets.go
@@ -20,3 +20,9 @@ notes:
   - at: 2026-11-27T18:04:05.756Z
     commit: cfb85bc9a6a8
     text: "May task 82 edit console_app.go and console_change.go to move flag code? -> operator: go ahead. Scope widened to v2/cmd/swhurl-v2/console_app.go and v2/cmd/swhurl-v2/console_change.go; complete planned flag-handler move, not redactor-only."
+  - at: 2026-11-27T18:10:36.070Z
+    commit: cfb85bc9a6a8
+    text: "done: Flag store (sign-in kept a minute, card, set/clear with stored read-back) and the job redactor moved to v2/console as FlagStore and Redactor; cmd keeps thin changeFlag (form, audit, redirect) and the NATS default/stderr log. Tests moved/added in console; api.txt +7. A clear no longer re-reads the card. Not verified live."
+  - at: 2026-11-27T18:12:24.893Z
+    commit: d0b2771fffeb
+    text: branch dsa/01M8F2NZNDHKDY15P4EC9CV04W/task-82

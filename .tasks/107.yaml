@@ -32,3 +32,6 @@ notes:
   - at: 2026-11-28T07:41:04.119Z
     commit: acfea105457b
     text: "From 106 followup: ChangeReads.Reach (console/changes.go) has no context, so consoleServer.reach saves with context.Background(); thread the page ctx through here. See 106's 'For 107' note for Capture/record keys."
+  - at: 2026-11-28T07:46:15.305Z
+    commit: 9d492ade7b14
+    text: "released: run 01M8GHKKC6DRXN9Z434WSN3C0V ended over its usage budget (3M tokens); relaunching once in the same worktree"

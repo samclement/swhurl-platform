@@ -34,6 +34,48 @@ func observed(key, detail string) Observed {
 
 var healthy = observed(StateHealthy, "")
 
+// progress is ProgressOf for a record this console keeps, its target merged and reached as given.
+func progress(action string, merged, main *Render, live Observed, reached string) Progress {
+	return ProgressOf(Job{Action: action, Target: merged, Reached: reached, Outcomes: true}, main, live)
+}
+
+// A record without a target is historical only when it is from before the console kept outcomes and was never seen
+// at its end; one this console keeps is waiting for its target to be read, and one seen at its end stays there.
+func TestARecordsKeptFactsDecideWithoutItsMergeCommit(t *testing.T) {
+	mine := render("records-1", "settings-1", "sha256:a")
+	reached := stagesNow.Format(time.RFC3339)
+	cases := []struct {
+		name   string
+		job    Job
+		want   string
+		detail string
+	}{
+		{"from before outcomes", Job{Action: "promote"}, "historical", "this change was merged before the console recorded outcomes"},
+		{"from before outcomes, seen at its end", Job{Action: "promote", Reached: reached}, "unchecked", reached},
+		{"from before outcomes, its target kept", Job{Action: "promote", Target: mine}, "live", ""},
+		{"its target not read yet", Job{Action: "promote", Outcomes: true}, "unread", "the target or current render could not be read"},
+		{"its target kept", Job{Action: "promote", Outcomes: true, Target: mine}, "live", ""},
+		{"a merge commit without its records", Job{Action: "promote", Outcomes: true, Target: &Render{}}, "historical",
+			"this change predates render hashes"},
+		{"a remove's target is absence", Job{Action: "remove", Outcomes: true, Target: &Render{}}, "removed", ""},
+	}
+	for _, c := range cases {
+		main, live := mine, healthy
+		if c.job.Action == "remove" {
+			main, live = &Render{}, Observed{Read: true}
+		}
+		if got := ProgressOf(c.job, main, live); got.State != c.want || got.Detail != c.detail {
+			t.Errorf("%s: progress = %+v", c.name, got)
+		}
+	}
+	historical := pullTrack(&Progress{State: "historical", Detail: "this change was merged before the console recorded outcomes"},
+		"promote", "web/prod", Pull{State: "merged", When: "just now"})
+	if historical.Outcome != "Merged just now; this change was merged before the console recorded outcomes, so its rollout cannot be tracked." ||
+		historical.Label() != "Merged (historical)" {
+		t.Fatalf("historical = %q %q", historical.Label(), historical.Outcome)
+	}
+}
+
 func TestPreparationIsTheJob(t *testing.T) {
 	running := TrackOf(stageJob(NewAppJob, "web/staging", "running", "created repository", "building"), nil, nil)
 	if got := [3]string{running.Stages[0].Label, running.Stages[0].State, running.Status}; got != [3]string{"Prepared", "running", "running"} {
@@ -99,7 +141,7 @@ func TestANewerReleaseWithTheSameSettingsCarriesTheChange(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := ProgressOf(c.action, c.merged, c.main, c.live, c.reached)
+			got := progress(c.action, c.merged, c.main, c.live, c.reached)
 			if got.State != c.want || got.Newer != c.newer {
 				t.Fatalf("progress = %+v", got)
 			}
@@ -124,10 +166,10 @@ func TestAFailedReadKeepsAChangeThatWasSeenAtItsEnd(t *testing.T) {
 		"the cluster":             {mine, mine, Observed{}},
 	}
 	for name, c := range cases {
-		if got := ProgressOf("v2-scale", c.merged, c.main, c.live, reached); got.State != "unchecked" || got.Detail != reached {
+		if got := progress("v2-scale", c.merged, c.main, c.live, reached); got.State != "unchecked" || got.Detail != reached {
 			t.Errorf("%s: progress = %+v", name, got)
 		}
-		if got := ProgressOf("v2-scale", c.merged, c.main, c.live, ""); got.State != "unread" {
+		if got := progress("v2-scale", c.merged, c.main, c.live, ""); got.State != "unread" {
 			t.Errorf("%s, never seen: progress = %+v", name, got)
 		}
 	}
@@ -136,7 +178,7 @@ func TestAFailedReadKeepsAChangeThatWasSeenAtItsEnd(t *testing.T) {
 func TestAMissingOrStaleHelmReleaseIsNotApplied(t *testing.T) {
 	for _, main := range []*Render{{Records: "records-1", Settings: "settings-1", Digest: "sha256:a"},
 		{Records: "records-1", Settings: "settings-1", Digest: "sha256:a", Release: true, Runs: "sha256:old"}} {
-		if got := ProgressOf("promote", main, main, healthy, ""); got.State != "applying" {
+		if got := progress("promote", main, main, healthy, ""); got.State != "applying" {
 			t.Fatalf("progress = %+v", got)
 		}
 	}
@@ -159,14 +201,14 @@ func TestTheClusterDecidesHowFarItGot(t *testing.T) {
 		{Observed{}, "unread"},
 	}
 	for _, c := range cases {
-		if got := ProgressOf("promote", mine, mine, c.live, ""); got.State != c.want {
+		if got := progress("promote", mine, mine, c.live, ""); got.State != c.want {
 			t.Errorf("%+v: progress = %+v", c.live, got)
 		}
 	}
-	if got := ProgressOf("promote", mine, render("records-2", "settings-1", "sha256:b"), healthy, ""); got.State != "superseded" {
+	if got := progress("promote", mine, render("records-2", "settings-1", "sha256:b"), healthy, ""); got.State != "superseded" {
 		t.Fatalf("main supersedes an unfinished change: %+v", got)
 	}
-	if got := ProgressOf("promote", mine, &Render{}, healthy, ""); got.State != "superseded" {
+	if got := progress("promote", mine, &Render{}, healthy, ""); got.State != "superseded" {
 		t.Fatalf("main without it supersedes it: %+v", got)
 	}
 }
@@ -186,14 +228,14 @@ func TestRemoveNeedsGitAndLiveAbsence(t *testing.T) {
 		{gone, gone, Observed{}, "unread"},
 	}
 	for _, c := range cases {
-		if got := ProgressOf("remove", c.merged, c.main, c.live, ""); got.State != c.want {
+		if got := progress("remove", c.merged, c.main, c.live, ""); got.State != c.want {
 			t.Errorf("%+v: progress = %+v", c, got)
 		}
 	}
-	if got := ProgressOf("new", render("records-1", "settings-1", "sha256:a"), render("records-1", "settings-1", "sha256:a"), absent, ""); got.State != "creating" {
+	if got := progress("new", render("records-1", "settings-1", "sha256:a"), render("records-1", "settings-1", "sha256:a"), absent, ""); got.State != "creating" {
 		t.Fatalf("new = %+v", got)
 	}
-	if got := ProgressOf("new", gone, nil, absent, ""); got.State != "historical" {
+	if got := progress("new", gone, nil, absent, ""); got.State != "historical" {
 		t.Fatalf("a merge with no records of its own is history: %+v", got)
 	}
 }

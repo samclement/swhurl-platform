@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 
 const (
 	evidenceCommit = "83705c4d8ae4e4d3331b46c54d5f0a0d1c38f0af"
-	otherCommit    = "ffc3e2ccfbcf40923da0b4bc6c24ff18f66ca2cc"
 )
 
 func helm(digest string) string {
@@ -69,280 +67,115 @@ func archived(t *testing.T, files map[string]string) map[string]pages.Render {
 	return renders
 }
 
-// targeted is a fresh evidence cache over GitHub's targeted read of the same commit, and the fake it reads.
-func targeted(files map[string]string) (*console.ConsoleEvidence, *githubtest.ConsoleFake) {
+func targeted(files map[string]string) (*console.Bundle, *githubtest.ConsoleFake) {
 	regular := map[string]string{}
 	for file, body := range files {
-		if !strings.HasSuffix(file, "/") { // GitHub lists a link with its own mode; the fake holds regular files only
+		if !strings.HasSuffix(file, "/") {
 			regular[file] = body
 		}
 	}
 	fake := &githubtest.ConsoleFake{Commit: evidenceCommit, Files: regular, Archive: archive(files)}
-	source := console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}
-	return &console.ConsoleEvidence{Bundle: &console.Bundle{Source: source}}, fake
+	return &console.Bundle{Source: console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"}}, fake
 }
 
-// The targeted read finds what the archive path finds for every unit it is asked for, one at a time or together,
-// and the zero Render for one the commit has no instance for; it never downloads the archive.
-func TestConsoleEvidenceIsWhatTheArchiveRenders(t *testing.T) {
+// A target is exactly the archive's render for that unit, without downloading the archive.
+func TestMergeTargetMatchesTheArchive(t *testing.T) {
 	files := evidenceTree()
 	want := archived(t, files)
-	if len(want) != 2 || want["web/prod"].Runs != "sha256:a" || want["web/staging"].Release {
-		t.Fatalf("the archive's renders are not the fixture's: %+v", want)
-	}
-	evidence, fake := targeted(files)
-	together, err := evidence.Renders(context.Background(), evidenceCommit, evidenceUnits)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, unit := range evidenceUnits {
-		if together[unit] != want[unit] {
-			t.Errorf("%s together: %+v, the archive: %+v", unit, together[unit], want[unit])
+		bundle, fake := targeted(files)
+		got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, unit)
+		if err != nil || got != want[unit] {
+			t.Fatalf("%s: %+v, %v; want %+v", unit, got, err, want[unit])
 		}
-		alone, _ := targeted(files)
-		one, err := alone.Renders(context.Background(), evidenceCommit, []string{unit})
-		if err != nil || len(one) != 1 || one[unit] != want[unit] {
-			t.Errorf("%s alone: %+v, %v; the archive: %+v", unit, one, err, want[unit])
+		if !slices.Equal(fake.Reads, []string{"files " + evidenceCommit}) {
+			t.Fatalf("reads %q", fake.Reads)
 		}
-	}
-	if !slices.Equal(fake.Reads, []string{"files " + evidenceCommit}) {
-		t.Fatalf("one targeted read and no archive: %q", fake.Reads)
+		if bundle.Cached(evidenceCommit) {
+			t.Fatal("targeted files kept as a whole tree")
+		}
 	}
 }
 
-// Each of the four files a render takes, missing, means what it means in the archive: no app or instance or release
-// record is no instance (absent), and no HelmRelease is an instance not yet applied.
-func TestConsoleEvidenceMissingFilesMeanWhatTheyMeanInTheArchive(t *testing.T) {
-	for _, missing := range []string{"v2-records/web/app.json", "v2-records/web/prod/instance.json",
-		"v2-records/web/prod/release.json", "v2-apps/instances/web/prod/helmrelease.json"} {
+func TestMergeTargetMissingFilesMatchTheArchive(t *testing.T) {
+	for _, missing := range []string{"v2-records/web/app.json", "v2-records/web/prod/instance.json", "v2-records/web/prod/release.json", "v2-apps/instances/web/prod/helmrelease.json"} {
 		t.Run(missing, func(t *testing.T) {
 			files := evidenceTree()
 			delete(files, missing)
 			want := archived(t, files)["web/prod"]
-			evidence, _ := targeted(files)
-			got, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"})
-			if err != nil || got["web/prod"] != want {
-				t.Fatalf("%+v, %v; the archive: %+v", got, err, want)
-			}
-			if missing != "v2-apps/instances/web/prod/helmrelease.json" && want != (pages.Render{}) {
-				t.Fatalf("the archive kept an instance without %s: %+v", missing, want)
+			bundle, _ := targeted(files)
+			got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, "web/prod")
+			if err != nil || got != want {
+				t.Fatalf("%+v, %v; want %+v", got, err, want)
 			}
 		})
 	}
 }
 
-// A malformed record of a unit asked for is an error, as it is in the archive, and nothing is kept for it.
-func TestConsoleEvidenceRefusesAMalformedRecord(t *testing.T) {
-	files := evidenceTree()
-	files["v2-records/web/prod/release.json"] = "not json"
-	evidence, _ := targeted(files)
-	if _, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"}); err == nil ||
-		!strings.Contains(err.Error(), "web/prod") {
-		t.Fatalf("a malformed record: %v", err)
-	}
-	if evidence.Cached(evidenceCommit, []string{"web/prod"}) {
-		t.Fatal("a refused read was kept")
-	}
-}
-
-// A malformed record refuses only the read of the unit it belongs to. The archive path refuses the whole commit, so
-// every change merged at it was unread; the targeted read follows the other units' changes, deliberately.
-func TestConsoleEvidenceRefusesOnlyTheUnitAskedFor(t *testing.T) {
-	files := evidenceTree()
-	files["v2-records/web/staging/release.json"] = "not json"
-	if _, err := console.ConsoleRenders(mustFilter(t, files)); err == nil {
-		t.Fatal("the archive path no longer refuses the whole commit; this test's premise is gone")
-	}
-	evidence, _ := targeted(files)
-	found, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"})
-	if err != nil || found["web/prod"].Runs != "sha256:a" {
-		t.Fatalf("another unit's malformed record refused web/prod: %+v, %v", found, err)
-	}
-	if _, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod", "web/staging"}); err == nil ||
-		!strings.Contains(err.Error(), "web/staging") {
-		t.Fatalf("a unit asked for with a malformed record: %v", err)
-	}
-	if evidence.Cached(evidenceCommit, []string{"web/staging"}) {
-		t.Fatal("a refused unit was kept")
-	}
-}
-
-func mustFilter(t *testing.T, files map[string]string) map[string][]byte {
-	t.Helper()
-	tree, err := console.FilterTarball(archive(files), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tree
-}
-
-// evidenceOver is a fresh evidence cache over a recording source holding the commits' trees.
-func evidenceOver(max int, trees map[string]map[string]string) (*console.ConsoleEvidence, *source) {
-	held := &source{trees: map[string]map[string][]byte{}}
-	for commit, files := range trees {
-		held.trees[commit] = map[string][]byte{}
-		for file, body := range files {
-			held.trees[commit][file] = []byte(body)
-		}
-	}
-	return &console.ConsoleEvidence{Bundle: &console.Bundle{Source: held}, Max: max}, held
-}
-
-func (s *source) taken() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return slices.Clone(s.reads)
-}
-
-func filesRead(commit string, units ...string) string {
-	var paths []string
-	for _, unit := range units {
-		app, _, _ := strings.Cut(unit, "/")
-		paths = append(paths, "v2-records/"+app+"/app.json", "v2-records/"+unit+"/instance.json",
-			"v2-records/"+unit+"/release.json", "v2-apps/instances/"+unit+"/helmrelease.json")
-	}
-	unique := []string{}
-	for _, file := range paths {
-		if !slices.Contains(unique, file) {
-			unique = append(unique, file)
-		}
-	}
-	return "files " + commit + ": " + strings.Join(unique, " ")
-}
-
-// A render is kept by its commit and its unit: one unit in hand says nothing of another at the same commit, or of the
-// same unit at another commit, and only the units not in hand are read.
-func TestConsoleEvidenceKeepsEachUnitAtEachCommit(t *testing.T) {
-	evidence, held := evidenceOver(0, map[string]map[string]string{evidenceCommit: evidenceTree(), otherCommit: evidenceTree()})
-	ctx := context.Background()
-	if _, err := evidence.Renders(ctx, evidenceCommit, []string{"web/prod"}); err != nil {
-		t.Fatal(err)
-	}
-	if !evidence.Cached(evidenceCommit, []string{"web/prod"}) || evidence.Cached(evidenceCommit, []string{"web/prod", "web/staging"}) ||
-		evidence.Cached(otherCommit, []string{"web/prod"}) {
-		t.Fatal("a render was kept under the wrong commit or unit")
-	}
-	both, err := evidence.Renders(ctx, evidenceCommit, []string{"web/prod", "web/staging"})
-	if err != nil || both["web/staging"].Records == "" || both["web/prod"].Runs != "sha256:a" {
-		t.Fatalf("both: %+v, %v", both, err)
-	}
-	if _, err := evidence.Renders(ctx, evidenceCommit, []string{"web/staging", "web/prod"}); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{filesRead(evidenceCommit, "web/prod"), filesRead(evidenceCommit, "web/staging")}
-	if got := held.taken(); !slices.Equal(got, want) {
-		t.Fatalf("reads %q, want %q", got, want)
-	}
-	if evidence.Bundle.Cached(evidenceCommit) {
-		t.Fatal("a unit's files were kept as the commit's whole tree")
-	}
-}
-
-// An instance the commit was read and proved not to hold is kept as absent; a unit that cannot name an instance is
-// absent without a read.
-func TestConsoleEvidenceKeepsAProvedAbsence(t *testing.T) {
-	evidence, held := evidenceOver(0, map[string]map[string]string{evidenceCommit: evidenceTree()})
-	for range 2 {
-		found, err := evidence.Renders(context.Background(), evidenceCommit, []string{"no/such"})
-		if err != nil || found["no/such"] != (pages.Render{}) {
-			t.Fatalf("%+v, %v", found, err)
-		}
-	}
-	if len(held.taken()) != 1 || !evidence.Cached(evidenceCommit, []string{"no/such"}) {
-		t.Fatalf("a proved absence is read once and kept: %q", held.taken())
-	}
-	for _, unit := range []string{"web", "../web/prod", "web/../prod", "web/prod/x", "./prod", "web/", "/prod"} {
-		found, err := evidence.Renders(context.Background(), evidenceCommit, []string{unit})
-		if err != nil || found[unit] != (pages.Render{}) {
-			t.Fatalf("%q: %+v, %v", unit, found, err)
-		}
-	}
-	if len(held.taken()) != 1 {
-		t.Fatalf("a unit no instance can have was read: %q", held.taken())
-	}
-}
-
-// A failed read keeps nothing, so the next read tries again, and then keeps what it finds.
-func TestConsoleEvidenceRetriesAFailedRead(t *testing.T) {
-	evidence, held := evidenceOver(0, map[string]map[string]string{evidenceCommit: evidenceTree()})
-	held.err = errors.New("GitHub is away")
-	if found, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"}); err == nil || found != nil {
-		t.Fatalf("a failed read answered %+v", found)
-	}
-	if evidence.Cached(evidenceCommit, []string{"web/prod"}) {
-		t.Fatal("a failed read was kept")
-	}
-	held.err = nil
-	found, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"})
-	if err != nil || found["web/prod"].Runs != "sha256:a" || !evidence.Cached(evidenceCommit, []string{"web/prod"}) {
-		t.Fatalf("the retry: %+v, %v", found, err)
-	}
-	if len(held.taken()) != 2 {
-		t.Fatalf("reads %q", held.taken())
-	}
-}
-
-// The cache keeps at most Max renders, the oldest going first.
-func TestConsoleEvidenceIsBounded(t *testing.T) {
-	evidence, held := evidenceOver(2, map[string]map[string]string{evidenceCommit: evidenceTree()})
-	for _, unit := range []string{"web/prod", "web/staging", "api/prod"} {
-		if _, err := evidence.Renders(context.Background(), evidenceCommit, []string{unit}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if evidence.Cached(evidenceCommit, []string{"web/prod"}) || !evidence.Cached(evidenceCommit, []string{"web/staging", "api/prod"}) {
-		t.Fatal("the oldest render is the one forgotten")
-	}
-	if _, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod"}); err != nil || len(held.taken()) != 4 {
-		t.Fatalf("a forgotten render is read again: %q, %v", held.taken(), err)
-	}
-}
-
-// A commit whose whole tree the bundle already holds is answered from it, with no read.
-func TestConsoleEvidenceUsesAWholeTreeInHand(t *testing.T) {
-	evidence, held := evidenceOver(0, map[string]map[string]string{evidenceCommit: evidenceTree()})
-	if _, err := evidence.Bundle.Tree(context.Background(), evidenceCommit); err != nil {
-		t.Fatal(err)
-	}
-	if !evidence.Cached(evidenceCommit, []string{"web/prod", "api/prod"}) {
-		t.Fatal("a whole tree in hand costs no read")
-	}
-	found, err := evidence.Renders(context.Background(), evidenceCommit, []string{"web/prod", "no/such"})
-	if err != nil || found["web/prod"].Runs != "sha256:a" || found["no/such"] != (pages.Render{}) {
-		t.Fatalf("%+v, %v", found, err)
-	}
-	if got := held.taken(); !slices.Equal(got, []string{evidenceCommit}) {
-		t.Fatalf("only the bundle's own read: %q", got)
-	}
-}
-
-// Pages read at once: every answer is the commit's renders, and what one kept another can use.
-func TestConsoleEvidenceIsSafeForPagesAtOnce(t *testing.T) {
-	evidence, _ := evidenceOver(3, map[string]map[string]string{evidenceCommit: evidenceTree(), otherCommit: evidenceTree()})
-	want := archived(t, evidenceTree())
-	var reading sync.WaitGroup
-	failures := make(chan string, 64)
-	for i := range 32 {
-		reading.Go(func() {
-			commit := []string{evidenceCommit, otherCommit}[i%2]
-			units := []string{evidenceUnits[i%len(evidenceUnits)], evidenceUnits[(i+1)%len(evidenceUnits)]}
-			found, err := evidence.Renders(context.Background(), commit, units)
-			if err != nil || len(found) != 2 {
-				failures <- fmt.Sprintf("%v: %+v, %v", units, found, err)
-				return
-			}
-			for unit, render := range found {
-				if render != want[unit] {
-					failures <- unit
+// Malformed data refuses only its own unit, including when the whole tree is already held.
+func TestMergeTargetRefusesMalformedDataOnlyForItsUnit(t *testing.T) {
+	for _, malformed := range []string{"v2-records/web/staging/instance.json", "v2-records/web/staging/release.json", "v2-apps/instances/web/staging/helmrelease.json"} {
+		for _, held := range []bool{false, true} {
+			files := evidenceTree()
+			files[malformed] = "not json"
+			bundle, _ := targeted(files)
+			if held {
+				if _, err := bundle.Tree(context.Background(), evidenceCommit); err != nil {
+					t.Fatal(err)
 				}
 			}
-			evidence.Cached(commit, units)
-		})
+			got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, "web/prod")
+			if err != nil || got.Runs != "sha256:a" {
+				t.Fatalf("other unit: %+v, %v", got, err)
+			}
+			if _, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, "web/staging"); err == nil || !strings.Contains(err.Error(), "web/staging") {
+				t.Fatalf("malformed %s: %v", malformed, err)
+			}
+		}
 	}
-	reading.Wait()
-	close(failures)
-	for failure := range failures {
-		t.Errorf("an answer read at once: %s", failure)
+}
+
+func TestMergeTargetUsesTheWholeTreeInHand(t *testing.T) {
+	bundle, fake := targeted(evidenceTree())
+	if _, err := bundle.Tree(context.Background(), evidenceCommit); err != nil {
+		t.Fatal(err)
+	}
+	before := slices.Clone(fake.Reads)
+	for _, unit := range []string{"web/prod", "no/such"} {
+		got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, unit)
+		if err != nil || got != archived(t, evidenceTree())[unit] {
+			t.Fatalf("%s: %+v, %v", unit, got, err)
+		}
+	}
+	if !slices.Equal(fake.Reads, before) {
+		t.Fatalf("extra reads %q", fake.Reads)
+	}
+}
+
+func TestMergeTargetInvalidUnitsNeedNoRead(t *testing.T) {
+	bundle, fake := targeted(evidenceTree())
+	for _, unit := range []string{"web", "../prod", "web/../prod", "web/prod/x", "./prod", "web/", "/prod", `web\x/prod`} {
+		got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, unit)
+		if err != nil || got != (pages.Render{}) {
+			t.Fatalf("%s: %+v, %v", unit, got, err)
+		}
+	}
+	if len(fake.Reads) != 0 {
+		t.Fatalf("reads %q", fake.Reads)
+	}
+}
+
+func TestMergeTargetDoesNotTurnReadFailureIntoAbsence(t *testing.T) {
+	held := &source{err: errors.New("away")}
+	bundle := &console.Bundle{Source: held}
+	if _, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, "web/prod"); err == nil {
+		t.Fatal("failed read proved absence")
+	}
+	held.err = nil
+	held.trees = map[string]map[string][]byte{evidenceCommit: {}}
+	got, err := console.MergeTarget(context.Background(), bundle, evidenceCommit, "web/prod")
+	if err != nil || got != (pages.Render{}) || len(held.reads) != 2 {
+		t.Fatalf("retry: %+v, %v, reads %q", got, err, held.reads)
 	}
 }
 

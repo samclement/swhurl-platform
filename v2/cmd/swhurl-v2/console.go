@@ -145,7 +145,6 @@ type consoleConfig struct {
 // consoleServer is one running console: the pinned tree, the cluster reader and the templates.
 type consoleServer struct {
 	bundle     *console.Bundle
-	evidence   *console.ConsoleEvidence // merge commits' renders for Activity, read through bundle's source
 	reader     kube.Reader
 	writer     kube.Writer
 	collector  kube.Collector
@@ -262,11 +261,10 @@ func flagStoreOf(config consoleConfig) *console.FlagStore {
 	return &console.FlagStore{Seed: config.NatsSeed, URL: url, Open: open, Now: config.Now, Audit: audit}
 }
 
-// pin is the source every tree this server reads comes from: main's whole trees in bundle, and beside them the
-// merge commits' evidence Activity follows a change by, read through the same source.
+// pin is the source every tree this server reads comes from: main's whole trees in bundle, and through the same
+// source the merge commits' files Activity reads a change's target from.
 func (s *consoleServer) pin(source console.Source) {
 	s.bundle = &console.Bundle{Source: source}
-	s.evidence = &console.ConsoleEvidence{Bundle: s.bundle}
 }
 
 // reads is what this server's pages read, composed from the server as it stands: the tree pin last chose, the

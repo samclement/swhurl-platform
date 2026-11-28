@@ -45,7 +45,7 @@ func activityJobs() []pages.Job {
 		{ID: 8, Action: "scale", Unit: "web/staging", Identity: "sam@swhurl.com", Started: at(9, 9, 30), State: "succeeded",
 			Finished: ended(9, 9, 31), Link: activityRepo + "/pull/42", Lines: []string{"Opened"}},
 		{ID: 7, Action: "promote", Unit: "web/prod", Identity: "sam@swhurl.com", Started: at(9, 8, 0), State: "succeeded",
-			Finished: ended(9, 8, 2), Link: activityRepo + "/pull/41", Lines: []string{"Downloading", "Opened"}},
+			Finished: ended(9, 8, 2), Link: activityRepo + "/pull/41", Lines: []string{"Downloading", "Opened"}, Outcomes: true},
 		{ID: 6, Action: "remove", Unit: "my-api/staging", Identity: "sam@swhurl.com", Started: at(9, 7, 0), State: "failed",
 			Finished: ended(9, 7, 0), Lines: []string{"[ERROR] <b>refused</b>"}},
 		{ID: 5, Action: "new app and repository", Unit: "shop/staging", Identity: "sam@swhurl.com", Started: at(9, 6, 0),
@@ -86,11 +86,11 @@ func activityServer(t *testing.T) (*consoleServer, console.ChangeReads) {
 	reads := server.changeReads()
 	render := map[string]pages.Render{"web/prod": {Records: "records-1", Settings: "settings-1", Digest: "sha256:x",
 		Release: true, Runs: "sha256:x"}}
-	reads.Renders = func(_ context.Context, commit string, _ []string) (map[string]pages.Render, error) {
-		if commit != mergedCommit {
-			t.Errorf("read the tree at %s", commit)
+	reads.Target = func(_ context.Context, commit, unit string) (pages.Render, error) {
+		if commit != mergedCommit || unit != "web/prod" {
+			t.Errorf("read %s at %s", unit, commit)
 		}
-		return render, nil
+		return render["web/prod"], nil
 	}
 	reads.Main = func(context.Context) (map[string]pages.Render, error) { return render, nil }
 	reads.Rows = func(context.Context) (map[string]*pages.AppRow, error) {
@@ -154,31 +154,57 @@ func TestAMissingJobIsTheErrorPage(t *testing.T) {
 	sameAsGolden(t, server, "error.html", "job-missing.html", data)
 }
 
-// A change seen at its end is written into its job's record, an earlier pod's included, so the registry a later pod
-// loads still says it ran; a change still open is not.
+// A merged change's target is read once and written into its job's record, as is the first time it was seen at its
+// end, an earlier pod's record included, so the registry a later pod loads still says it ran and reads nothing again.
+// A change still open is not, and a record from before outcomes is historical and read for nothing.
 func TestAReachedChangeIsWrittenToItsRecord(t *testing.T) {
 	server, reads := activityServer(t)
+	record := func(id int, action, unit, started, pull, outcomes string) string {
+		return `{"id":` + strconv.Itoa(id) + `,"action":"` + action + `","unit":"` + unit + `","identity":"sam@swhurl.com",` +
+			`"started":"` + started + `","finished":"` + started + `","state":"succeeded","link":"` + activityRepo + `/pull/` + pull +
+			`","owner":"console-old","resume":null,"reached":""` + outcomes + `,"lines":["Opened"]}`
+	}
 	fake := jobsFake(map[string]string{
-		"job-7": `{"id":7,"action":"promote","unit":"web/prod","identity":"sam@swhurl.com","started":"2026-11-09T08:00:00Z",` +
-			`"finished":"2026-11-09T08:02:00Z","state":"succeeded","link":"` + activityRepo + `/pull/41","owner":"console-old",` +
-			`"resume":null,"reached":"","lines":["Opened"]}`,
-		"job-8": `{"id":8,"action":"scale","unit":"web/staging","identity":"sam@swhurl.com","started":"2026-11-09T09:30:00Z",` +
-			`"finished":"2026-11-09T09:31:00Z","state":"succeeded","link":"` + activityRepo + `/pull/42","owner":"console-old",` +
-			`"resume":null,"reached":"","lines":["Opened"]}`,
+		"job-7": record(7, "promote", "web/prod", "2026-11-09T08:00:00Z", "41", `,"outcomes":true`),
+		"job-8": record(8, "scale", "web/staging", "2026-11-09T09:30:00Z", "42", `,"outcomes":true`),
+		"job-6": record(6, "promote", "web/prod", "2026-11-09T07:00:00Z", "41", ""),
 	})
 	registry := func() *console.Jobs {
 		return console.NewJobs(context.Background(), console.JobsInputs{
 			Store: kube.JobRecords{Data: fake, Pods: fake, Name: "console-jobs-dev"}, Owner: "console-new",
 			Now: func() time.Time { return activityNow }, Sleep: time.Sleep})
 	}
+	targets := 0
+	read := reads.Target
+	reads.Target = func(ctx context.Context, commit, unit string) (pages.Render, error) {
+		targets++
+		return read(ctx, commit, unit)
+	}
 	server.jobs = registry()
 	server.readActivity(context.Background(), server.jobsOf(context.Background()), reads)
 	loaded := registry().Recent(context.Background())
-	if loaded[1].ID != 7 || loaded[1].Reached != activityNow.Format(time.RFC3339Nano) || !loaded[1].Outcomes {
-		t.Fatalf("job 7 reached %q, outcomes %v", loaded[1].Reached, loaded[1].Outcomes)
+	want := pages.Render{Records: "records-1", Settings: "settings-1", Digest: "sha256:x"}
+	if loaded[1].ID != 7 || loaded[1].Reached != activityNow.Format(time.RFC3339Nano) || !loaded[1].Outcomes ||
+		loaded[1].Target == nil || *loaded[1].Target != want {
+		t.Fatalf("job 7 reached %q, outcomes %v, target %+v", loaded[1].Reached, loaded[1].Outcomes, loaded[1].Target)
 	}
-	if loaded[0].ID != 8 || loaded[0].Reached != "" {
-		t.Fatalf("an open change did not reach its end: %q", loaded[0].Reached)
+	if loaded[0].ID != 8 || loaded[0].Reached != "" || loaded[0].Target != nil {
+		t.Fatalf("an open change did not reach its end: %q %+v", loaded[0].Reached, loaded[0].Target)
+	}
+	if loaded[2].ID != 6 || loaded[2].Outcomes || loaded[2].Target != nil || loaded[2].Reached != "" {
+		t.Fatalf("a record from before outcomes was written: %+v", loaded[2])
+	}
+	server.jobs = registry()
+	data := server.readActivity(context.Background(), server.jobsOf(context.Background()), reads)
+	if targets != 1 {
+		t.Fatalf("the target was read %d times", targets)
+	}
+	labels := map[string]string{}
+	for _, row := range data.Ended {
+		labels[row.ID] = row.Track.Label()
+	}
+	if labels["job-7"] != "Live in prod" || labels["job-6"] != "Merged (historical)" {
+		t.Fatalf("ended rows: %v", labels)
 	}
 }
 

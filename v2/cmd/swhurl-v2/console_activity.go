@@ -178,10 +178,11 @@ func writeDone(w io.Writer, job pages.Job) {
 }
 
 // changeReads are the reads a change's row takes through this server: GitHub with its token, the pinned bundle for
-// main, the merge commits' evidence and the cluster. Without a token there are no pull request reads, so a merged change's progress is not known.
+// main and a merge commit's target, the cluster, and the job store the target and reach are kept in. Without a token
+// there are no pull request reads, so a merged change's progress is not known.
 func (s *consoleServer) changeReads() console.ChangeReads {
-	reads := console.ChangeReads{OpenPulls: s.consolePulls, Renders: s.evidence.Renders, Main: s.mainRenders,
-		Cached: s.evidence.Cached, Rows: s.rowsByInstance, Reach: s.reach, Now: s.now()}
+	reads := console.ChangeReads{OpenPulls: s.consolePulls, Target: s.mergeTarget, Main: s.mainRenders,
+		Rows: s.rowsByInstance, Capture: s.capture, Reach: s.reach, Now: s.now()}
 	if s.github != nil {
 		reads.Pull = s.pull
 	}
@@ -204,10 +205,20 @@ func (s *consoleServer) rowsByInstance(ctx context.Context) (map[string]*pages.A
 	return s.reads().RowsByInstance(ctx)
 }
 
-// reach writes into a job's record that its change was seen at its end; a server that runs no registry writes nothing.
-// The save outlives the page that saw it: ChangeReads.Reach carries no context.
-func (s *consoleServer) reach(job pages.Job) {
+func (s *consoleServer) mergeTarget(ctx context.Context, commit, unit string) (pages.Render, error) {
+	return console.MergeTarget(ctx, s.bundle, commit, unit)
+}
+
+// capture writes a job's target into its record, and reach that its change was seen at its end; a server that runs
+// no registry writes nothing.
+func (s *consoleServer) capture(ctx context.Context, job pages.Job) {
+	if s.jobs != nil && job.Target != nil {
+		s.jobs.Capture(ctx, job.ID, *job.Target)
+	}
+}
+
+func (s *consoleServer) reach(ctx context.Context, job pages.Job) {
 	if s.jobs != nil {
-		s.jobs.Reach(context.Background(), job.ID)
+		s.jobs.Reach(ctx, job.ID)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -103,18 +102,17 @@ type ChangeReads struct {
 	OpenPulls func(context.Context) ([]pages.OpenPull, string)
 	// Pull is one pull request no longer open: merged or closed, when, and the commit that merged it.
 	Pull func(context.Context, int) (pages.Pull, error)
-	// Renders is the named units' instances at one merge commit (ConsoleEvidence), the zero Render for one the
-	// commit has none of; Main is every instance on main (ConsoleRenders).
-	Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
-	Main    func(context.Context) (map[string]pages.Render, error)
-	// Cached is whether every named unit's render at one commit is already in hand, so a page's bounded reads are
-	// not spent on it (nil: nothing is known to be in hand).
-	Cached func(commit string, units []string) bool
+	// Target is one unit's render at the commit that merged its change (MergeTarget), read the first time a record
+	// that keeps outcomes is seen merged and then kept in it (Capture); Main is every instance on main (ConsoleRenders).
+	Target func(ctx context.Context, commit, unit string) (pages.Render, error)
+	Main   func(context.Context) (map[string]pages.Render, error)
 	// Rows is every instance on the cluster, by <app>/<env>.
 	Rows func(context.Context) (map[string]*pages.AppRow, error)
-	// Reach records that a job's change was seen at its end, the first time it is; nil records nothing.
-	Reach func(pages.Job)
-	Now   time.Time
+	// Capture keeps a job's Target in its record, and Reach that its change was seen at its end, each the first
+	// time; nil keeps nothing.
+	Capture func(context.Context, pages.Job)
+	Reach   func(context.Context, pages.Job)
+	Now     time.Time
 }
 
 // ConsoleChanges is each job as a change with its whole path and, with others, the open pull requests no
@@ -230,30 +228,56 @@ func pullOf(ctx context.Context, reads ChangeReads, number int, link string, rea
 	return found
 }
 
-// landings is how far each merged change to an instance has got: the cluster, main's renders and each merge
-// commit's, read once for the page and only when some change needs them.
+// landings is how far each merged change to an instance has got: the cluster and main's renders, read once for the
+// page and only when some change needs them, against each change's kept target. A record that keeps outcomes and has
+// no target yet has it read from its merge commit, once, at once with the others; a failed read keeps nothing, so a
+// later page reads again. A record from before outcomes is never read.
 func landings(ctx context.Context, jobs []pages.Job, pulls map[int]pages.Pull, reads ChangeReads) map[int]*pages.Progress {
 	landing := landingJobs(jobs, pulls)
 	found := map[int]*pages.Progress{}
 	if len(landing) == 0 {
 		return found
 	}
-	rows, rowsErr := reads.Rows(ctx)
-	main := readRenders(func() (map[string]pages.Render, error) { return reads.Main(ctx) })
-	trees := mergeTrees(ctx, landing, pulls, reads)
+	var rows map[string]*pages.AppRow
+	var rowsErr error
+	var main map[string]pages.Render
+	for _, job := range landing {
+		if job.Target != nil || job.Outcomes {
+			rows, rowsErr = reads.Rows(ctx)
+			main = readRenders(func() (map[string]pages.Render, error) { return reads.Main(ctx) })
+			break
+		}
+	}
+	together(len(landing), func(i int) { landing[i] = targeted(ctx, landing[i], pulls[landing[i].ID].Commit, reads) })
 	for _, job := range landing {
 		live := pages.Observed{Read: rowsErr == nil}
 		if live.Read {
 			live.Row = rows[job.Unit]
 		}
-		progress := pages.ProgressOf(job.Action, renderAt(trees[pulls[job.ID].Commit], job.Unit),
-			renderAt(main, job.Unit), live, job.Reached)
+		progress := pages.ProgressOf(job, renderAt(main, job.Unit), live)
 		if progress.Reached() && job.Reached == "" && reads.Reach != nil {
-			reads.Reach(job)
+			reads.Reach(ctx, job)
 		}
 		found[job.ID] = &progress
 	}
 	return found
+}
+
+// targeted is a job with its target: kept already, or read now from the commit that merged it and kept (Capture).
+// A record from before outcomes, a merge GitHub gave no commit for and a failed read leave it without one.
+func targeted(ctx context.Context, job pages.Job, commit string, reads ChangeReads) pages.Job {
+	if job.Target != nil || !job.Outcomes || commit == "" || reads.Target == nil {
+		return job
+	}
+	target, err := reads.Target(ctx, commit, job.Unit)
+	if err != nil {
+		return job
+	}
+	job.Target = &target
+	if reads.Capture != nil {
+		reads.Capture(ctx, job)
+	}
+	return job
 }
 
 // landingJobs are the jobs whose merged change ends on the cluster.
@@ -265,70 +289,6 @@ func landingJobs(jobs []pages.Job, pulls map[int]pages.Pull) []pages.Job {
 		}
 	}
 	return landing
-}
-
-// historicalTreesPerPage bounds the merge commits one page reads: a page decides the change whose merge commit it
-// read and leaves the rest unread for a later read, rather than reading every historical commit at once. A read is
-// a commit's tree listing and the few files its changes' units take, under a second where an archive took 14; one
-// per page is kept from the archive's time, when two could not finish inside the page's budget. A commit whose
-// units are all in hand costs no read; one in hand for another unit does.
-const historicalTreesPerPage = 1
-
-// mergeTrees is the renders of each commit that merged one of the changes, once per commit with all of its changes'
-// units and at once; a commit that could not be read is missing, as is one GitHub gave no commit for, and one this
-// page left for the next.
-func mergeTrees(ctx context.Context, landing []pages.Job, pulls map[int]pages.Pull, reads ChangeReads) map[string]map[string]pages.Render {
-	commits, units := mergeUnits(landing, pulls)
-	trees := map[string]map[string]pages.Render{}
-	if reads.Renders == nil {
-		return trees
-	}
-	fetch := toFetch(commits, func(commit string) bool { return reads.Cached != nil && reads.Cached(commit, units[commit]) })
-	read := make([]map[string]pages.Render, len(fetch))
-	together(len(fetch), func(i int) {
-		read[i] = readRenders(func() (map[string]pages.Render, error) { return reads.Renders(ctx, fetch[i], units[fetch[i]]) })
-	})
-	for i, commit := range fetch {
-		trees[commit] = read[i]
-	}
-	return trees
-}
-
-// mergeUnits is each merge commit, newest change first, and the units its changes end on.
-func mergeUnits(landing []pages.Job, pulls map[int]pages.Pull) ([]string, map[string][]string) {
-	var commits []string
-	units := map[string][]string{}
-	for _, job := range landing {
-		commit := pulls[job.ID].Commit
-		if commit == "" {
-			continue
-		}
-		if _, seen := units[commit]; !seen {
-			commits = append(commits, commit)
-		}
-		if !slices.Contains(units[commit], job.Unit) {
-			units[commit] = append(units[commit], job.Unit)
-		}
-	}
-	return commits, units
-}
-
-// toFetch is the commits one page reads: those already in hand (they cost no fetch), and otherwise the newest
-// historicalTreesPerPage, so one slow read cannot hold the page open. The next read takes the rest.
-func toFetch(commits []string, cached func(string) bool) []string {
-	inHand := func(commit string) bool { return cached != nil && cached(commit) }
-	budget := historicalTreesPerPage
-	fetch := make([]string, 0, len(commits))
-	for _, commit := range commits {
-		if !inHand(commit) {
-			if budget == 0 {
-				continue
-			}
-			budget--
-		}
-		fetch = append(fetch, commit)
-	}
-	return fetch
 }
 
 // readRenders is a read's renders, nil when they could not be read: never kept, so the next page reads again.

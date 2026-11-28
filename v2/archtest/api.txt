@@ -687,8 +687,6 @@ console: func (*Bundle) Cached(revision string) bool
 console: func (*Bundle) Held(revision string) (map[string][]byte, bool)
 console: func (*Bundle) Revision(ctx context.Context) (string, error)
 console: func (*Bundle) Tree(ctx context.Context, revision string) (map[string][]byte, error)
-console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
-console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 console: func (*FlagStore) Card(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
 console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (problem string, status int)
 console: func (*Jobs) Capture(ctx context.Context, id int, target pages.Render)
@@ -762,6 +760,7 @@ console: func FlagDocument(instance pages.Instance) string
 console: func FlagView(environment string, card orchestration.FlagCard) pages.FlagView
 console: func JobPageOf(ctx context.Context, jobs []pages.Job, id int, reads ChangeReads, canCreate bool) (JobPage, bool)
 console: func MergePlanFor(kind string, changed []string) string
+console: func MergeTarget(ctx context.Context, bundle *Bundle, commit, unit string) (pages.Render, error)
 console: func NewAppWork(chosen pages.NewAppChoices, finishing bool, identity string, read NewAppRead, open func(context.Context, NewAppRequest, func(string)) (string, error)) JobWork
 console: func NewJobs(ctx context.Context, inputs JobsInputs) *Jobs
 console: func Offers(tree map[string][]byte, rows []pages.AppRow, env string) map[string]connectivityrules.Offers
@@ -788,9 +787,8 @@ console: type Bundle struct {Source Source Max int}
 console: type Change struct {Name string Title string Envs []string TargetEnv string BothEnvs bool Takes, Needs, Any []string Operations []Operation}
 console: type ChangeJobView struct {ID int Title, Label, Link, Unit string Identity, State, PullLink string StartedAt, StartedClock, Ago string Finished bool FinishedClock, Took string Running bool Lines []string}
 console: type ChangeProposal struct {Request Kind, Identity, Repository string Address string}
-console: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Renders func(ctx context.Context, commit string, units []string) (map[string]pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Cached func(commit string, units []string) bool Rows func(context.Context) (map[string]*pages.AppRow, error) Reach func(pages.Job) Now time.Time}
+console: type ChangeReads struct {OpenPulls func(context.Context) ([]pages.OpenPull, string) Pull func(context.Context, int) (pages.Pull, error) Target func(ctx context.Context, commit, unit string) (pages.Render, error) Main func(context.Context) (map[string]pages.Render, error) Rows func(context.Context) (map[string]*pages.AppRow, error) Capture func(context.Context, pages.Job) Reach func(context.Context, pages.Job) Now time.Time}
 console: type ChangeView struct {ID string Track pages.Track Open bool Job *ChangeJobView PR *OpenPullView}
-console: type ConsoleEvidence struct {Bundle *Bundle Max int}
 console: type CreateStep struct {App, Team, Image, Exposure string}
 console: type EditStep struct {App, Env, Setting string}
 console: type FlagCards func(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
@@ -1801,7 +1799,7 @@ pages: func PendingOf(instance Instance, removing, inGit bool, jobs []Job, pulls
 pages: func PendingPullOf(open OpenPull) PendingPull
 pages: func Prepared(job Job) Stage
 pages: func Problems(checks Checks, units []Unit) []Problem
-pages: func ProgressOf(action string, merged, main *Render, live Observed, reached string) Progress
+pages: func ProgressOf(job Job, main *Render, live Observed) Progress
 pages: func PromotionOf(app string, staging, prod *AppRow) PromotionReview
 pages: func PullNumber(job Job) int
 pages: func PullOf(open OpenPull) Pull

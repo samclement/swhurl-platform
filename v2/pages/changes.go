@@ -13,8 +13,9 @@ import (
 // A change is more than its job: a promotion's job ends when its pull request is open, and the change ends when
 // production runs it. ProgressOf is the one answer to how far a merged change to an instance has got, from Git's
 // facts (Render) and what the cluster shows (AppRow), read fresh every time. Proven absence, a render main has not
-// made yet and a failed read are different facts: no failed read proves absence or completion. The one fact kept
-// is when the change was first seen at its end (Job.Reached), so a later change can replace it without unsaying
+// made yet and a failed read are different facts: no failed read proves absence or completion. Two facts are kept in
+// the job's record: its target, the instance in the merge commit (Job.Target), so no page reads that commit again,
+// and when the change was first seen at its end (Job.Reached), so a later change can replace it without unsaying
 // that it ran.
 //
 // A Track presents that answer as labelled stages, the last always the terminal stop (Live in prod, Applied,
@@ -154,23 +155,32 @@ type Observed struct {
 
 func (o Observed) absent() bool { return o.Read && o.Row == nil }
 
-// ProgressOf is how far the change action merged has got. merged and main are the instance in the merge commit's
-// tree and in main's (the zero Render when proven absent, nil when the tree could not be read); live is the
-// instance on the cluster.
+// ProgressOf is how far the change a job's pull request merged has got. The job's Target is the instance in the
+// merge commit's tree (the zero Render when proven absent, nil when it is not kept yet), and a record from before
+// the console kept targets, never seen at its end, is historical: nothing reads its merge commit again. main is the
+// instance in main's tree (nil when it could not be read); live is the instance on the cluster.
 //
 // Main's render is this change's while main keeps the records it merged, and carries it when only a newer release
-// arrived (same settings: the Deploy workflow). A promotion chooses its release, so a newer one replaces it. reached
-// is when the change was first seen at its end: a replaced change still ran.
-func ProgressOf(action string, merged, main *Render, live Observed, reached string) Progress {
+// arrived (same settings: the Deploy workflow). A promotion chooses its release, so a newer one replaces it.
+// Job.Reached is when the change was first seen at its end: a replaced change still ran.
+func ProgressOf(job Job, main *Render, live Observed) Progress {
+	action, merged, reached := job.Action, job.Target, job.Reached
 	switch {
+	case merged == nil && !job.Outcomes && reached == "":
+		return Progress{State: "historical", Detail: "this change was merged before the console recorded outcomes"}
 	case merged == nil:
 		return unchecked(reached, Progress{State: "unread", Detail: "the target or current render could not be read"})
 	case merged.Records == "" && action != "remove":
-		return Progress{State: "historical", Detail: "its merge commit has no records for this instance"}
+		return Progress{State: "historical", Detail: "this change predates render hashes"}
 	case main == nil:
 		return unchecked(reached, Progress{State: "unread", Detail: "the target or current render could not be read"})
 	}
-	target, newer, replaced := carried(action, *merged, *main)
+	return currentProgress(action, *merged, *main, live, reached)
+}
+
+// currentProgress follows a known target through main and the cluster, preserving a previously reached outcome.
+func currentProgress(action string, merged, main Render, live Observed, reached string) Progress {
+	target, newer, replaced := carried(action, merged, main)
 	if replaced {
 		return ranOr(reached, Progress{State: "superseded"})
 	}
@@ -481,7 +491,7 @@ func (p pullPath) merged(landed *Progress) ([]Stage, string, string) {
 	}
 	switch found.State {
 	case "historical":
-		return p.track(merge, "done", strings.ReplaceAll("Merged "+p.pull.When+"; this change predates render hashes, so its rollout cannot be tracked.", " ;", ";"),
+		return p.track(merge, "done", strings.ReplaceAll("Merged "+p.pull.When+"; "+found.Detail+", so its rollout cannot be tracked.", " ;", ";"),
 			p.reviewed(), []Stage{{Key: "end", Label: "Merged (historical)", State: "reached"}})
 	case "superseded":
 		return p.track(merge, "done", strings.ReplaceAll("Merged "+p.pull.When+"; a newer configuration of "+p.target+

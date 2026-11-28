@@ -4,15 +4,18 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
-	"github.com/samclement/swhurl-platform/v2/console"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -61,6 +64,20 @@ func githubServer(t *testing.T) (*consoleServer, *githubtest.ConsoleFake) {
 	fake.History = map[string]map[string]string{mergedCommit: webProdFiles()}
 	server.github, server.appRepos = fake, true
 	server.pin(console.SourceOf{Console: fake, Repository: "owner/repo", Token: "tok"})
+	records := map[string]string{}
+	for _, job := range activityJobs() {
+		raw, err := json.Marshal(map[string]any{"id": job.ID, "action": job.Action, "unit": job.Unit,
+			"identity": job.Identity, "started": job.Started, "finished": job.Finished, "state": job.State,
+			"link": job.Link, "lines": job.Lines, "resume": job.Resume, "outcomes": job.Outcomes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		records["job-"+strconv.Itoa(job.ID)] = string(raw)
+	}
+	store := jobsFake(records)
+	server.jobs = console.NewJobs(context.Background(), console.JobsInputs{
+		Store: kube.JobRecords{Data: store, Pods: store, Name: "console-jobs-dev"}, Owner: "console-new",
+		Now: func() time.Time { return activityNow }, Sleep: time.Sleep})
 	return server, fake
 }
 
@@ -77,11 +94,12 @@ func readsNamed(fake *githubtest.ConsoleFake, prefix string) int {
 }
 
 // Activity, through the server's own reads, renders the Python console's bytes: main from its tarball, the merge
-// commit from one targeted read of web/prod's files, kept, so the next page reads neither again.
+// commit from one targeted read of web/prod's files, saved in the job, so the next page reads neither again.
 func TestActivityReadsAMergeCommitByItsFiles(t *testing.T) {
 	server, fake := githubServer(t)
-	jobs := activityJobs()
 	for page := 1; page <= 2; page++ {
+		jobs := activityJobs()
+		jobs[2], _ = server.jobs.Get(context.Background(), 7)
 		data := server.readActivity(context.Background(), jobs, readsOf(server))
 		data.shell = activityShell("/activity", true, jobs)
 		sameAsGolden(t, server, "activity.html", "activity.html", data)

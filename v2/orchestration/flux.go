@@ -184,7 +184,7 @@ func (r *fluxRun) wait(kind string, ref observe.Ref, token string) error {
 			return err
 		}
 		ready, message := state.ready()
-		handled := state.Status.LastHandledReconcileAt == token &&
+		handled := handledSince(state.Status.LastHandledReconcileAt, token) &&
 			state.Status.ObservedGeneration == state.Metadata.Generation
 		if handled && ready == "True" {
 			r.applied(kind, state.Status)
@@ -199,6 +199,21 @@ func (r *fluxRun) wait(kind string, ref observe.Ref, token string) error {
 		}
 		r.inputs.Sleep(fluxPoll)
 	}
+}
+
+// handledSince is whether the controller has handled this request: its token, or a later request's that overwrote it
+// (two reconciles sharing a source each annotate it, and only the last one is handled). Only two timestamps are
+// ordered; any other token has to match exactly.
+func handledSince(handled, token string) bool {
+	if handled == token {
+		return true
+	}
+	at, err := time.Parse(time.RFC3339Nano, handled)
+	if err != nil {
+		return false
+	}
+	requested, err := time.Parse(time.RFC3339Nano, token)
+	return err == nil && at.After(requested)
 }
 
 // applied is what a handled request fetched or applied, as the unit's own status states it.

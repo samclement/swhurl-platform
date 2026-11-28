@@ -24,6 +24,7 @@ type fluxCluster struct {
 	absent          bool
 	readErr         error
 	writeErr        error
+	later           string // another request's token that overwrites each annotation this action makes
 
 	reads   []observe.Ref
 	writes  []observe.Ref
@@ -114,6 +115,9 @@ func (f *fluxCluster) Patch(_ context.Context, ref observe.Ref, patch []byte) er
 	}
 	if token := change.Metadata.Annotations[fluxRequestedAt]; token != "" {
 		f.tokens[ref] = token
+		if f.later != "" {
+			f.tokens[ref] = f.later
+		}
 	}
 	return nil
 }
@@ -191,6 +195,41 @@ func TestFluxReconcileRequestsTheSourceThenTheUnit(t *testing.T) {
 	}
 	if len(found.sleeps) != 2 || found.sleeps[0] != fluxPoll || found.sleeps[1] != fluxPoll {
 		t.Fatalf("pauses %v, want one two-second poll for each object", found.sleeps)
+	}
+}
+
+// Two reconciles sharing a source each annotate it, and the controller handles only the last: a later handled
+// timestamp answers the earlier request too, still subject to generation and Ready, so the earlier waiter goes on to
+// its own unit. An earlier timestamp or a token that is not a time answers nothing.
+func TestFluxAcceptsALaterHandledRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name, later, ready string
+		stale              bool
+		writes             int
+		message            string
+	}{
+		{"a later request", "2026-11-09T12:00:01.5Z", "True", false, 2, ""},
+		{"a later request that failed", "2026-11-09T12:00:01Z", "False", false, 1,
+			"GitRepository swhurl-platform reconciliation failed: fetch failed"},
+		{"a later request on a previous spec", "2026-11-09T12:00:01Z", "True", true, 1,
+			"timed out after 10m waiting for GitRepository swhurl-platform; it may still finish (check the unit page)"},
+		{"an earlier request", "2026-11-09T11:59:59Z", "True", false, 1,
+			"timed out after 10m waiting for GitRepository swhurl-platform; it may still finish (check the unit page)"},
+		{"a token that is not a time", "manual", "True", false, 1,
+			"timed out after 10m waiting for GitRepository swhurl-platform; it may still finish (check the unit page)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := newFluxCluster()
+			cluster.later, cluster.ready, cluster.staleGeneration = tt.later, tt.ready, tt.stale
+			cluster.message = "fetch failed"
+			found := runFlux(t, cluster, "gw", FluxReconcile)
+			if tt.message == "" && found.err != nil || tt.message != "" && (found.err == nil || found.err.Error() != tt.message) {
+				t.Fatalf("error %v, want %q", found.err, tt.message)
+			}
+			if len(cluster.writes) != tt.writes || cluster.writes[0] != sourceRef() {
+				t.Fatalf("wrote %v, want %d annotations from the source", cluster.writes, tt.writes)
+			}
+		})
 	}
 }
 

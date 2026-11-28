@@ -1,0 +1,12 @@
+id: 111
+title: "Orchestration state review, judgement pass: where a generic state-machine primitive (states + transition returning next state or named refusal) simplifies vs adds ceremony, trade-offs table and one numbered recommendation (sections 4-6 of docs/orchestration-state-review.md; no code changes; recommending against is acceptable)"
+state: ready
+scope:
+  - docs/orchestration-state-review.md
+checks:
+  - test -s docs/orchestration-state-review.md && grep -q "^## 5\." docs/orchestration-state-review.md && grep -qi "^## .*recommendation" docs/orchestration-state-review.md
+  - make check-docs
+after:
+  - 110
+reason: null
+notes: []

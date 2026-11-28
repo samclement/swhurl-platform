@@ -1,6 +1,6 @@
 id: 97
 title: Reject direct image manifests incompatible with linux/amd64 (audit 6)
-state: ready
+state: done
 scope:
   - v2/adapters/registry/registry.go
   - v2/adapters/registry/registry_test.go
@@ -17,3 +17,9 @@ notes:
   - at: 2026-11-27T22:59:10.616Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T04:57:08.859Z
+    commit: 065890a0cf26
+    text: "done: Registry image() now refuses a config whose os/architecture is not linux/amd64 (NoPlatformManifest, subject config), so a direct ARM-only manifest no longer passes; index selection unchanged. Regression test (arm64, windows, missing platform) fails without fix. Docs: apps.md, v2-status.md. Commit 065890a0. Not verified live against ghcr.io."
+  - at: 2026-11-28T04:58:57.151Z
+    commit: 54cc6a4f3d8e
+    text: branch dsa/01M8G815Z7S34X65CVB48C6RZ1/task-97

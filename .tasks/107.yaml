@@ -29,3 +29,6 @@ notes:
   - at: 2026-11-28T07:38:38.689Z
     commit: 654377c511a7
     text: "Scope widened to v2/archtest/api.txt (operator approved 2026-11-28): the job record's exported fields change, so the public-API baseline follows."
+  - at: 2026-11-28T07:41:04.119Z
+    commit: acfea105457b
+    text: "From 106 followup: ChangeReads.Reach (console/changes.go) has no context, so consoleServer.reach saves with context.Background(); thread the page ctx through here. See 106's 'For 107' note for Capture/record keys."

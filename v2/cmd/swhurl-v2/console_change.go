@@ -24,17 +24,22 @@ import (
 // (404 for no such change or instance, 409 when it cannot write or has no records, 400 for a refused form); what is
 // left is v2's command, run as a job whose lines and link the operator reads.
 func (s *consoleServer) changeApp(w http.ResponseWriter, r *http.Request) {
-	app, env, change := r.PathValue("app"), r.PathValue("env"), r.PathValue("change")
+	fields, err := formFields(r)
+	if err != nil {
+		s.failure(w, r, http.StatusBadRequest, "The form could not be read: "+err.Error())
+		return
+	}
+	s.startAppChange(w, r, r.PathValue("app"), r.PathValue("env"), r.PathValue("change"), fields)
+}
+
+// startAppChange is one app change from a form already read: its request's body is spent, so the fields come with it.
+func (s *consoleServer) startAppChange(w http.ResponseWriter, r *http.Request, app, env, change string,
+	fields map[string][]string) {
 	kind := "v2-" + change
 	one, _ := console.ChangeNamed(kind)
 	instance, instanceKnown := pages.Named(app, env)
 	if !instanceKnown || !oneOf(change, appChanges) {
 		s.failure(w, r, http.StatusNotFound, "No such app instance or change.")
-		return
-	}
-	fields, err := formFields(r)
-	if err != nil {
-		s.failure(w, r, http.StatusBadRequest, "The form could not be read: "+err.Error())
 		return
 	}
 	if !s.hasGitHub {
@@ -209,7 +214,7 @@ func (s *consoleServer) changeFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 // useOffer is the catalogue's Use: the app chosen there connects to the app whose offer was being read, as its own
-// connection form would. It is the same handler, with the chosen app in the path.
+// connection form would: the same change, from the fields it read once.
 func (s *consoleServer) useOffer(w http.ResponseWriter, r *http.Request) {
 	fields, err := formFields(r)
 	if err != nil {
@@ -221,9 +226,7 @@ func (s *consoleServer) useOffer(w http.ResponseWriter, r *http.Request) {
 		s.failure(w, r, http.StatusBadRequest, "Choose the app that will use it.")
 		return
 	}
-	r.SetPathValue("app", chosen)
-	r.SetPathValue("change", "connect")
-	s.changeApp(w, r)
+	s.startAppChange(w, r, chosen, r.PathValue("env"), "connect", fields)
 }
 
 // first is one form field's first value.

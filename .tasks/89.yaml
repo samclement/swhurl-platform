@@ -1,6 +1,6 @@
 id: 89
 title: SQLite swap rolls back; failed rollback prevents automatic app restart (audit 2)
-state: active
+state: done
 scope:
   - images/backup/tool/restore.go
   - images/backup/tool/restore_test.go
@@ -32,3 +32,15 @@ notes:
   - at: 2026-11-28T03:30:06.409Z
     commit: 19240c33226c
     text: Authorize narrow test-only edits to v2/cmd/swhurl-v2/status_test.go and restore_test.go for failed-Job fixtures carrying explicit database-in-place evidence? -> Operator approved both files. Added both to scope. Preserve coverage that missing safe evidence prevents restart; do not weaken fail-closed behavior.
+  - at: 2026-11-28T03:42:20.935Z
+    commit: a7bd383f8c5c
+    text: "done: Backup tool: swap reverses completed moves on failure; failed reversal keeps before-restore dir + staged copy, names both, omits in-place line. v2 restore restarts app after a Job that may have run only on Complete or the job's '[OK] The live database is in place, unchanged' log line; else 'database' step fails, app stays stopped, Flux/backups suspended. Offline only; no live restore."
+  - at: 2026-11-28T03:42:20.935Z
+    commit: a7bd383f8c5c
+    text: "followup: docs/current-state.md has no dated entry for this offline restore change (not in scope)."
+  - at: 2026-11-28T03:42:20.935Z
+    commit: a7bd383f8c5c
+    text: "followup: v2/adapters/kube TestExecUpgradeRefusalsAndCancellation hung once to the 600s go test timeout during tk done (log .tasks/logs/89-1.log); passes 3/3 alone in ~0.09s. Intermittent hang, unrelated to this task."
+  - at: 2026-11-28T03:44:08.946Z
+    commit: cd4aa848302e
+    text: branch dsa/01M8FMJ3TB45VYHEPEAB03FZ92/task-89

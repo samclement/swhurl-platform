@@ -1,6 +1,6 @@
 id: 105
 title: Run local checks on merged main then remove only merged clean worktrees; no force or branch deletion
-state: ready
+state: done
 scope:
   - docs/current-state.md
 checks:
@@ -13,3 +13,15 @@ notes:
   - at: 2026-11-28T06:54:28.690Z
     commit: cf4de92a5941
     text: Operator approved local validation and safe cleanup. No source edits required; docs/current-state.md is nominal task scope only (optional factual offline evidence). Run checks on merged main and use fail-fast shell syntax loop. Then remove ONLY non-current, unlocked worktrees with branch merged into main and completely clean status including untracked. Skip/report anything uncertain, dirty, unmerged or locked. Never force, delete branches, push or run live operations. Do not remove own active worktree or current main checkout. Use shared machine lease for substantial test commands. Record each check exit and each removed/skipped path in tk notes. Existing historical task worktrees may be cleaned if eligible. No code repairs without separate approval.
+  - at: 2026-11-28T06:56:19.502Z
+    commit: 58b04e7fc3d3
+    text: "Checks on root main (branch main, HEAD 58b04e7fc3d3, only non-HEAD change .tasks/105.yaml from claim), under pi-durable-subagents hold machine --shared: make check exit 0; make check-templates exit 0; fail-fast bash -n loop (host/*.sh tests/fixtures/*.sh) exit 0; tree unchanged after. Own worktree task-105 branch dsa/01M8GEYMNW0HWV2JYWF4C7F12Q/task-105 at 58b04e7f (ancestor of main)."
+  - at: 2026-11-28T06:56:19.663Z
+    commit: 58b04e7fc3d3
+    text: "Worktree cleanup (git worktree remove, no force; no branch deleted, 93 dsa/* branches remain): REMOVED .dsa/<id>/task-{63,64,65,66,67,69,70,71,72,73,74,75,76,77,81,82,83,84,85,95,103} — all 21 unlocked, task done, branch ancestor of main, no tracked/untracked changes, no process cwd inside. Ignored files removed with them were only build artifacts: v2/swhurl-v2 (74,75), .ruff_cache and __pycache__ (95,103). SKIPPED: root main checkout and own task-105 (by rule). None skipped as dirty/unmerged/locked. Remaining worktrees: root main, task-105."
+  - at: 2026-11-28T06:56:19.927Z
+    commit: 58b04e7fc3d3
+    text: "done: Operational, no source change. On main 58b04e7f: make check, make check-templates and the fail-fast bash -n loop all exit 0. Removed 21 merged, clean, unlocked historical worktrees (tasks 63-85, 95, 103) with plain git worktree remove; no branches deleted, no force, push or live action. Kept root main and task-105."
+  - at: 2026-11-28T06:58:43.868Z
+    commit: 58b04e7fc3d3
+    text: branch dsa/01M8GEYMNW0HWV2JYWF4C7F12Q/task-105

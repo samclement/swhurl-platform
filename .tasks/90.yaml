@@ -1,6 +1,6 @@
 id: 90
 title: Stream backup uploads with replayable bodies and unchanged checksums (audit 12)
-state: ready
+state: done
 scope:
   - images/backup/tool/upload.go
   - images/backup/tool/tool_test.go
@@ -13,3 +13,9 @@ notes:
   - at: 2026-11-27T22:59:09.369Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T03:46:39.959Z
+    commit: c2bfcbd67cc9
+    text: "done: putObject streams the archive: hashes the file with io.Copy, sends an io.SectionReader of the open file with ContentLength and a GetBody that re-reads the same bytes on each retry; checksum headers unchanged. Tests assert Content-Length and that a retried upload replays the full body (fails without GetBody). Not verified against real S3/live cluster."
+  - at: 2026-11-28T03:49:29.801Z
+    commit: d16831ef6a40
+    text: branch dsa/01M8G420VCZJGYFPYVW4DEC1WP/task-90

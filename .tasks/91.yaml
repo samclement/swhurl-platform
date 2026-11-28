@@ -1,6 +1,6 @@
 id: 91
 title: Prevent overlapping console pods with single-replica non-overlapping rollout (audit 14)
-state: ready
+state: active
 scope:
   - platform/console/helmrelease.yaml
   - platform/console/*.json

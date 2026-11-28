@@ -9,7 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
+	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
+	"github.com/samclement/swhurl-platform/v2/console"
 	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
@@ -218,5 +221,40 @@ func TestPromoteRefusesAnIncompleteCommandLine(t *testing.T) {
 		&stdout, &diagnostic, os.ReadFile, writer)
 	if status != 2 || !strings.Contains(diagnostic.String(), "usage:") {
 		t.Fatalf("a command line without --env: exit %d", status)
+	}
+}
+
+// The image a person reviewed travels from the console's proposal to the job, which checks it against the commit it
+// downloads: a staging that still selects it opens the promotion, one that moved since the review opens nothing.
+func TestPromoteProposalCarriesTheReviewedImage(t *testing.T) {
+	tree := changeTreeFiles(t)
+	tree["v2-records/demo-orders/prod/instance.json"] = string(fixture(t, "prod.json"))
+	tree["v2-records/demo-orders/prod/release.json"] = string(fixture(t, "r41.json"))
+	staging := "ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("b", 64)
+	stale := "ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("a", 64)
+	for _, test := range []struct {
+		image   string
+		refusal string
+	}{{staging, ""}, {stale, "refused: image: stale_review: staging selects " + staging + ", not the reviewed " + stale}} {
+		source := &githubtest.ConsoleFake{Commit: changeRevision, Archive: changeTarball(t, tree)}
+		publisher := githubtest.NewPublisher(githubtest.PublisherScenario())
+		var stdout, diagnostic bytes.Buffer
+		c := cli{out: &stdout, diagnostic: &diagnostic, readFile: os.ReadFile, writer: files.Disk{},
+			consoleSource: source, publisher: publisher, stdin: strings.NewReader(""),
+			getenv: func(name string) string {
+				if name == consoleTokenEnv {
+					return "fixture-token"
+				}
+				return ""
+			}}
+		proposal := console.ChangeProposal{Kind: "v2-promote", Identity: "operator@example.test", Repository: "owner/repo",
+			Request: console.Request{App: "demo-orders", Env: "staging", Image: test.image}}
+		_, status := c.openChange(proposalSpec(proposal))
+		if test.refusal == "" && (status != 0 || len(publisher.Pulls) != 1) {
+			t.Fatalf("the reviewed image exited %d with %d pull requests: %s", status, len(publisher.Pulls), &diagnostic)
+		}
+		if test.refusal != "" && (status == 0 || len(publisher.Pulls) != 0 || !strings.Contains(diagnostic.String(), test.refusal)) {
+			t.Fatalf("a stale review exited %d with %d pull requests: %s", status, len(publisher.Pulls), &diagnostic)
+		}
 	}
 }

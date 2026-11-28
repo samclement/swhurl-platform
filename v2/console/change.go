@@ -82,7 +82,8 @@ var changes = []Change{
 	{Name: "v2-team", Title: "apps: change the team of {name}", Envs: []string{"staging", "prod"}, BothEnvs: true, Takes: []string{"set"}, Needs: []string{"set"},
 		Operations: []Operation{Edit, Render}, steps: appSettingSteps},
 	{Name: "v2-remove", Title: "apps: remove {name}/{env}", Envs: []string{"staging", "prod"}, Operations: []Operation{Remove, Render}, steps: removeSteps},
-	{Name: "v2-promote", Title: "apps: promote {name}/staging to {name}/prod", Envs: []string{"staging"}, TargetEnv: "prod", BothEnvs: true, Operations: []Operation{Promote, Render}, steps: promoteSteps},
+	{Name: "v2-promote", Title: "apps: promote {name}/staging to {name}/prod", Envs: []string{"staging"}, TargetEnv: "prod", BothEnvs: true, Takes: []string{"image"},
+		Operations: []Operation{Promote, Render}, steps: promoteSteps},
 }
 
 // Changes is every kind of console change.

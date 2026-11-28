@@ -394,10 +394,27 @@ func (s Server) AppChange(ctx context.Context, instance pages.Instance, one Chan
 	if problem, refused := offered(change, instance.Env, instance.App, rows, tree, fields); refused {
 		return nil, problem, http.StatusBadRequest
 	}
+	image := ""
+	if change == "promote" {
+		if image, err = reviewedImage(fields, row); err != nil {
+			return nil, err.Error(), http.StatusConflict
+		}
+	}
 	return &ChangeProposal{Kind: one.Name, Identity: identity, Repository: s.Repository,
 		Request: Request{App: instance.App, Env: instance.Env, Settings: flags.Settings,
 			Calls: flags.Calls, Subscriptions: flags.Subscriptions, DropCalls: flags.DropCalls,
-			DropSubscriptions: flags.DropSubscriptions, Allows: flags.Allows, Disallows: flags.Disallows}}, "", 0
+			DropSubscriptions: flags.DropSubscriptions, Allows: flags.Allows, Disallows: flags.Disallows,
+			Image: image}}, "", 0
+}
+
+// reviewedImage is the image a promotion's form was reviewed at, refused when staging selects another at the commit
+// this request read. The proposal carries it, so the job refuses a staging that moves after this read too.
+func reviewedImage(fields map[string][]string, staging *pages.AppRow) (string, error) {
+	image := ""
+	if values := fields["image"]; len(values) > 0 {
+		image = strings.TrimSpace(values[0])
+	}
+	return image, staleReview(staging.ImageReference(), image)
 }
 
 // appFormRefusal is what a change refuses before its fields are read: a change a page does not offer, an environment

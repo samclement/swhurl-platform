@@ -218,8 +218,23 @@ func removeSteps(request Request, _ files.Checkout) ([]Step, error) {
 
 // promoteSteps is a promotion of what staging selects now: it expects the revision production's record states, the
 // instance a promotion changes, so a production changed since the working copy was read refuses rather than being
-// overwritten, and production's files come from the render beside staging's.
+// overwritten, and production's files come from the render beside staging's. A request that names the image it was
+// reviewed at is refused when staging selects another in the working copy; one that names none promotes what staging
+// selects, as the command always has.
 func promoteSteps(request Request, tree files.Checkout) ([]Step, error) {
+	if request.Image != "" {
+		data, err := files.Read(kernel.ReleaseRecordPath(tree.Records, request.App, "staging"), "release")
+		if err != nil {
+			return nil, err
+		}
+		staging, err := kernel.DecodeRelease(data)
+		if err != nil {
+			return nil, err
+		}
+		if err := staleReview(staging.Artifact.Image+"@"+staging.Artifact.Digest, request.Image); err != nil {
+			return nil, err
+		}
+	}
 	current, err := instanceRecord(tree, request.App, "prod")
 	if err != nil {
 		return nil, err
@@ -229,6 +244,16 @@ func promoteSteps(request Request, tree files.Checkout) ([]Step, error) {
 		return nil, err
 	}
 	return []Step{PromoteStep{App: request.App, Env: "prod", Expected: string(expected)}, RenderStep{}}, nil
+}
+
+// staleReview refuses a promotion whose staging selects another image than the one a person reviewed (image@digest):
+// staging moved after the review, so promoting would carry an image nobody saw.
+func staleReview(selected, reviewed string) error {
+	if selected == reviewed {
+		return nil
+	}
+	return &Refusal{Subject: "image", Reason: "stale_review: staging selects " + selected + ", not the reviewed " +
+		reviewed + ": refresh the staging app page and review the image before promotion"}
 }
 
 // instanceRecord is one instance's record as the working copy states it.

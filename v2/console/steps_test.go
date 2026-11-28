@@ -1,6 +1,7 @@
 package console
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/kernel"
+	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
 // Each typed step runs its own operation and quotes the line a checkout runs it with.
@@ -135,5 +137,70 @@ func TestStepsRefuse(t *testing.T) {
 		if _, err := change.Steps(test.request, tree); err == nil || err.Error() != test.want {
 			t.Errorf("%s gave %v, want %s", test.kind, err, test.want)
 		}
+	}
+}
+
+// A promotion that names the image it was reviewed at runs only while the working copy's staging still selects that
+// image: staging moving between the review and the job refuses before a file is written, and a promotion that names
+// no image promotes what staging selects, as the command's own use always has.
+func TestPromoteStepsRefuseAStagingThatMoved(t *testing.T) {
+	dir := t.TempDir()
+	place := func(record, fixture string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("..", "testdata", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "v2-records", "demo-orders", record)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	place("prod/instance.json", "prod.json")
+	place("staging/release.json", "r41.json")
+	tree := WorkingCopy(dir)
+	change, _ := ChangeNamed("v2-promote")
+	reviewed := "ghcr.io/samclement/demo-orders@sha256:" + strings.Repeat("a", 64)
+	for _, request := range []Request{{App: "demo-orders", Env: "staging", Image: reviewed},
+		{App: "demo-orders", Env: "staging"}} {
+		if steps, err := change.Steps(request, tree); err != nil || len(steps) != 2 {
+			t.Fatalf("%+v runs %v, %v", request, steps, err)
+		}
+	}
+	place("staging/release.json", "r42.json")
+	_, err := change.Steps(Request{App: "demo-orders", Env: "staging", Image: reviewed}, tree)
+	want := "refused: image: stale_review: staging selects ghcr.io/samclement/demo-orders@sha256:" +
+		strings.Repeat("b", 64) + ", not the reviewed " + reviewed +
+		": refresh the staging app page and review the image before promotion"
+	if err == nil || err.Error() != want {
+		t.Fatalf("a staging that moved gave %v", err)
+	}
+	if _, err := change.Steps(Request{App: "demo-orders", Env: "staging"}, tree); err != nil {
+		t.Fatalf("a promotion without a reviewed image gave %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "v2-records", "demo-orders", "staging", "release.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := change.Steps(Request{App: "demo-orders", Env: "staging", Image: reviewed}, tree); err == nil {
+		t.Fatal("a reviewed promotion without staging's release was not refused")
+	}
+}
+
+// A promotion's form carries the image it was reviewed at, and a form older than the commit the request read, whose
+// staging selects another image now, is refused rather than promoting what nobody reviewed.
+func TestReviewedImage(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	staging := &pages.AppRow{Instance: pages.Instance{App: "web", Env: "staging"},
+		Inventory: &pages.Inventory{Artifact: pages.Artifact{Image: "ghcr.io/o/web", Digest: digest}}}
+	image, err := reviewedImage(map[string][]string{"image": {" ghcr.io/o/web@" + digest + " "}}, staging)
+	if err != nil || image != "ghcr.io/o/web@"+digest {
+		t.Fatalf("the reviewed image is %q, %v", image, err)
+	}
+	stale := map[string][]string{"image": {"ghcr.io/o/web@sha256:" + strings.Repeat("b", 64)}}
+	if _, err := reviewedImage(stale, staging); err == nil || !strings.Contains(err.Error(), "stale_review: staging selects ghcr.io/o/web@"+digest) {
+		t.Fatalf("a stale form gave %v", err)
 	}
 }

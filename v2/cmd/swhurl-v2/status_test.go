@@ -113,6 +113,10 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 		}
 		if strings.HasSuffix(r.URL.Path, "/log") {
 			w.Header().Set("Content-Type", "text/plain")
+			if a.jobFailed {
+				fmt.Fprint(w, failedRestoreLog)
+				return
+			}
 			fmt.Fprint(w, restoreLog)
 			return
 		}
@@ -201,6 +205,10 @@ func (a *api) serve(t *testing.T) *httptest.Server {
 // restoreLog is what the restore image prints on success: the fact the report carries as evidence.
 const restoreLog = "[OK] Restored the archive into /data/app.db (2 tables, integrity ok); " +
 	"the replaced files are in /data/before-restore-20261027T030405Z\n"
+
+// failedRestoreLog is what the restore image prints when a check refuses the copy: the live database is
+// untouched, and the in-place line is what lets the run put the app back.
+const failedRestoreLog = "[OK] The live database is in place, unchanged\n[ERROR] 3 tables, expected 2\n"
 
 // backupSelector is what the observation asks for: the compiled backup job's own label, without the instance's
 // restore pods (which carry it so the backup policy admits them).

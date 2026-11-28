@@ -374,12 +374,23 @@ func TestRestoreUndoesAndRefuses(t *testing.T) {
 		{"app pods do not stop", func(f *fakeCluster) { f.appPods = 1 }, []string{"delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "pods-gone", 1, false, false},
 		{"a backup run does not finish", func(f *fakeCluster) { f.backupActive = 1000 },
 			[]string{"delete-secret", "backup-resume", "resume"}, AppUnknown, "backup-drain", 1, false, false},
-		{"job cannot be created", func(f *fakeCluster) { f.failOn = "create:Job" },
-			[]string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job", 1, false, false},
-		{"job reports failure", func(f *fakeCluster) { f.jobStates = []string{"Running", "Failed"} },
-			[]string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job-result", 1, false, false},
+		// Once the Job may have run, the app comes back only on evidence the database is in place: the job's
+		// own line in its log. Without it the app, its release and its schedule stay stopped.
+		{"job is refused", func(f *fakeCluster) {
+			f.failOn, f.failErr = "create:Job", &kube.Error{Code: kube.Failed, Subject: "write", Reason: observe.ReasonStatus}
+		}, []string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job", 1, false, false},
+		{"job create has no answer", func(f *fakeCluster) { f.failOn, f.failErr = "create:Job", timedOut },
+			[]string{"delete-job", "delete-secret", "database"}, AppStopped, "job", 0, true, true},
+		{"job fails with the database in place", func(f *fakeCluster) {
+			f.jobStates, f.log = []string{"Running", "Failed"}, "[ERROR] 3 tables, expected 2\n"+databaseInPlace+"\n"
+		}, []string{"delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job-result", 1, false, false},
+		{"job fails without saying the database is in place", func(f *fakeCluster) { f.jobStates = []string{"Running", "Failed"} },
+			[]string{"delete-job", "delete-secret", "database"}, AppStopped, "job-result", 0, true, true},
+		{"job fails and its log cannot be read", func(f *fakeCluster) {
+			f.jobStates, f.failOn, f.log = []string{"Failed"}, "logs:", databaseInPlace+"\n"
+		}, []string{"delete-job", "delete-secret", "database"}, AppStopped, "job-result", 0, true, true},
 		{"job times out", func(f *fakeCluster) { f.jobStates = []string{"Running"} },
-			[]string{"log", "delete-job", "delete-secret", "backup-resume", "scale-up", "resume"}, AppUnknown, "job-finished", 1, false, false},
+			[]string{"log", "delete-job", "delete-secret", "database"}, AppStopped, "job-finished", 0, true, true},
 		{"job cannot be deleted", func(f *fakeCluster) { f.failOn = "delete:Job" },
 			[]string{"delete-job", "delete-secret"}, AppStopped, "delete-job", 0, true, true},
 		{"the restore pod outlives its Job", func(f *fakeCluster) { f.podsStay = true },
@@ -547,7 +558,7 @@ func TestRestoreOfAStoppedAppReportsStopped(t *testing.T) {
 func TestRestoreUnwindsOnItsOwnContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cluster := &fakeCluster{replicas: 1, cancelOn: "create:Job:", cancel: cancel}
+	cluster := &fakeCluster{replicas: 1, cancelOn: `patch:Deployment:{"spec":{"replicas":0}}`, cancel: cancel}
 	outcome, err := Restore(ctx, restoreInputs(t, cluster))
 	if err == nil {
 		t.Fatal("a run whose context was cancelled returned no error")
@@ -555,7 +566,7 @@ func TestRestoreUnwindsOnItsOwnContext(t *testing.T) {
 	if outcome.State != RestoreFailed {
 		t.Fatalf("outcome %+v", outcome)
 	}
-	for _, event := range []string{"delete:Job:", "delete:Secret:", `patch:Deployment:{"spec":{"replicas":1}}`,
+	for _, event := range []string{"delete:Secret:", `patch:Deployment:{"spec":{"replicas":1}}`,
 		`patch:HelmRelease:{"spec":{"suspend":false}}`} {
 		if indexOf(cluster.events, event) < 0 {
 			t.Fatalf("%s did not run on the undo's own context:\n%s", event, strings.Join(cluster.events, "\n"))
@@ -585,7 +596,7 @@ func TestRestoreLeavesAnAlreadySuspendedBackupAlone(t *testing.T) {
 // A release the operator had already suspended stays suspended, whether the run completes or unwinds: the run
 // does not resume a release it did not stop, and it does not claim to have left one behind.
 func TestRestoreLeavesAnAlreadySuspendedReleaseAlone(t *testing.T) {
-	for _, failOn := range []string{"", "create:Job"} {
+	for _, failOn := range []string{"", `patch:Deployment:{"spec":{"replicas":0}}`} {
 		t.Run("fail on "+failOn, func(t *testing.T) {
 			cluster := &fakeCluster{replicas: 1, releaseSuspended: true, failOn: failOn}
 			outcome, err := Restore(context.Background(), restoreInputs(t, cluster))

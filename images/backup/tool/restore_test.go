@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -220,5 +221,86 @@ func TestRestoreStagesTheCopyBesideTheDatabase(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(f.current)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// failingRename makes the swap's rename after the first `succeed` fail, and with undo every rename back out of
+// before-restore-<UTC>/ too: a swap whose reversal fails as well.
+func failingRename(t *testing.T, succeed int, undo bool) {
+	t.Helper()
+	t.Cleanup(func() { rename = os.Rename })
+	calls := 0
+	rename = func(from, to string) error {
+		calls++
+		if calls == succeed+1 || undo && strings.Contains(from, "before-restore-") {
+			return os.ErrPermission
+		}
+		return os.Rename(from, to)
+	}
+}
+
+// A swap that fails part-way reverses the moves it made: the live database and its WAL are back, nothing is
+// kept beside them, and the log states the database is in place, which is what lets v2 restart the app.
+func TestRestoreReversesAFailedSwap(t *testing.T) {
+	for _, succeed := range []int{1, 2} { // the -wal's move fails; the copy's move fails
+		f := fixture(t, 2, "")
+		if err := os.WriteFile(f.current+"-wal", []byte("wal"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		failingRename(t, succeed, false)
+		var out strings.Builder
+		err := restoreSQLite(context.Background(), f.withURL(), &out, f.server.Client())
+		if err == nil || !strings.Contains(err.Error(), "put back") || errors.Is(err, errNotInPlace) {
+			t.Fatalf("after %d moves: error = %v", succeed, err)
+		}
+		// The WAL first: SQLite discards a WAL it cannot read when it opens the database.
+		if wal, err := os.ReadFile(f.current + "-wal"); err != nil || string(wal) != "wal" {
+			t.Fatalf("the WAL was not put back: %v", err)
+		}
+		if tablesIn(t, f.current) != 1 {
+			t.Fatal("the live database was not put back")
+		}
+		if folders, _ := filepath.Glob(filepath.Join(filepath.Dir(f.current), "before-restore-*")); len(folders) != 0 {
+			t.Fatalf("a reversed swap kept a folder: %v", folders)
+		}
+		if _, err := os.Stat(stagingPath(f.current)); !os.IsNotExist(err) {
+			t.Fatalf("the staged copy was left behind: %v", err)
+		}
+		if !strings.Contains(out.String(), databaseInPlace+"\n") {
+			t.Fatalf("output %q", out.String())
+		}
+	}
+}
+
+// A swap whose reversal fails leaves the database possibly missing: the job keeps the replaced files and the
+// checked copy, names both, and prints no in-place line, so v2 leaves the app stopped.
+func TestRestoreKeepsTheFilesWhenTheReversalFails(t *testing.T) {
+	f := fixture(t, 2, "")
+	failingRename(t, 1, true)
+	var out strings.Builder
+	err := restoreSQLite(context.Background(), f.withURL(), &out, f.server.Client())
+	if !errors.Is(err, errNotInPlace) || !strings.Contains(err.Error(), stagingPath(f.current)) {
+		t.Fatalf("error = %v", err)
+	}
+	folders, _ := filepath.Glob(filepath.Join(filepath.Dir(f.current), "before-restore-*"))
+	if len(folders) != 1 || tablesIn(t, filepath.Join(folders[0], "app.db")) != 1 || !strings.Contains(err.Error(), folders[0]) {
+		t.Fatalf("the replaced database is not kept and named: %v %v", folders, err)
+	}
+	if tablesIn(t, stagingPath(f.current)) != 2 {
+		t.Fatal("the checked copy is not kept")
+	}
+	if strings.Contains(out.String(), databaseInPlace) {
+		t.Fatalf("output %q claims the database is in place", out.String())
+	}
+}
+
+// Every refusal before the swap leaves the database untouched, and says so for v2.
+func TestRestoreRefusalStatesTheDatabaseIsInPlace(t *testing.T) {
+	f := fixture(t, 2, "")
+	f.env = replace(f.env, "TABLES", "3")
+	var out strings.Builder
+	if err := restoreSQLite(context.Background(), f.withURL(), &out, f.server.Client()); err == nil ||
+		out.String() != databaseInPlace+"\n" {
+		t.Fatalf("output %q, %v", out.String(), err)
 	}
 }

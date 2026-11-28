@@ -345,8 +345,9 @@ func TestRestoreChecksTheConfirmationAndCredentialsFirst(t *testing.T) {
 	}
 }
 
-// A Job that fails is an exit 1 with the document written: the archive's checks did not pass, so the live
-// database is untouched, the app is put back, and the report says which step stopped and what the job said.
+// A Job that fails is an exit 1 with the document written: the archive's checks did not pass, the job's log
+// states the live database is in place, so the app is put back, and the report says which step stopped and
+// what the job said.
 func TestRestoreReportsAFailedJob(t *testing.T) {
 	api := &api{namespace: "demo-orders-staging", digest: digestOf(t, "r43.json"), backup: true, jobFailed: true}
 	status, stdout, stderr, _ := performRestore(t, api, "--age-key-file", ageKeyFile(t))
@@ -359,7 +360,7 @@ func TestRestoreReportsAFailedJob(t *testing.T) {
 		t.Fatalf("the action block is %v", action)
 	}
 	if job := action["job"].(map[string]any); job["state"] != "failed" ||
-		!strings.Contains(job["log"].(string), "[OK] Restored") {
+		!strings.Contains(job["log"].(string), "[OK] The live database is in place, unchanged") {
 		t.Fatalf("the job's evidence is %v", job)
 	}
 	// The undo ran: the app's replicas are back and the release is not left suspended.

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,10 +69,30 @@ func restoreSettingsOf(environ []string) (restoreSettings, error) {
 	return job, nil
 }
 
+// databaseInPlace is the line a failed restore prints when the live database is where it was, unchanged: v2's
+// restore (v2/recovery) scales the app back up after a failed job only when its log carries this exact line.
+const databaseInPlace = "[OK] The live database is in place, unchanged"
+
+// errNotInPlace marks a swap that could not be reversed: the live database may be missing or partial, so the
+// job prints no databaseInPlace line and keeps every file a recovery needs.
+var errNotInPlace = errors.New("the live database is not in place")
+
+// rename is os.Rename, replaced only by tests that need one move of the swap to fail.
+var rename = os.Rename
+
 // restoreSQLite is the job: fetch the archive, decrypt and check it, and only then replace the database —
 // keeping what was there in before-restore-<UTC>/ beside it. A copy that fails any check never replaces the
-// live database.
+// live database, and every failure that leaves the database in place says so.
 func restoreSQLite(ctx context.Context, environ []string, out io.Writer, client *http.Client) error {
+	err := restoreChecked(ctx, environ, out, client)
+	if err != nil && !errors.Is(err, errNotInPlace) {
+		fmt.Fprintln(out, databaseInPlace)
+	}
+	return err
+}
+
+// restoreChecked is the restore's steps; restoreSQLite states what a failure left.
+func restoreChecked(ctx context.Context, environ []string, out io.Writer, client *http.Client) error {
 	job, err := restoreSettingsOf(environ)
 	if err != nil {
 		return err
@@ -118,7 +139,9 @@ func restoreSQLite(ctx context.Context, environ []string, out io.Writer, client 
 	}
 	replaced, err := replaceDatabase(job.Database, plaintext, time.Now().UTC())
 	if err != nil {
-		_ = os.Remove(plaintext)
+		if !errors.Is(err, errNotInPlace) {
+			_ = os.Remove(plaintext) // the checked copy is the operator's to put in place when the swap is half-done
+		}
 		return err
 	}
 	fmt.Fprintf(out, "[OK] Restored the archive into %s (%d tables, integrity ok); the replaced files are in %s\n",
@@ -182,25 +205,42 @@ func checkDatabase(ctx context.Context, path string) (int64, error) {
 func stagingPath(database string) string { return database + ".restore" }
 
 // replaceDatabase puts the checked copy in place, keeping the database and its -wal/-shm files in
-// before-restore-<UTC>/ beside it. The directory is created only when the copy is ready to be moved.
+// before-restore-<UTC>/ beside it. The directory is created only when the copy is ready to be moved. A move
+// that fails reverses the moves already made, newest first; a reversal that fails too is errNotInPlace, and
+// the kept files and the checked copy stay where the error says.
 func replaceDatabase(database, copy string, now time.Time) (string, error) {
 	folder := filepath.Join(filepath.Dir(database), "before-restore-"+stamp(now))
 	if err := os.Mkdir(folder, 0o700); err != nil && !os.IsExist(err) {
 		return "", fmt.Errorf("cannot keep the replaced database: %v", err)
 	}
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		current := database + suffix
-		if _, err := os.Stat(current); err != nil {
-			continue // a WAL file that is not there is not an error; the database itself must be
+	var moved []string
+	err := func() error {
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			current := database + suffix
+			if _, err := os.Stat(current); err != nil {
+				continue // a WAL file that is not there is not an error; the database itself must be
+			}
+			if err := rename(current, filepath.Join(folder, filepath.Base(current))); err != nil {
+				return fmt.Errorf("cannot keep the replaced database: %v", err)
+			}
+			moved = append(moved, current)
 		}
-		if err := os.Rename(current, filepath.Join(folder, filepath.Base(current))); err != nil {
-			return "", fmt.Errorf("cannot keep the replaced database: %v", err)
+		if err := rename(copy, database); err != nil {
+			return fmt.Errorf("cannot put the restored database in place: %v", err)
+		}
+		return nil
+	}()
+	if err == nil {
+		return folder, nil
+	}
+	for i := len(moved) - 1; i >= 0; i-- {
+		if undo := rename(filepath.Join(folder, filepath.Base(moved[i])), moved[i]); undo != nil {
+			return "", fmt.Errorf("%v; %w: putting %s back failed (%v); the replaced files are in %s and the "+
+				"checked copy is %s", err, errNotInPlace, moved[i], undo, folder, copy)
 		}
 	}
-	if err := os.Rename(copy, database); err != nil {
-		return "", fmt.Errorf("cannot put the restored database in place: %v", err)
-	}
-	return folder, nil
+	_ = os.Remove(folder) // empty again; Remove leaves one that already held an earlier run's files
+	return "", fmt.Errorf("%v; the replaced files were put back", err)
 }
 
 // parseInt reads a non-negative decimal integer.

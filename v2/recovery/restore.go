@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/kube"
@@ -56,6 +57,11 @@ const (
 	// refused or timed-out request during a fifteen-minute wait is not evidence that the work stopped.
 	maxReadFailures = 3
 )
+
+// databaseInPlace is the line the backup image's restore job (images/backup/tool/restore.go) prints when it
+// failed but left the live database where it was, unchanged. It is the only evidence besides a completed Job
+// on which a run that started the Job puts the app back.
+const databaseInPlace = "[OK] The live database is in place, unchanged"
 
 // Cluster is what a restore reads and changes: both halves of the kube adapter, because a restore that could
 // not read the Deployment it scales would have to guess what it is returning the app to.
@@ -131,7 +137,8 @@ func (r *Refusal) Error() string { return "refused: " + r.Subject + ": " + r.Rea
 // Secret, suspends the release and the backup schedule, waits out a backup already running, stops the app,
 // runs the backup image's restore job on the app's own claim, reads the job's log, then puts the app back.
 // Every failure from the first change onward unwinds in the order the restore took the app apart — job,
-// secret, replicas, release — and each undo is attempted even when an earlier one failed.
+// secret, replicas, release — and each undo is attempted even when an earlier one failed. Once the Job may have
+// run, the app is put back only on evidence that the database is in place; without it the app stays stopped.
 func Restore(ctx context.Context, inputs RestoreInputs) (RestoreOutcome, error) {
 	if !inputs.Plan.Ready() {
 		return RestoreOutcome{}, &Refusal{"restore.plan", "not_ready"}
@@ -269,6 +276,9 @@ type restorer struct {
 	scaled     bool
 	secretName string
 	jobName    string
+	// jobMayHaveRun is whether this run's Job may have started on the claim: from its create until the
+	// server's own refusal of it, if one comes. It stays set after the Job is deleted.
+	jobMayHaveRun bool
 	// suspended is whether this run may have suspended the release and has not put it back;
 	// releaseWasSuspended is what it found, so a release the operator had already suspended stays that way.
 	// The backup schedule's pair means the same.
@@ -391,6 +401,12 @@ func (r *restorer) unwind() {
 		// until that pod is gone.
 		return
 	}
+	if r.jobMayHaveRun && !r.databaseInPlace() {
+		// The Job may have moved the database aside and not put it back: an app started over a missing
+		// database would create an empty one. The app stays stopped, with Flux and backups suspended.
+		_ = r.attempt("database", func() error { return errors.New("failed: database: not_in_place") })
+		return
+	}
 	if r.backupSuspended {
 		_ = r.attempt("backup-resume", r.resumeBackup)
 	}
@@ -400,6 +416,12 @@ func (r *restorer) unwind() {
 	if r.suspended {
 		_ = r.attempt("resume", r.resume)
 	}
+}
+
+// databaseInPlace is whether the run has evidence that its Job left a database the app can start on: the Job
+// completed, or its log states the database is in place. A log it could not read is no evidence.
+func (r *restorer) databaseInPlace() bool {
+	return r.out.Job.State == JobComplete || strings.Contains(r.out.Job.Log, databaseInPlace)
 }
 
 // appState is what the run can state about the app: running only if it observed it so, stopped if it left it
@@ -565,8 +587,12 @@ func (r *restorer) createJob(job kernel.RestoreObject) func() error {
 		}
 		// Recorded before the request: a create that timed out may still have been accepted. The name is
 		// this run's own, under the claim, so deleting it cannot remove another run's Job.
-		r.jobName = job.Name
-		return r.cluster.Writer.Create(r.ctx, ref, job.Document)
+		r.jobName, r.jobMayHaveRun = job.Name, true
+		err = r.cluster.Writer.Create(r.ctx, ref, job.Document)
+		if answered(err) {
+			r.jobMayHaveRun = false // the server refused it, so no pod ran
+		}
+		return err
 	}
 }
 

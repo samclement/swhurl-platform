@@ -1,6 +1,6 @@
 id: 96
 title: Apply Secret encryption gate to JSON manifests (audit 3)
-state: ready
+state: done
 scope:
   - v2/checkrepo/secrets.go
   - v2/checkrepo/checkrepo.go
@@ -16,3 +16,9 @@ notes:
   - at: 2026-11-27T22:59:10.435Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T04:51:34.271Z
+    commit: e728d2c17369
+    text: "done: isManifest now includes .json under clusters/infra/platform/apps, so sops-secrets checks JSON Secrets (Needs drops the redundant isUnitFile case). New test rejects plaintext JSON Secrets and keeps the backup.yaml substitution exception; verified it fails with the old gate. Docs: operations Secrets, v2-status row. Committed e728d2c1 per exception; not pushed, nothing live."
+  - at: 2026-11-28T04:53:36.225Z
+    commit: bdf3f62c0237
+    text: branch dsa/01M8G7JQ8M7K817NPAQHVFG44M/task-96

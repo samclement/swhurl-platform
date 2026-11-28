@@ -62,7 +62,7 @@ console's, reads neither and refuses both flags.
 
 ## Secrets
 
-Each Secret is a SOPS-encrypted Kubernetes Secret beside its consumer: platform Secrets in `platform/<service>/secret.sops.yaml`, app Secrets beside an instance's v1 records in `apps/<app>/<env>/secret.sops.yaml` (v2 models no Secret yet). SOPS encrypts only `data`/`stringData`, and the consuming Flux unit decrypts in-cluster with `flux-system/sops-age`. There is no password; you need the age private key (`SOPS_AGE_KEY_FILE=./age.agekey`).
+Each Secret is a SOPS-encrypted Kubernetes Secret beside its consumer: platform Secrets in `platform/<service>/secret.sops.yaml`, app Secrets beside an instance's v1 records in `apps/<app>/<env>/secret.sops.yaml` (v2 models no Secret yet). SOPS encrypts only `data`/`stringData`, and the consuming Flux unit decrypts in-cluster with `flux-system/sops-age`. There is no password; you need the age private key (`SOPS_AGE_KEY_FILE=./age.agekey`). `make check-repo` refuses any Secret in a YAML or JSON manifest under `clusters/`, `infra/`, `platform/` or `apps/` that is not in such an encrypted `.sops.yaml` file; the one exception is an app's `backup.yaml` Secret whose values are only Flux substitutions of the backup writer's key.
 
 Rules:
 

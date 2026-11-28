@@ -61,7 +61,8 @@ func TestNeedsReadsTextAndManifestsSeparately(t *testing.T) {
 	if want := []string{"README.md", "docs/a.md", "v2-apps/instances/a/b/c.json", "v2/contract/names.json"}; !slices.Equal(text, want) {
 		t.Errorf("text %q, want %q", text, want)
 	}
-	if want := []string{"apps/a.yaml", "clusters/home/app-x.json", "platform/p/a.yml"}; !slices.Equal(manifests, want) {
+	want := []string{"apps/a.yaml", "clusters/home/app-x.json", "clusters/home/sub/y.json", "platform/p/a.yml"}
+	if !slices.Equal(manifests, want) {
 		t.Errorf("manifests %q, want %q", manifests, want)
 	}
 	if want := []string{"clusters/home/app-x.json"}; !slices.Equal(PathNeeds(present), want) {
@@ -79,5 +80,27 @@ func TestCompleteNeedsApiVersionKindAndMetadata(t *testing.T) {
 		if err := Complete(path, []Document{whole, partial}); err == nil {
 			t.Errorf("%v passed", partial)
 		}
+	}
+}
+
+// A plaintext Secret is refused in JSON as in YAML; only the backup writer's substitution-only Secret in backup.yaml
+// passes unencrypted.
+func TestCheckSecretsCoversJSONManifests(t *testing.T) {
+	plain := Document{Kind: "Secret", Name: "s", Value: map[string]any{"kind": "Secret", "stringData": map[string]any{"k": "plain"}}}
+	substituted := Document{Kind: "Secret", Name: backupWriter,
+		Value: map[string]any{"kind": "Secret", "stringData": map[string]any{"k": "${" + backupVariables[0] + "}"}}}
+	files := []string{"platform/p/secret.json", "clusters/home/app-x.json", "apps/a/" + backupFile}
+	_, manifests := Needs(files)
+	if !slices.Equal(manifests, files) {
+		t.Fatalf("manifests %q, want %q", manifests, files)
+	}
+	r := Repository{Present: files, Manifests: map[string]Decoded{
+		files[0]: {Documents: []Document{plain}}, files[1]: {Documents: []Document{plain}}, files[2]: {Documents: []Document{substituted}},
+	}}
+	result := checkSecrets(r, nil)
+	want := []string{"clusters/home/app-x.json: Git-managed Secret must be a .sops.yaml or .sops.yml file",
+		"platform/p/secret.json: Git-managed Secret must be a .sops.yaml or .sops.yml file"}
+	if !slices.Equal(result.Problems, want) || result.Okay != "" {
+		t.Errorf("problems %q (okay %q), want %q", result.Problems, result.Okay, want)
 	}
 }

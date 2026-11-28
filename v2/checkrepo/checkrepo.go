@@ -43,7 +43,7 @@ const (
 // bootstrap is what Flux renders before any unit: the root units' folder and the sources it reads.
 var bootstrap = []string{cluster + "/flux-system", cluster + "/flux-system/sources"}
 
-// manifestRoots are the folders whose YAML is checked for Secrets.
+// manifestRoots are the folders whose YAML and JSON manifests are checked for Secrets.
 var manifestRoots = []string{"clusters", "infra", "platform", "apps"}
 
 // Document is one decoded YAML document. Value is nil for a document that is not a mapping (a list, a scalar or an
@@ -92,14 +92,13 @@ type Report struct {
 }
 
 // Needs is the present files Check reads: as text, every Markdown file outside .claude/, every file of the compiled
-// tree and the names catalogue; as manifests, the YAML under the four manifest roots and the JSON unit files beside
-// the cluster's YAML ones.
+// tree and the names catalogue; as manifests, the YAML and JSON under the four manifest roots.
 func Needs(present []string) (text, manifests []string) {
 	for _, file := range present {
 		switch {
 		case isMarkdown(file), under(file, compiled), file == Catalogue:
 			text = append(text, file)
-		case isManifest(file), isUnitFile(file):
+		case isManifest(file):
 			manifests = append(manifests, file)
 		}
 	}
@@ -147,8 +146,10 @@ func isMarkdown(file string) bool {
 	return strings.HasSuffix(file, ".md") && !strings.HasPrefix(file, ".claude/")
 }
 
+// isManifest is a YAML or JSON file under a manifest root: Kustomize applies both, so a Secret in either is checked.
 func isManifest(file string) bool {
-	return hasYAMLSuffix(file) && slices.ContainsFunc(manifestRoots, func(root string) bool { return under(file, root) })
+	return (hasYAMLSuffix(file) || strings.HasSuffix(file, ".json")) &&
+		slices.ContainsFunc(manifestRoots, func(root string) bool { return under(file, root) })
 }
 
 // isUnitFile is a file directly in the cluster folder that may define units: YAML, or the JSON v2 compiles units into.

@@ -1,6 +1,6 @@
 id: 99
 title: Validate folder and record identity before removal or instance mutation (audit 8)
-state: ready
+state: done
 scope:
   - v2/apps/checkout.go
   - v2/apps/remove_test.go
@@ -17,3 +17,9 @@ notes:
   - at: 2026-11-27T22:59:10.939Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T05:13:11.480Z
+    commit: 6dc37431cabc
+    text: "done: RemoveIn and instanceIn (EditIn, SetTeamIn) run provisioningrules.FolderHolds before assembling inputs, refusing a folder whose records name another app/env before any write. Table test covers remove/edit/team x wrong app/env (fails without fix). Docs: apps.md, v2-status.md. Offline only; not verified live."
+  - at: 2026-11-28T05:15:11.846Z
+    commit: d154249be1ff
+    text: branch dsa/01M8G8TY4EX6MQTYBQ9E916MR7/task-99

@@ -197,6 +197,9 @@ func TestPutObject(t *testing.T) {
 	if got := request.Header.Get("x-amz-content-sha256"); got != hex.EncodeToString(sum[:]) {
 		t.Fatalf("payload hash %q", got)
 	}
+	if request.ContentLength != int64(len("archive bytes")) {
+		t.Fatalf("content length %d", request.ContentLength)
+	}
 	if request.Header.Get("If-None-Match") != "*" {
 		t.Fatalf("if-none-match %q", request.Header.Get("If-None-Match"))
 	}
@@ -294,14 +297,19 @@ func TestBackupJob(t *testing.T) {
 	}
 }
 
-// failing is a transport that refuses the first attempts and answers afterwards: a pod's first seconds.
+// failing is a transport that refuses the first attempts and answers afterwards: a pod's first seconds. Each
+// attempt reads the body, as a connection that fails mid-upload does, and the last body read is kept.
 type failing struct {
 	remaining int
 	attempts  int
+	body      string
 }
 
 func (f *failing) RoundTrip(request *http.Request) (*http.Response, error) {
 	f.attempts++
+	body, _ := io.ReadAll(request.Body)
+	request.Body.Close()
+	f.body = string(body)
 	if f.remaining > 0 {
 		f.remaining--
 		return nil, &net.DNSError{Err: "no such host", Name: "egress"}
@@ -310,7 +318,8 @@ func (f *failing) RoundTrip(request *http.Request) (*http.Response, error) {
 		Header: http.Header{}, Request: request}, nil
 }
 
-// A transport failure is retried until it succeeds, and one that never does names the cause and the attempts.
+// A transport failure is retried until it succeeds, replaying the whole body, and one that never does names
+// the cause and the attempts.
 func TestPutObjectRetriesATransportFailure(t *testing.T) {
 	job, err := settingsOf(environ())
 	if err != nil {
@@ -325,8 +334,8 @@ func TestPutObjectRetriesATransportFailure(t *testing.T) {
 	if err := putObject(context.Background(), job, &http.Client{Transport: recovering}, "backups", "k", file); err != nil {
 		t.Fatal(err)
 	}
-	if recovering.attempts != 3 {
-		t.Fatalf("%d attempts", recovering.attempts)
+	if recovering.attempts != 3 || recovering.body != "bytes" {
+		t.Fatalf("%d attempts, last body %q", recovering.attempts, recovering.body)
 	}
 	never := &failing{remaining: 99}
 	if err := putObject(context.Background(), job, &http.Client{Transport: never}, "backups", "k", file); err == nil ||

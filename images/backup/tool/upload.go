@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -25,16 +24,27 @@ import (
 // replacement would be recoverable — refusing is the cheaper guarantee). The upload key cannot read back, so
 // the checksum S3 checks is the verification.
 func putObject(ctx context.Context, job settings, client *http.Client, bucket, key, path string) error {
-	body, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("cannot read %s", path)
 	}
-	sum := sha256.Sum256(body)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpointOf(job, bucket)+"/"+escapePath(key),
-		bytes.NewReader(body))
+	defer file.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return fmt.Errorf("cannot read %s", path)
+	}
+	sum := hash.Sum(nil)
+	// The body streams from the file, never held in memory (an archive is as large as its database), and each
+	// attempt re-reads the same bytes the checksum covers.
+	body := func() (io.ReadCloser, error) { return io.NopCloser(io.NewSectionReader(file, 0, size)), nil }
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, endpointOf(job, bucket)+"/"+escapePath(key), nil)
 	if err != nil {
 		return fmt.Errorf("cannot build the request")
 	}
+	request.Body, _ = body()
+	request.GetBody = body
+	request.ContentLength = size
 	request.Header.Set("If-None-Match", "*")
 	request.Header.Set("x-amz-checksum-sha256", base64.StdEncoding.EncodeToString(sum[:]))
 	request.Header.Set("x-amz-content-sha256", hex.EncodeToString(sum[:]))

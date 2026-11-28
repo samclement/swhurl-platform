@@ -1,0 +1,15 @@
+id: 105
+title: Run local checks on merged main then remove only merged clean worktrees; no force or branch deletion
+state: ready
+scope:
+  - docs/current-state.md
+checks:
+  - make check
+  - make check-templates
+  - for f in host/*.sh tests/fixtures/*.sh; do if [ -f "$f" ]; then bash -n "$f" || exit; fi; done
+after: []
+reason: null
+notes:
+  - at: 2026-11-28T06:54:28.690Z
+    commit: cf4de92a5941
+    text: Operator approved local validation and safe cleanup. No source edits required; docs/current-state.md is nominal task scope only (optional factual offline evidence). Run checks on merged main and use fail-fast shell syntax loop. Then remove ONLY non-current, unlocked worktrees with branch merged into main and completely clean status including untracked. Skip/report anything uncertain, dirty, unmerged or locked. Never force, delete branches, push or run live operations. Do not remove own active worktree or current main checkout. Use shared machine lease for substantial test commands. Record each check exit and each removed/skipped path in tk notes. Existing historical task worktrees may be cleaned if eligible. No code repairs without separate approval.

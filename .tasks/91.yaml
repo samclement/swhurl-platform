@@ -1,6 +1,6 @@
 id: 91
 title: Prevent overlapping console pods with single-replica non-overlapping rollout (audit 14)
-state: active
+state: done
 scope:
   - platform/console/helmrelease.yaml
   - platform/console/*.json
@@ -18,3 +18,15 @@ notes:
   - at: 2026-11-27T22:59:09.542Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T03:48:06.170Z
+    commit: 8da4da53480a
+    text: "done: Console HelmRelease now states replicas: 1 and strategy: Recreate (already app-template 5.3.0's default), so rollouts never overlap; docs/console.md says the console is down while a pod drains. helm template proved rendering (Recreate/1; negative control RollingUpdate/2). No persistent render check; not verified live."
+  - at: 2026-11-28T03:48:06.170Z
+    commit: 8da4da53480a
+    text: "followup: Add a persistent offline check (v2 test or check-repo rule) that the rendered console Deployment keeps replicas 1 and Recreate; out of scope (v2/ not in task 91's scope)."
+  - at: 2026-11-28T03:48:06.170Z
+    commit: 8da4da53480a
+    text: "followup: A console pod deleted outside a rollout (eviction, kubectl delete pod) is replaced at once while it drains for up to 15 min, so two pods can still share console-jobs; only a StatefulSet (or a lease) closes that."
+  - at: 2026-11-28T03:52:07.464Z
+    commit: 20dd65c9a844
+    text: branch dsa/01M8G4262KW20M3ZMWKZH0ZMYH/task-91

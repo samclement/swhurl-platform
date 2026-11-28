@@ -1,6 +1,6 @@
 id: 111
 title: "Orchestration state review, judgement pass: where a generic state-machine primitive (states + transition returning next state or named refusal) simplifies vs adds ceremony, trade-offs table and one numbered recommendation (sections 4-6 of docs/orchestration-state-review.md; no code changes; recommending against is acceptable)"
-state: ready
+state: done
 scope:
   - docs/orchestration-state-review.md
 checks:
@@ -9,4 +9,22 @@ checks:
 after:
   - 110
 reason: null
-notes: []
+notes:
+  - at: 2026-11-28T11:32:14.500Z
+    commit: 8615db9eddba
+    text: "done: Added sections 4-6 to docs/orchestration-state-review.md: per-lifecycle verdicts, trade-offs table (4 options), recommendation: no generic primitive; option 2, local Decide-shaped types in L1, L4, L2 order, L5 deferred. Corrected the stale Python-checker constraint on L5. Docs only; L4 stall and live job-store invariant unverified."
+  - at: 2026-11-28T11:32:14.500Z
+    commit: 8615db9eddba
+    text: "followup: report: checks run: make check-docs (0 errors, 0 warnings); brief's grep check passed. Re-read cited code at 8615db9e: no changes since a393c5b3 in reviewed paths."
+  - at: 2026-11-28T11:32:14.500Z
+    commit: 8615db9eddba
+    text: "followup: report: new finding: putBack (restore.go:352-353) and unwind (:393-418) encode the same undo order twice; basis for the L1 owed-undo recommendation."
+  - at: 2026-11-28T11:32:14.500Z
+    commit: 8615db9eddba
+    text: "followup: report: L1 slice needs an operator semantics answer first: App.Suspended = 'this run left it suspended' or 'it is suspended' (R1)."
+  - at: 2026-11-28T11:32:14.500Z
+    commit: 8615db9eddba
+    text: "followup: proposal: v2/notifications/rules/incident/document.go:1-3 package comment still says the document is shared with the Python checker, retired 7 Nov 2026; fix the comment (outside this task's scope)."
+  - at: 2026-11-28T11:33:38.738Z
+    commit: 8615db9eddba
+    text: 'landing: {"worker":"/home/sam/ghq/github.com/samclement/swhurl-platform/.dsa/01M8GYNSEFQ55CJM7Q3TEA47MY/task-111","branch":"dsa/01M8GYNSEFQ55CJM7Q3TEA47MY/task-111","base":"main","onto":"8615db9eddba6df2d1200f687c6d5f7cad32d5b0","start":"8615db9eddba6df2d1200f687c6d5f7cad32d5b0","tree":"8b4006d672282263d63921038de092eccd1d53e6"}'

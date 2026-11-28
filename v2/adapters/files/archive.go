@@ -12,18 +12,29 @@ import (
 	"strings"
 )
 
-// maxArchiveFile bounds one file read from an archive. The whole archive is already bounded by the caller's
-// download; this keeps one entry from claiming all of it.
-const maxArchiveFile = 8 << 20
+// maxArchiveFile bounds one file read from an archive, and maxArchive everything the archive decompresses to: its
+// headers, the entries the read skips and the files it keeps. The caller's download bounds only the compressed size.
+const (
+	maxArchiveFile = 8 << 20
+	maxArchive     = 128 << 20
+)
+
+// errArchiveTooLarge is an archive that decompresses to more than its bound.
+var errArchiveTooLarge = errors.New("its contents are too large")
 
 // ReadArchive reads the regular files of a repository archive that keep selects, by repository path and in path
 // order, each with the mode the archive states. The archive may carry GitHub's leading folder (prefixed: the tarball)
 // or none (a checkout's `git archive`), gzipped or not. A path that would leave the tree refuses the whole archive,
 // and a link is never followed: only regular files are read.
 func ReadArchive(content []byte, prefixed bool, keep func(file string) bool) ([]TreeFile, error) {
+	return readArchive(content, prefixed, keep, maxArchive)
+}
+
+// readArchive is ReadArchive refusing an archive that decompresses to more than limit bytes.
+func readArchive(content []byte, prefixed bool, keep func(string) bool, limit int64) ([]TreeFile, error) {
 	reader, closeArchive := archiveReader(content)
 	defer closeArchive()
-	archive := tar.NewReader(reader)
+	archive := tar.NewReader(&boundedReader{reader, limit})
 	found := []TreeFile{}
 	for {
 		entry, err := archive.Next()
@@ -72,6 +83,28 @@ func archiveReader(content []byte) (io.Reader, func()) {
 		return bytes.NewReader(content), func() {}
 	}
 	return gzipped, func() { gzipped.Close() }
+}
+
+// boundedReader reads at most left more bytes, and refuses with errArchiveTooLarge when the stream holds more.
+type boundedReader struct {
+	reader io.Reader
+	left   int64
+}
+
+func (b *boundedReader) Read(p []byte) (int, error) {
+	if b.left == 0 {
+		var probe [1]byte
+		if n, err := io.ReadFull(b.reader, probe[:]); n == 0 {
+			return 0, err
+		}
+		return 0, errArchiveTooLarge
+	}
+	if int64(len(p)) > b.left {
+		p = p[:b.left]
+	}
+	n, err := b.reader.Read(p)
+	b.left -= int64(n)
+	return n, err
 }
 
 // leaving reports whether an entry's name would escape the repository, which no archive GitHub serves may contain.

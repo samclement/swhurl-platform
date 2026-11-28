@@ -57,8 +57,8 @@ spec:
           main:
             image: &operator-image
               repository: ghcr.io/samclement/swhurl-console
-              tag: src-d31dc6a6016d0a45
-              digest: sha256:52c24a304d9e64b3dbf28c4dc47bc9f7b387a4059cd356f89d902f97cb4dd232
+              tag: src-e93c8b32a985eb8f
+              digest: sha256:8ccf71838b512dc1ac512f71bf351f7975639abd937e0c1f30f9633be17812b2
             env:
               CONSOLE_REPO: samclement/swhurl-platform
               # The console's own traces and metrics go to its node's collector, as an app's do

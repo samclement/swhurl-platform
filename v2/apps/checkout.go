@@ -94,8 +94,13 @@ func SetTeamIn(checkout files.Checkout, application, team string, writer files.W
 	return SetTeam(inputs, checkout.Root, writer)
 }
 
-// instanceIn is one instance's folder with the documents a compilation of it takes.
+// instanceIn is one instance's folder with the documents a compilation of it takes, refused when its records name
+// another instance than its path.
 func instanceIn(checkout files.Checkout, record files.InstanceRecords) (InstanceInputs, error) {
+	if _, _, err := provisioningrules.FolderHolds(record.Application, record.Environment, record.Instance,
+		record.Release); err != nil {
+		return InstanceInputs{}, err
+	}
 	folder, err := checkout.Folder(record)
 	if err != nil {
 		return InstanceInputs{}, err
@@ -136,6 +141,10 @@ func removalIn(checkout files.Checkout, application, environment string) (Remova
 	}
 	record, err := files.Find(records, application, environment)
 	if err != nil {
+		return RemovalInputs{}, err
+	}
+	// The dependencies and registrations are checked from the record and the paths deleted from its folder's name.
+	if _, _, err := provisioningrules.FolderHolds(application, environment, record.Instance, record.Release); err != nil {
 		return RemovalInputs{}, err
 	}
 	folder, err := checkout.Relative(filepath.Join(checkout.Records, application, environment))

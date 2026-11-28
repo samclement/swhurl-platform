@@ -2,10 +2,14 @@ package apps
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/samclement/swhurl-platform/v2/adapters/files"
 	"github.com/samclement/swhurl-platform/v2/adapters/files/filestest"
+	"github.com/samclement/swhurl-platform/v2/kernel"
 )
 
 const removalRevision = "8ae21b491dcbbe7306bc56073460fff24d61a7f2"
@@ -159,5 +163,85 @@ func TestRemoveStopsWhenRegistrationWriteFails(t *testing.T) {
 	}
 	if writer.Writes != 1 || writer.Removals != 0 || len(result.Removed) != 0 || len(result.Notes) != 0 {
 		t.Fatalf("a failed registration write continued removal: writer=%+v result=%+v", writer, result)
+	}
+}
+
+// A folder whose records name another instance is refused before anything is written: a removal would check the
+// record's dependencies and registrations yet delete the folder's paths, and an edit would write the folder from
+// another instance's record.
+func TestCheckoutRefusesAFolderHoldingAnotherInstance(t *testing.T) {
+	uses := map[string]func(files.Checkout, files.Writer) error{
+		"remove": func(checkout files.Checkout, writer files.Writer) error {
+			_, err := RemoveIn(checkout, "demo-orders", "staging", writer)
+			return err
+		},
+		"edit": func(checkout files.Checkout, writer files.Writer) error {
+			setting, err := ParseSetting("replicas=3")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = EditIn(checkout, "demo-orders", "staging", setting, writer)
+			return err
+		},
+		"team": func(checkout files.Checkout, writer files.Writer) error {
+			_, err := SetTeamIn(checkout, "demo-orders", "other", writer)
+			return err
+		},
+	}
+	// Each folder's two records agree with each other and differ from the path only in the app or the environment.
+	staging, release := string(testdata(t, "staging.json")), string(testdata(t, "r42.json"))
+	otherRelease := strings.ReplaceAll(release, "demo-orders", "demo-other")
+	bundle, err := kernel.DecodeRelease([]byte(otherRelease))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherID, err := bundle.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stagingID, err := kernel.DecodeInstance([]byte(staging))
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := map[string][2]string{
+		"environment": {strings.Replace(staging, `"environment": "staging"`, `"environment": "prod"`, 1), release},
+		"app": {strings.ReplaceAll(strings.Replace(staging, string(stagingID.Release), string(otherID), 1),
+			"demo-orders", "demo-other"), otherRelease},
+	}
+	for use, run := range uses {
+		for wrong, records := range held {
+			t.Run(use+" wrong "+wrong, func(t *testing.T) {
+				root := t.TempDir()
+				folder := filepath.Join(root, "v2-records", "demo-orders", "staging")
+				checkout := files.Checkout{Root: root, Records: filepath.Join(root, "v2-records"),
+					Profile: filepath.Join(root, "profile.json"), Calls: filepath.Join(root, "calls.json")}
+				for path, data := range map[string][]byte{
+					filepath.Join(folder, kernel.InstanceRecordName):                       []byte(records[0]),
+					filepath.Join(folder, kernel.ReleaseRecordName):                        []byte(records[1]),
+					filepath.Join(root, "v2-records", "demo-orders", kernel.AppRecordName): testdata(t, "app.json"),
+					filepath.Join(root, "clusters", "home", "kustomization.yaml"): []byte("resources:\n" +
+						"  - app-demo-orders-prod.json\n  - app-demo-orders-staging.json\n  - app-demo-other-staging.json\n"),
+					filepath.Join(root, "platform", "auth", "kustomization.yaml"): []byte(`{"resources":[` +
+						`"swhurl-auth-demo-orders-prod.json","swhurl-auth-demo-orders-staging.json",` +
+						`"swhurl-auth-demo-other-staging.json"]}`),
+					checkout.Profile: testdata(t, "profile.json"),
+					checkout.Calls:   resolution(t, "", ""),
+				} {
+					if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, data, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				writer := filestest.New()
+				if err := run(checkout, writer); err == nil || !strings.Contains(err.Error(), "demo-orders/staging holds") {
+					t.Fatalf("a folder holding another instance returned %v", err)
+				}
+				if writer.Writes != 0 || writer.Removals != 0 {
+					t.Error("a refused folder changed files")
+				}
+			})
+		}
 	}
 }

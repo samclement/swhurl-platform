@@ -1,0 +1,27 @@
+id: 107
+title: "Activity uses only stored targets: capture a target once on first merged observation, render the historical state with no read, delete ConsoleEvidence and mergeTrees/toFetch/historicalTreesPerPage"
+state: ready
+scope:
+  - v2/console/changes.go
+  - v2/console/changes_test.go
+  - v2/console/evidence.go
+  - v2/console/evidence_test.go
+  - v2/console/jobs.go
+  - v2/console/jobs_test.go
+  - v2/console/activity.go
+  - v2/cmd/swhurl-v2/console.go
+  - v2/cmd/swhurl-v2/console_activity.go
+  - v2/cmd/swhurl-v2/console_activity_test.go
+  - v2/cmd/swhurl-v2/console_pages.go
+  - v2/pages/changes.go
+  - v2/pages/changes_test.go
+checks:
+  - cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/...
+  - make check-v2
+after:
+  - 106
+reason: null
+notes:
+  - at: 2026-11-28T07:23:42.147Z
+    commit: 42010b8e9358
+    text: "Approved design (operator, 2026-11-28): store merge-commit render fingerprint (Records, Settings, Digest, held) in the job record on first merged observation; Jobs saves Reached for any remembered record incl. earlier pods' (console server may write them: one replica, Recreate); delete ActivityFacts.reached, ConsoleEvidence, mergeTrees/toFetch/historicalTreesPerPage; keep Source.Files (telemetry_reads.go). Migration marker approved: the new console writes outcomes: true on every record it saves; a record without it and without target/Reached shows 'historical: before the console recorded outcomes' with no read; one-way, no fallback to reading history. Tests: ProgressOf table incl. historical; settled record survives a new Jobs load; target captured once."

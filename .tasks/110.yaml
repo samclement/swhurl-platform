@@ -1,0 +1,38 @@
+id: 110
+title: "Orchestration state review, evidence pass: inventory external-system lifecycles held in ad hoc flags, phases and nullable state, with draft state tables (sections 1-3 of docs/orchestration-state-review.md; read-only over code, no code changes)"
+state: done
+scope:
+  - docs/orchestration-state-review.md
+checks:
+  - test -s docs/orchestration-state-review.md && grep -q "^## 1\." docs/orchestration-state-review.md && grep -q "^## 3\." docs/orchestration-state-review.md
+  - make check-docs
+after: []
+reason: null
+notes:
+  - at: 2026-11-28T11:07:56.569Z
+    commit: a393c5b3d36b
+    text: "Context from planning: orchestration is v2/orchestration/, adapters v2/adapters/, pure rules v2/kernel/ and */rules/, precedents v2/notifications/rules/{incident,heartbeat} and v2/recovery/; copy docs/architecture-review.md status framing (design proposal, not approved work). Confirm every path:line before citing; the candidate list came from greps."
+  - at: 2026-11-28T11:12:03.363Z
+    commit: a393c5b3d36b
+    text: "released: worker run 01M8GXEDW5GVY3PYBABCPVAK21 went over its 3M-token budget before tk done; relaunching once in the same worktree, keep the page concise and finish"
+  - at: 2026-11-28T11:16:02.919Z
+    commit: a393c5b3d36b
+    text: "conductor: run 01M8GXEDW5GVY3PYBABCPVAK21 was still running after its budget alert and overlapped the relaunch in the same worktree; stopped it at 5.0M tokens. Run 01M8GXNXXA310QZFYT1KYF0HK9 is the sole owner."
+  - at: 2026-11-28T11:16:41.079Z
+    commit: a393c5b3d36b
+    text: "done: Wrote docs/orchestration-state-review.md sections 1-3: 7 ad hoc lifecycles (restore run, console job, change landing, new app, incident, notice outbox, console drain), 7 explicit precedents, 3 disagreeing classifiers, draft state tables for L1-L5. No code changed. Not verified: live behaviour; tests not run in this pass; the R1 probe was run by the earlier worker, not re-run."
+  - at: 2026-11-28T11:16:41.079Z
+    commit: a393c5b3d36b
+    text: "followup: report: Page content is the earlier worker's version (it overwrote this run's shorter draft mid-turn); this run re-read it and spot-checked ~12 citations (restore.go suspend/job flags 460-469 and 588-595, jobs.go:87, activity.go:84-95, github/repository.go:177 AutoInit, restore.go:769, observe/backup.go:264, notify/outbox.go:177, fluxwait.go:194, incident.go:286, events.go:122-126): all matched. Checks: tk shape grep ok; make check-docs 0 errors 0 warnings."
+  - at: 2026-11-28T11:16:41.079Z
+    commit: a393c5b3d36b
+    text: "followup: report: R1 (observed by earlier worker's deleted throwaway test): restore failing at delete-job with an operator-suspended release reports App.Suspended=true, contradicting RestoreApp's comment (restore.go:119-121). Existing test covers only a scale-down failure."
+  - at: 2026-11-28T11:16:41.079Z
+    commit: a393c5b3d36b
+    text: "followup: report: L4 (reading, not run): repo is created with auto_init, so a new-app job stopped between Create and FirstCommit resumes onto GitHub's initial commit, never pushes the tree, and times out waiting for an image; resume test covers only a repo with the app's commit."
+  - at: 2026-11-28T11:16:41.079Z
+    commit: a393c5b3d36b
+    text: "followup: Proposed (outside scope, needs approval): fix R1 in v2/recovery/restore.go with a table-test row for failOn delete:Job + releaseSuspended; and make app-repo resume detect an auto-init-only head (L4)."
+  - at: 2026-11-28T11:29:27.268Z
+    commit: 1be6287f4c55
+    text: 'landing: {"worker":"/home/sam/ghq/github.com/samclement/swhurl-platform/.dsa/01M8GXEDW5GVY3PYBABCPVAK21/task-110","branch":"dsa/01M8GXEDW5GVY3PYBABCPVAK21/task-110","base":"main","onto":"1be6287f4c55c99b7713b07cdfa651d45ca1457f","start":"a393c5b3d36bdc654337c826879dd0a41ebd6c7a","tree":"ab3835a7881e44783f8ea78b9ee3556bef1197bc"}'

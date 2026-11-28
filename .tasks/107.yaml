@@ -1,6 +1,6 @@
 id: 107
 title: "Activity uses only stored targets: capture a target once on first merged observation, render the historical state with no read, delete ConsoleEvidence and mergeTrees/toFetch/historicalTreesPerPage"
-state: active
+state: done
 scope:
   - v2/console/changes.go
   - v2/console/changes_test.go
@@ -39,3 +39,12 @@ notes:
   - at: 2026-11-28T07:51:36.652Z
     commit: 2d94be0ecd1f
     text: "Operator: continue; restrict all further models to OpenAI or DeepSeek. Approved adding v2/cmd/swhurl-v2/console_evidence_test.go to retain integration tests using persisted job targets instead of deleted evidence cache."
+  - at: 2026-11-28T07:59:05.528Z
+    commit: 9d492ade7b14
+    text: "done: Activity captures merged targets in job records and reuses them; legacy records render historical without render reads. Deleted ConsoleEvidence and historical fetch scheduling; page context reaches job writes. Updated tests and API baseline. Required checks pass; no live verification. Extra broad race run found unchanged unit-action fake races."
+  - at: 2026-11-28T07:59:05.528Z
+    commit: 9d492ade7b14
+    text: "followup: Extra go test -race ./console/... ./pages/... ./cmd/swhurl-v2/... detects races in adapters/kube/kubetest.Fake.SetConfigMapKeys during TestAUnitActionStartsAJob and TestAUnitActionsRefusalIsTheJobsLine. Those files/call paths are unchanged; investigate separately. Console/pages and Activity-focused command race tests pass."
+  - at: 2026-11-28T08:01:08.988Z
+    commit: 3b6b28cdfc4f
+    text: branch dsa/01M8GHKKC6DRXN9Z434WSN3C0V/task-107

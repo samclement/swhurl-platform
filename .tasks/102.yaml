@@ -1,6 +1,6 @@
 id: 102
 title: Validate PR token before public app repository creation without live token probing (audit 20)
-state: ready
+state: done
 scope:
   - v2/orchestration/apprepo.go
   - v2/orchestration/apprepo_test.go
@@ -18,3 +18,12 @@ notes:
   - at: 2026-11-27T22:59:11.428Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T05:35:21.603Z
+    commit: 7b32e451d01e
+    text: "done: app-repo refuses an empty, REPLACE_ME or over-long CONSOLE_TOKEN in appRepoInputs before any GitHub write, dry run included; table test proves no repo/commit/hook/PR. No live token probe. Not verified live; console --dev New app now fails up front."
+  - at: 2026-11-28T05:35:21.603Z
+    commit: 7b32e451d01e
+    text: "followup: openChange (v2/cmd/swhurl-v2/change.go) accepts CONSOLE_TOKEN=REPLACE_ME; it only refuses empty or over-long, so other changes fail at GitHub instead of locally"
+  - at: 2026-11-28T05:37:30.098Z
+    commit: c624a03eabae
+    text: branch dsa/01M8GA3JSW7F5P65PKHATQBRV0/task-102

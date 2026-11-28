@@ -1,6 +1,6 @@
 id: 106
 title: Persist a merged change's target render and its Reached time in the job record, with an outcomes migration marker; delete ActivityFacts.reached
-state: active
+state: done
 scope:
   - v2/pages/rows.go
   - v2/pages/changes.go
@@ -28,3 +28,12 @@ notes:
   - at: 2026-11-28T07:38:38.494Z
     commit: 654377c511a7
     text: "Scope widened to v2/archtest/api.txt (operator approved 2026-11-28): the job record's exported fields change, so the public-API baseline follows."
+  - at: 2026-11-28T07:38:55.152Z
+    commit: 654377c511a7
+    text: "done: pages.Job gains Target and Outcomes; job records persist target and outcomes:true; Jobs.Reach/Capture write any remembered ended record once (running foreign refused); ActivityFacts.reached deleted, server reach writes through the registry. api.txt baseline updated. Capture not yet called; ProgressOf historical state not added (107). Not verified live."
+  - at: 2026-11-28T07:38:55.152Z
+    commit: 654377c511a7
+    text: "followup: ChangeReads.Reach (console/changes.go) has no context, so consoleServer.reach saves with context.Background(); thread the page ctx through in 107"
+  - at: 2026-11-28T07:40:56.885Z
+    commit: faca3ea9a31d
+    text: branch dsa/01M8GGKTB0C8SJWFK66HQFAE5J/task-106

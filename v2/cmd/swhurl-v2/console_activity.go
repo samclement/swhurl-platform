@@ -204,6 +204,10 @@ func (s *consoleServer) rowsByInstance(ctx context.Context) (map[string]*pages.A
 	return s.reads().RowsByInstance(ctx)
 }
 
-func (s *consoleServer) reach(job pages.Job) { s.facts.Reach(job, s.now()) }
-
-func (s *consoleServer) withReached(jobs []pages.Job) []pages.Job { return s.facts.WithReached(jobs) }
+// reach writes into a job's record that its change was seen at its end; a server that runs no registry writes nothing.
+// The save outlives the page that saw it: ChangeReads.Reach carries no context.
+func (s *consoleServer) reach(job pages.Job) {
+	if s.jobs != nil {
+		s.jobs.Reach(context.Background(), job.ID)
+	}
+}

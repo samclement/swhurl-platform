@@ -683,8 +683,6 @@ console: const Remove Operation = "remove"
 console: const Render Operation = "render"
 console: const Team Operation = "team"
 console: func (*ActivityFacts) Pull(ctx context.Context, client github.Console, repository, token string, number int) (pages.Pull, error)
-console: func (*ActivityFacts) Reach(job pages.Job, now time.Time)
-console: func (*ActivityFacts) WithReached(jobs []pages.Job) []pages.Job
 console: func (*Bundle) Cached(revision string) bool
 console: func (*Bundle) Held(revision string) (map[string][]byte, bool)
 console: func (*Bundle) Revision(ctx context.Context) (string, error)
@@ -693,6 +691,7 @@ console: func (*ConsoleEvidence) Cached(commit string, units []string) bool
 console: func (*ConsoleEvidence) Renders(ctx context.Context, commit string, units []string) (map[string]pages.Render, error)
 console: func (*FlagStore) Card(ctx context.Context, instance pages.Instance, declaration []producer.Flag, problem string) (orchestration.FlagCard, bool)
 console: func (*FlagStore) Change(ctx context.Context, instance pages.Instance, tree map[string][]byte, change FlagChange) (problem string, status int)
+console: func (*Jobs) Capture(ctx context.Context, id int, target pages.Render)
 console: func (*Jobs) Drain(timeout time.Duration) bool
 console: func (*Jobs) Get(ctx context.Context, id int) (pages.Job, bool)
 console: func (*Jobs) Reach(ctx context.Context, id int)
@@ -1863,7 +1862,7 @@ pages: type Group struct {Title string Entries []Entry Failing []Entry Index int
 pages: type IncludedAnswer struct {Key, Label, Text string}
 pages: type Instance struct {App, Env string}
 pages: type Inventory struct {Team string `json:"team"` Kind string `json:"kind"` Exposure string `json:"exposure"` Port int32 `json:"port"` Hosts []string `json:"hosts"` Address string `json:"address"` API string `json:"api"` Artifact Artifact `json:"artifact"` Database Database `json:"database"` Offers string `json:"offers"` Egress Allocation `json:"egress"` Calls []string `json:"calls"` Allows []string `json:"allows"` Callers []string `json:"callers"` Publishes []string `json:"publishes"` Subscriptions []string `json:"subscriptions"` Connections []Connection `json:"connections"`}
-pages: type Job struct {ID int Action string Unit string Identity string Started time.Time Finished *time.Time State string Link string Owner string Resume map[string]any Reached string Lines []string Live bool}
+pages: type Job struct {ID int Action string Unit string Identity string Started time.Time Finished *time.Time State string Link string Owner string Resume map[string]any Reached string Target *Render Outcomes bool Lines []string Live bool}
 pages: type Link struct {Name, Href string Here bool}
 pages: type Live struct {Unit Evidence `json:"unit"` Release Evidence `json:"release"` Workload Workload `json:"workload"` Running Running `json:"running"`}
 pages: type MapEdge struct {Kind, Path, From, To string}

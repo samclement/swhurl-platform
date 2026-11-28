@@ -200,12 +200,12 @@ func (s *consoleServer) readRows(ctx context.Context) (map[string][]byte, []page
 // holds the records it keeps and the jobs it is running; a server with no registry reads the records alone.
 func (s *consoleServer) jobsOf(ctx context.Context) []pages.Job {
 	if s.jobs != nil {
-		return s.withReached(s.jobs.Recent(ctx))
+		return s.jobs.Recent(ctx)
 	}
 	if s.data == nil {
 		return nil
 	}
-	return s.withReached(console.ConsoleJobs(ctx, s.data, s.reader, s.now()))
+	return console.ConsoleJobs(ctx, s.data, s.reader, s.now())
 }
 
 // jobViewsOf is every job as a row shows it.

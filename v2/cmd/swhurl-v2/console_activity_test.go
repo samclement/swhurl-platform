@@ -15,6 +15,7 @@ import (
 
 	"github.com/samclement/swhurl-platform/v2/adapters/github"
 	"github.com/samclement/swhurl-platform/v2/adapters/github/githubtest"
+	"github.com/samclement/swhurl-platform/v2/adapters/kube"
 	"github.com/samclement/swhurl-platform/v2/pages"
 )
 
@@ -153,18 +154,31 @@ func TestAMissingJobIsTheErrorPage(t *testing.T) {
 	sameAsGolden(t, server, "error.html", "job-missing.html", data)
 }
 
-// A change seen at its end is remembered by this server, so a later read can say it ran even once replaced; nothing
-// is written for it.
-func TestAReachedChangeIsRememberedInMemory(t *testing.T) {
+// A change seen at its end is written into its job's record, an earlier pod's included, so the registry a later pod
+// loads still says it ran; a change still open is not.
+func TestAReachedChangeIsWrittenToItsRecord(t *testing.T) {
 	server, reads := activityServer(t)
-	jobs := activityJobs()
-	server.readActivity(context.Background(), jobs, reads)
-	again := server.withReached(activityJobs())
-	if again[2].ID != 7 || again[2].Reached != activityNow.Format(time.RFC3339Nano) {
-		t.Fatalf("job 7 reached = %q", again[2].Reached)
+	fake := jobsFake(map[string]string{
+		"job-7": `{"id":7,"action":"promote","unit":"web/prod","identity":"sam@swhurl.com","started":"2026-11-09T08:00:00Z",` +
+			`"finished":"2026-11-09T08:02:00Z","state":"succeeded","link":"` + activityRepo + `/pull/41","owner":"console-old",` +
+			`"resume":null,"reached":"","lines":["Opened"]}`,
+		"job-8": `{"id":8,"action":"scale","unit":"web/staging","identity":"sam@swhurl.com","started":"2026-11-09T09:30:00Z",` +
+			`"finished":"2026-11-09T09:31:00Z","state":"succeeded","link":"` + activityRepo + `/pull/42","owner":"console-old",` +
+			`"resume":null,"reached":"","lines":["Opened"]}`,
+	})
+	registry := func() *console.Jobs {
+		return console.NewJobs(context.Background(), console.JobsInputs{
+			Store: kube.JobRecords{Data: fake, Pods: fake, Name: "console-jobs-dev"}, Owner: "console-new",
+			Now: func() time.Time { return activityNow }, Sleep: time.Sleep})
 	}
-	if again[1].Reached != "" {
-		t.Fatalf("an open change did not reach its end: %q", again[1].Reached)
+	server.jobs = registry()
+	server.readActivity(context.Background(), server.jobsOf(context.Background()), reads)
+	loaded := registry().Recent(context.Background())
+	if loaded[1].ID != 7 || loaded[1].Reached != activityNow.Format(time.RFC3339Nano) || !loaded[1].Outcomes {
+		t.Fatalf("job 7 reached %q, outcomes %v", loaded[1].Reached, loaded[1].Outcomes)
+	}
+	if loaded[0].ID != 8 || loaded[0].Reached != "" {
+		t.Fatalf("an open change did not reach its end: %q", loaded[0].Reached)
 	}
 }
 

@@ -481,7 +481,9 @@ type Job struct {
 	Link     string
 	Owner    string
 	Resume   map[string]any
-	Reached  string // when its change was first seen at its end, ISO 8601
+	Reached  string  // when its change was first seen at its end, ISO 8601
+	Target   *Render // its unit in the merge commit, kept when its pull request was first seen merged; nil until then
+	Outcomes bool    // the record is from a console that keeps Target and Reached: false is one from before
 	Lines    []string
 	Live     bool // false for a record read from the store: another pod's job, or one from before a restart
 }

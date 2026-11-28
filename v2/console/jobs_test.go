@@ -273,7 +273,7 @@ func TestAJobsRecordIsCutFromTheFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	found := slices.Sorted(maps.Keys(keys))
-	want := []string{"action", "finished", "id", "identity", "lines", "link", "owner", "reached", "resume", "started", "state", "unit"}
+	want := []string{"action", "finished", "id", "identity", "lines", "link", "outcomes", "owner", "reached", "resume", "started", "state", "unit"}
 	if !slices.Equal(found, want) {
 		t.Fatalf("keys %v, want %v", found, want)
 	}
@@ -308,7 +308,8 @@ func TestJobsSettleAJobWhosePodIsGone(t *testing.T) {
 	}
 }
 
-// A record another pod wrote is read as it is, and cannot be reached by this one; a job of our own can be, once.
+// A record another pod wrote is read as it is, and cannot be reached by this one while it runs; a job of our own can
+// be, once.
 func TestJobsReadAnotherPodsRecords(t *testing.T) {
 	store := newJobRecords()
 	store.records[7] = *recordOf(pages.Job{ID: 7, Action: "reconcile", Unit: "gw", Identity: "x",
@@ -341,6 +342,61 @@ func TestJobsReadAnotherPodsRecords(t *testing.T) {
 	jobs.Reach(context.Background(), mine.ID)
 	if twice := await(t, jobs, mine.ID, "succeeded").Reached; twice != reached {
 		t.Fatalf("reached twice: %q then %q", reached, twice)
+	}
+}
+
+// An earlier pod's record, written before the console kept outcomes, is reached and given its target here; both
+// outlive this registry, so a pod that replaces it reads them back with the marker that it kept them.
+func TestARecordsOutcomesSurviveANewLoad(t *testing.T) {
+	store := newJobRecords()
+	store.records[7] = `{"id":7,"action":"promote","unit":"web/prod","identity":"x","started":"2026-11-09T08:00:00Z",` +
+		`"finished":"2026-11-09T08:02:00Z","state":"succeeded","link":"https://github.com/o/r/pull/41","owner":"old-pod",` +
+		`"resume":null,"reached":"","lines":["Opened"]}`
+	inputs, _ := jobInputs(store)
+	jobs := NewJobs(context.Background(), inputs)
+	if before, _ := jobs.Get(context.Background(), 7); before.Outcomes || before.Target != nil {
+		t.Fatalf("a record from before the marker: %+v", before)
+	}
+	target := pages.Render{Records: "records-1", Settings: "settings-1", Digest: "sha256:x"}
+	jobs.Capture(context.Background(), 7, target)
+	jobs.Reach(context.Background(), 7)
+	again := NewJobs(context.Background(), inputs)
+	kept, _ := again.Get(context.Background(), 7)
+	if !kept.Outcomes || kept.Target == nil || *kept.Target != target || kept.Reached != "2026-11-09T12:00:00Z" {
+		t.Fatalf("after a new load: outcomes %v target %+v reached %q", kept.Outcomes, kept.Target, kept.Reached)
+	}
+	if kept.State != "succeeded" || kept.Owner != "old-pod" || !slices.Equal(kept.Lines, []string{"Opened"}) {
+		t.Fatalf("the rest of the record changed: %+v", kept)
+	}
+}
+
+// A merged change's target is kept the first time it is captured: a later capture neither changes nor writes it.
+func TestATargetIsCapturedOnce(t *testing.T) {
+	store := newJobRecords()
+	inputs, audit := jobInputs(store)
+	jobs := NewJobs(context.Background(), inputs)
+	started, err := jobs.Start(context.Background(), "promote", "web/prod", "x", nil,
+		func(context.Context, func(string)) (string, error) { return "https://github.com/o/r/pull/41", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit.awaitFinished(t)
+	first := pages.Render{Records: "records-1", Settings: "settings-1", Digest: "sha256:x"}
+	jobs.Capture(context.Background(), started.ID, first)
+	saves := len(store.saved())
+	jobs.Capture(context.Background(), started.ID, pages.Render{Records: "records-2"})
+	if len(store.saved()) != saves {
+		t.Fatal("a second capture wrote the record again")
+	}
+	if kept := store.kept(t, started.ID); kept.Target == nil || *kept.Target != first || !kept.Outcomes {
+		t.Fatalf("kept target %+v, outcomes %v", kept.Target, kept.Outcomes)
+	}
+	if live, _ := jobs.Get(context.Background(), started.ID); *live.Target != first {
+		t.Fatalf("this process's job targets %+v", live.Target)
+	}
+	jobs.Capture(context.Background(), 99, first)
+	if len(store.saved()) != saves {
+		t.Fatal("a job nobody remembers was written")
 	}
 }
 

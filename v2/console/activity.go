@@ -136,15 +136,14 @@ func capitalize(text string) string {
 	return strings.ToUpper(string(runes[0])) + string(runes[1:])
 }
 
-// ActivityFacts keeps only immutable facts: merged pull requests and the first time a
-// change reached its end. Its zero value is ready, and it is safe for concurrent pages.
+// ActivityFacts keeps only immutable facts: merged pull requests. Its zero value is ready, and it is safe for
+// concurrent pages. When a change reached its end is the job record's (Jobs.Reach), not this cache's.
 type ActivityFacts struct {
-	mu      sync.Mutex
-	merged  map[int]pages.Pull
-	reached map[int]string
+	mu     sync.Mutex
+	merged map[int]pages.Pull
 }
 
-// keptFacts bounds each immutable fact cache, oldest first.
+// keptFacts bounds the merged pull requests kept, oldest first.
 const keptFacts = 60
 
 // consolePulls lists the console's open pull requests, or says why it could not.
@@ -211,31 +210,6 @@ func keep[V any](facts map[int]V, key int, value V) {
 		delete(facts, oldest)
 	}
 	facts[key] = value
-}
-
-// reach remembers when a job's change was first seen at its end. Only in memory: the job record is written by the
-// job's own pod, and this server writes nothing (docs/iteration-2-plan.md §23, step 1).
-func (s *ActivityFacts) Reach(job pages.Job, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, known := s.reached[job.ID]; !known {
-		if s.reached == nil {
-			s.reached = map[int]string{}
-		}
-		keep(s.reached, job.ID, now.UTC().Format(time.RFC3339Nano))
-	}
-}
-
-// withReached gives each job the end this server saw it reach when its record has none.
-func (s *ActivityFacts) WithReached(jobs []pages.Job) []pages.Job {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range jobs {
-		if seen, known := s.reached[jobs[i].ID]; known && jobs[i].Reached == "" {
-			jobs[i].Reached = seen
-		}
-	}
-	return jobs
 }
 
 // mainRenders is main's instances, from the whole tree at the commit every other read on the page is pinned to.

@@ -38,7 +38,8 @@ const earlierOutput = "… earlier output is not kept"
 type JobWork func(ctx context.Context, line func(string)) (link string, err error)
 
 // JobStore is where a job's record outlives this process: the newest records as JSON documents, written by the pod
-// that runs each job, and the pods that are still alive. A store is best effort: a record that cannot be read or kept
+// that runs each job and, once it has ended, by the console that sees its change merge and reach its end (Capture,
+// Reach), and the pods that are still alive. A store is best effort: a record that cannot be read or kept
 // never fails its job, so a console that cannot reach its ConfigMap still runs changes.
 type JobStore interface {
 	// Load is every record the store holds, as written; anything malformed is not a job.
@@ -185,7 +186,7 @@ func (j *Jobs) Start(ctx context.Context, action, target, identity string, resum
 		return pages.Job{}, fmt.Errorf("a job for %s is already running", target)
 	}
 	job := &pages.Job{ID: j.ids, Action: action, Unit: target, Identity: identity, Started: j.inputs.Now(),
-		State: "running", Owner: j.inputs.Owner, Resume: resume, Live: true}
+		State: "running", Owner: j.inputs.Owner, Resume: resume, Outcomes: true, Live: true}
 	j.ids++
 	j.live[job.ID] = job
 	j.forgetMemory()
@@ -329,18 +330,48 @@ func (j *Jobs) Recent(ctx context.Context) []pages.Job {
 	return found
 }
 
-// Reach records that a job's change was seen at its end, once: a later change may replace it, but this one ran.
+// Reach records that a job's change was seen at its end, once: a later change may replace it, but this one ran. The
+// record may be an earlier pod's: its change merges after its job ended, and one console replica writes at a time.
 func (j *Jobs) Reach(ctx context.Context, id int) {
+	j.amend(ctx, id, func(job *pages.Job) bool {
+		if job.Reached != "" {
+			return false
+		}
+		job.Reached = j.inputs.Now().UTC().Format(time.RFC3339Nano)
+		return true
+	})
+}
+
+// Capture records the render a job's merged change targets, its unit in the merge commit, once: no page reads that
+// commit again. Like Reach, it writes an earlier pod's record as well as this one's.
+func (j *Jobs) Capture(ctx context.Context, id int, target pages.Render) {
+	j.amend(ctx, id, func(job *pages.Job) bool {
+		if job.Target != nil {
+			return false
+		}
+		job.Target = &target
+		return true
+	})
+}
+
+// amend applies change to one remembered job, this process's or a record, and saves it when change changed it. A
+// record still running is its own pod's to write: a save here would race that pod's and could drop its newer lines.
+func (j *Jobs) amend(ctx context.Context, id int, change func(*pages.Job) bool) {
 	j.mu.Lock()
 	job, live := j.live[id]
-	if !live || job.Reached != "" {
+	if before, known := j.before[id]; !live && known && !before.Running() {
+		job = &before
+	}
+	if job == nil || !change(job) {
 		j.mu.Unlock()
 		return
 	}
-	job.Reached = j.inputs.Now().UTC().Format(time.RFC3339Nano)
-	reached := *job
+	if !live {
+		j.before[id] = *job
+	}
+	kept := *job
 	j.mu.Unlock()
-	j.save(ctx, reached, nil)
+	j.save(ctx, kept, nil)
 }
 
 // Drain stops taking jobs and waits for the running ones, for the pod that is stopping; false if some outlast the
@@ -433,7 +464,11 @@ func recordOf(job pages.Job, redact func(string) string) *string {
 func recordDocumentOf(job pages.Job, lines []string) jobRecordDocument {
 	record := jobRecordDocument{ID: job.ID, Action: job.Action, Unit: job.Unit, Identity: job.Identity,
 		Started: job.Started.Format(time.RFC3339Nano), State: job.State, Link: job.Link, Owner: job.Owner,
-		Resume: job.Resume, Reached: job.Reached, Lines: lines}
+		Resume: job.Resume, Reached: job.Reached, Outcomes: true, Lines: lines}
+	if job.Target != nil {
+		record.Target = &jobTargetDocument{Records: job.Target.Records, Settings: job.Target.Settings,
+			Digest: job.Target.Digest}
+	}
 	if lines == nil {
 		record.Lines = []string{}
 	}
@@ -445,20 +480,31 @@ func recordDocumentOf(job pages.Job, lines []string) jobRecordDocument {
 }
 
 // jobRecordDocument is a job's stored form: the keys the console has always written, which a pod running the other
-// implementation reads as well.
+// implementation reads as well, and the outcomes a console now keeps. Outcomes is true on every record this console
+// writes: a record without it is from before, and its merged change's target was never kept.
 type jobRecordDocument struct {
-	ID       int            `json:"id"`
-	Action   string         `json:"action"`
-	Unit     string         `json:"unit"`
-	Identity string         `json:"identity"`
-	Started  string         `json:"started"`
-	Finished *string        `json:"finished"`
-	State    string         `json:"state"`
-	Link     string         `json:"link"`
-	Owner    string         `json:"owner"`
-	Resume   map[string]any `json:"resume"`
-	Reached  string         `json:"reached"`
-	Lines    []string       `json:"lines"`
+	ID       int                `json:"id"`
+	Action   string             `json:"action"`
+	Unit     string             `json:"unit"`
+	Identity string             `json:"identity"`
+	Started  string             `json:"started"`
+	Finished *string            `json:"finished"`
+	State    string             `json:"state"`
+	Link     string             `json:"link"`
+	Owner    string             `json:"owner"`
+	Resume   map[string]any     `json:"resume"`
+	Reached  string             `json:"reached"`
+	Target   *jobTargetDocument `json:"target,omitempty"`
+	Outcomes bool               `json:"outcomes"`
+	Lines    []string           `json:"lines"`
+}
+
+// jobTargetDocument is a merged change's target as its record keeps it: what ProgressOf compares with main. No records
+// is a merge commit that held no instance for the unit.
+type jobTargetDocument struct {
+	Records  string `json:"records"`
+	Settings string `json:"settings"`
+	Digest   string `json:"digest"`
 }
 
 // The console keeps its jobs outside the pod: one key per job in this ConfigMap, written as each starts and as it
@@ -532,7 +578,12 @@ func decodeJob(raw string) (pages.Job, bool) {
 	if !slices.Contains([]string{"running", "succeeded", "failed", "interrupted"}, record.State) {
 		return pages.Job{}, false
 	}
-	return pages.Job{ID: record.ID, Action: record.Action, Unit: record.Unit, Identity: record.Identity,
+	job := pages.Job{ID: record.ID, Action: record.Action, Unit: record.Unit, Identity: record.Identity,
 		Started: started, Finished: finished, State: record.State, Link: record.Link, Owner: record.Owner,
-		Resume: record.Resume, Reached: record.Reached, Lines: record.Lines}, true
+		Resume: record.Resume, Reached: record.Reached, Outcomes: record.Outcomes, Lines: record.Lines}
+	if record.Target != nil {
+		job.Target = &pages.Render{Records: record.Target.Records, Settings: record.Target.Settings,
+			Digest: record.Target.Digest}
+	}
+	return job, true
 }

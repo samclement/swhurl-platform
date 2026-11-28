@@ -1,6 +1,6 @@
 id: 100
 title: Accept newer handled Flux request without stranding earlier reconcile (audit 18)
-state: ready
+state: done
 scope:
   - v2/orchestration/flux.go
   - v2/orchestration/flux_test.go
@@ -15,3 +15,12 @@ notes:
   - at: 2026-11-27T22:59:11.106Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T05:19:27.901Z
+    commit: 7502b4de57ce
+    text: "done: flux.go wait accepts lastHandledReconcileAt equal to its token or a later RFC3339 timestamp (both must parse), keeping generation and Ready checks, so a concurrent reconcile overwriting the shared source's requestedAt no longer strands the earlier waiter. Table test covers later/failed/stale/earlier/non-time tokens; fails without fix. Not verified live."
+  - at: 2026-11-28T05:19:27.901Z
+    commit: 7502b4de57ce
+    text: "followup: Clock skew: a later-clocked client's request handled before this one's annotation would be accepted as answering it; reading lastHandled before patching would close it."
+  - at: 2026-11-28T05:21:21.685Z
+    commit: f93387920805
+    text: branch dsa/01M8G98RV36B9ZGM15CJABXQB5/task-100

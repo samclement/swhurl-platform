@@ -133,6 +133,37 @@ func TestPlatformIsByteIdentical(t *testing.T) {
 	}
 }
 
+// Outside --dev a console without a real GitHub token refuses to start, before it reads the cluster, rather than serve
+// a probe that passes beside pages that cannot read main; --dev reads the checkout and needs none.
+func TestTheConsoleNeedsAGitHubTokenOutsideDev(t *testing.T) {
+	for _, token := range []string{"", "REPLACE_ME"} {
+		t.Setenv(consoleToken, token)
+		var out, diagnostic bytes.Buffer
+		reached := false
+		c := cli{inCluster: inCluster{dir: t.TempDir(), getenv: func(string) string { reached = true; return "" }}}
+		status := runWith([]string{"console", "--in-cluster"}, &out, &diagnostic, c)
+		if status != 2 || diagnostic.String() != "invalid: console: github_token_required\n" || reached {
+			t.Errorf("token %q: status %d, diagnostic %q, read the cluster %v", token, status, diagnostic.String(), reached)
+		}
+	}
+	if refusal := consoleRefusal(request{port: "8080", dev: true}); refusal != "" {
+		t.Errorf("--dev without a token: %s", refusal)
+	}
+}
+
+// The console reads main from the repository it was configured with, or the platform's when none is named.
+func TestTheConsoleReadsItsDefaultRepository(t *testing.T) {
+	for configured, want := range map[string]string{"": consoleRepo, "owner/repo": "owner/repo"} {
+		server, err := newConsoleServer(consoleConfig{Repository: configured, Token: "tok"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if source, _ := server.bundle.Source.(console.SourceOf); source.Repository != want || server.repository != want {
+			t.Errorf("configured %q: source reads %q, server %q", configured, source.Repository, server.repository)
+		}
+	}
+}
+
 // A request without oauth2-proxy's identity is refused before any page reads; /healthz needs nothing, and a path
 // with a trailing slash goes to its canonical form.
 func TestConsoleIdentity(t *testing.T) {

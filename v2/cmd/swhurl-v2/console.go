@@ -60,9 +60,8 @@ func realToken(value string) string {
 
 // console is the read-only server: it writes nothing, and every read carries the request's deadline.
 func (c cli) console(r request) int {
-	port, err := strconv.Atoi(r.port)
-	if err != nil || port < 1 || port > 65535 {
-		fmt.Fprintf(c.diagnostic, "invalid: port: expected_a_port\n")
+	if refusal := consoleRefusal(r); refusal != "" {
+		fmt.Fprintf(c.diagnostic, "invalid: %s\n", refusal)
 		return 2
 	}
 	connection, source, status := c.connection(r)
@@ -101,6 +100,18 @@ func (c cli) console(r request) int {
 	}
 	fmt.Fprintf(c.out, "serving the console on http://%s (reads as %s)\n", address, source)
 	return server.serve(c.out, address)
+}
+
+// consoleRefusal is why a console cannot start from these flags and environment, or empty when it can.
+func consoleRefusal(r request) string {
+	if port, err := strconv.Atoi(r.port); err != nil || port < 1 || port > 65535 {
+		return "port: expected_a_port"
+	}
+	// Outside --dev every page reads main through GitHub, so a console without a token would serve only its probe.
+	if !r.dev && realToken(os.Getenv(consoleToken)) == "" {
+		return "console: github_token_required"
+	}
+	return ""
 }
 
 // consoleConfig is what the server needs to read: the cluster, the Git source it pins, and the identity it serves.
@@ -210,7 +221,7 @@ func newConsoleServer(config consoleConfig) (*consoleServer, error) {
 		server.pin(trace.traceSource(localConsole{snapshots: snapshots, root: "."}))
 		server.identity = devIdentity
 	} else {
-		server.pin(trace.traceSource(console.SourceOf{Console: server.github, Repository: config.Repository,
+		server.pin(trace.traceSource(console.SourceOf{Console: server.github, Repository: server.repository,
 			Token: config.Token}))
 	}
 	static, err := fs.Sub(consoleFiles, "console/static")

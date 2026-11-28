@@ -240,7 +240,7 @@ Two fine-grained tokens in [`platform/console/secret.sops.yaml`](../platform/con
 | `APP_REPOS_TOKEN` | All repositories (GitHub lets a token create repositories only then) | Administration, Contents, Workflows, Webhooks: read and write; Actions: read | Not used by a console page any more: `/new` creates nothing. Repository creation is `make app-repo` in your terminal; the token remains for finishing a creation an earlier job started |
 | `IMAGE_WEBHOOK_TOKEN` | Flux's `app-images` receiver | None on GitHub: it signs [image webhook](services.md#image-webhook) calls | The webhook `make app-repo` adds to the new repository. Without it, or without the Webhooks permission above, `make app-repo` warns and carries on; `make app-hooks` adds the webhook later |
 
-`make verify-platform` checks GitHub accepts each and warns 14 days before one expires (a missing `APP_REPOS_TOKEN` is a warning). Replace one: [operations](operations.md#secrets); Reloader restarts the console.
+Every page reads `main` of `CONSOLE_REPO` (`samclement/swhurl-platform` when unset) with `GITHUB_TOKEN`, so outside `--dev` the console refuses to start when that token is unset or still `REPLACE_ME` (`invalid: console: github_token_required`) rather than pass its health probe with pages that cannot load. `make verify-platform` checks GitHub accepts each and warns 14 days before one expires (a missing `APP_REPOS_TOKEN` is a warning). Replace one: [operations](operations.md#secrets); Reloader restarts the console.
 
 ## How it is protected
 

@@ -1,6 +1,6 @@
 id: 95
 title: Carry reviewed promotion image and reject changed staging before execution (audit 5)
-state: ready
+state: done
 scope:
   - v2/console/change.go
   - v2/console/steps.go
@@ -29,3 +29,21 @@ notes:
   - at: 2026-11-27T22:59:10.247Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T04:39:29.525Z
+    commit: aedefaa20d87
+    text: "released: First worker reached 3000000-token workflow budget; stopped before relaunch to avoid simultaneous writers. Preserve work and finish in existing worktree."
+  - at: 2026-11-28T04:39:29.702Z
+    commit: aedefaa20d87
+    text: "retry: 1 of1 automatic relaunch after budget reached on01M8G6T0Y82R7EVC9ZVDGDF3MR/task-95. Original run stopped first. A second failure/timeout/budget overrun must stop and ask operator whether to split."
+  - at: 2026-11-28T04:43:30.279Z
+    commit: e2eb0f9ba0b4
+    text: "done: Console promotion carries the reviewed image@digest from the form into the proposal; AppChange refuses a stale form (409 stale_review), and the job's promoteSteps refuses when the pinned tree's staging selects another image. CLI v2-promote without --image unchanged. Tested offline (console, proposal->openChange); not verified live."
+  - at: 2026-11-28T04:43:30.279Z
+    commit: e2eb0f9ba0b4
+    text: "followup: v2/cmd/swhurl-v2/change.go --image help still says 'a new app's first image'; it now also names a promotion's reviewed image."
+  - at: 2026-11-28T04:43:30.279Z
+    commit: e2eb0f9ba0b4
+    text: "followup: docs/console.md's promotion text could mention the stale_review refusal (outside this task's scope)."
+  - at: 2026-11-28T04:45:42.147Z
+    commit: aedefaa20d87
+    text: branch dsa/01M8G6T0Y82R7EVC9ZVDGDF3MR/task-95

@@ -1,6 +1,6 @@
 id: 93
 title: Handle missing console token safely and use default repository (audit 15,16)
-state: ready
+state: done
 scope:
   - v2/cmd/swhurl-v2/console.go
   - v2/cmd/swhurl-v2/console_test.go
@@ -17,3 +17,9 @@ notes:
   - at: 2026-11-27T22:59:09.929Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T04:06:51.200Z
+    commit: 7da819c96bda
+    text: "done: Outside --dev, swhurl-v2 console refuses to start without a real GITHUB_TOKEN (invalid: console: github_token_required, before reading the cluster) instead of serving a passing /healthz beside pages that panic; the pinned source reads server.repository (CONSOLE_REPO or default). Two regression tests, each fails on the old code. Not verified live; in-cluster CONSOLE_REPO is set, so 16 was latent."
+  - at: 2026-11-28T04:08:52.088Z
+    commit: 5ffe44fa9fc0
+    text: branch dsa/01M8G50J3ERN22Q5BZN2HWR0MV/task-93

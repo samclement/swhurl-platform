@@ -2166,9 +2166,31 @@ test compares the owned set for a tree holding an executable. A channel address 
 only.
 
 **Contract: jobs.** One running job per target; states `running`, `succeeded`, `failed`, `interrupted`; a job's lines
-are its record. Records stay in the ConfigMap `console/console-jobs`, one key per job, written as the job runs and
-as it ends, keeping the newest 30, each trimmed from the front to 20 kB, with the same merge patch and the same null
-deletes so two pods cannot drop each other's keys; every line redacted and capped at 1,000 characters.
+are its record. `console.Jobs` owns the ConfigMap `console/console-jobs`, one key per job. The runner writes as
+the job starts, its output grows and it ends; Activity and job-page observations also write through `Jobs.Capture`
+and `Jobs.Reach`, including ended records from earlier pods. A running foreign job remains its own pod's to write.
+The console has one replica and `Recreate`, so a rollout does not overlap writers; this is not a multi-replica store.
+It keeps the newest 30 records, each trimmed from the front to 20 kB, with merge-patch null deletes for expired keys;
+every line is redacted and capped at 1,000 characters.
+
+**Contract: remembered outcomes (approved 28 November 2026).** Every record this console saves has `outcomes: true`.
+On the first observation that an outcome-enabled instance change is merged, `MergeTarget` reads its app, instance
+and release records and committed HelmRelease at the merge commit (or uses an already-held tree). `Jobs.Capture`
+keeps `target: {records, settings, digest}` once: the render fingerprint, settings fingerprint without release
+selection, and requested image digest. A missing `target` means not captured; a present target with empty `records`
+means the merged tree held no instance (the removal target). Presence is the held marker, not a separate JSON flag.
+Failed target reads save nothing and can be retried on a later page; captured targets need no further merge-tree
+reads. Current main and live status are still read afresh when needed to decide progress.
+
+`Jobs.Reach` saves `reached`, the first time a read sees the change live, scaled to zero or removed, once. Both target
+and time survive a new `Jobs` load, including when the job ran in an earlier pod. A newer configuration cannot undo
+that observation; a later read failure preserves it too. A record without `outcomes`, target or `reached` instead ends
+at **Merged (historical)**: it predates outcome recording, not proof that it ran or was superseded. Such rows trigger
+no render or cluster reads. An older record with `reached` retains its observed end even without a target. Migration
+is one-way: there is no history backfill. `ActivityFacts` keeps no reached-time cache; `ConsoleEvidence` and the
+merge-tree cache, queue and per-page history budget are deleted. `Source.Files` remains the four-file read boundary.
+Operator-facing states are in [Stages of a change](console.md#stages-of-a-change).
+
 `/jobs/{id}/events?after=N` keeps its shape: `id` is the line number, a `done` event carries state, finish time and
 link, a keep-alive every 15 seconds, `Last-Event-ID` resumes, and another pod's job is 404. On SIGTERM the server
 takes no new job and waits up to 840 seconds inside the pod's 900; a job cut short is marked interrupted with its

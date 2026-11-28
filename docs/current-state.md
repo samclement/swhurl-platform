@@ -2,6 +2,32 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
+## Activity keeps merged targets and outcomes in job records, offline (28 November 2026)
+
+- **Capability: console.** Tasks 106 (`654377c511a7`) and 107 (`9cca4c1d`) put merged instance changes' targets
+  and first-seen end times in `console/console-jobs`, through `console.Jobs.Capture` and `Jobs.Reach`. Activity and
+  job-page observations can amend an ended job from an earlier pod; a running foreign job remains its owner's.
+  The one-replica, `Recreate` deployment is the writer boundary. The
+  [job contract](iteration-2-plan.md#23-the-console-server-in-go-the-pages-the-jobs-and-the-consoles-last-python-proposed-9-november-2026)
+  defines `target` and `outcomes: true`; [console stages](console.md#stages-of-a-change) explain what the operator sees.
+- **Reads and migration:** the first successful merged-target read takes the app, instance and release records
+  and committed HelmRelease, or uses an already-held tree, then saves the fingerprint once. Later pages reuse it
+  while reading current main and live status as needed; a failed target read can be retried. A record without
+  `outcomes`, target or reached time shows **Merged (historical)** and triggers no render or cluster reads; an
+  already-recorded end survives a later failed read. There is no history backfill. `ActivityFacts.reached`,
+  `ConsoleEvidence` and the merge-tree cache, queue and per-page history budget are deleted; `Source.Files` remains.
+- **Verification performed for task 108:** `make check-docs` passed before and after the documentation edits
+  with zero errors or warnings; `git diff --check` passed.
+  `cd v2 && go test ./console/... ./pages/... ./cmd/swhurl-v2/...` passed all three packages. Existing regressions
+  cover stored facts deciding without merge history, historical rows making no render reads, capture-once and
+  retry-on-failure, outcomes surviving a new `Jobs` load, and Activity/job-page four-file reads.
+- **Documentation:** task 108 updates the job-store contract, operator states, console progress row and registry
+  in the same change. The completed Offers/pages boundary is no longer listed as an open gate; the next gate is
+  operator selection of the next capability slice.
+- **Not exercised:** this is offline evidence only. Nothing was deployed, reconciled or changed live; no real
+  signed-in Activity or job-page request was made. Task 107 separately reported races in the unchanged unit-action
+  fake's `SetConfigMapKeys` during a broad race run; task 108 did not run the race detector or resolve that follow-up.
+
 ## The DNS updater stops on a failed address lookup, offline (27 November 2026)
 
 - **Change:** [`host/aws-dns-updater.sh`](../host/aws-dns-updater.sh) reads the public address with

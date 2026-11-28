@@ -1,11 +1,12 @@
 id: 94
 title: Name proposal branches by their resulting commit to avoid base collisions (audit 17)
-state: ready
+state: active
 scope:
   - v2/console/publish.go
   - v2/console/change.go
   - v2/console/publish_test.go
   - v2/console/branches_test.go
+  - v2/cmd/swhurl-v2/change_test.go
   - docs/console.md
   - docs/v2-status.md
   - docs/workstreams.md
@@ -18,3 +19,6 @@ notes:
   - at: 2026-11-27T22:59:10.086Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T04:21:51.639Z
+    commit: 9bd03e1bb28b
+    text: May scope include v2/cmd/swhurl-v2/change_test.go to update the two expected branch-name suffix lines from base commit to proposal commit? -> Operator approved narrow test-only extension. Added file to scope; no other extension.

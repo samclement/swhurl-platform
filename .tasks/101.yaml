@@ -1,6 +1,6 @@
 id: 101
 title: Bound total archive decompression including skipped entries (audit 19)
-state: ready
+state: done
 scope:
   - v2/adapters/files/archive.go
   - v2/adapters/files/archive_test.go
@@ -15,3 +15,9 @@ notes:
   - at: 2026-11-27T22:59:11.263Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T05:27:59.039Z
+    commit: 2e1c9450f73f
+    text: "done: ReadArchive counts every decompressed byte (headers, skipped entries, kept files) through one bounded reader under the tar reader; refuses over 128 MiB total, 8 MiB per file and path checks unchanged. Tests via unexported readArchive with small limits: many files over total, skipped content over, exact bound accepted. Not verified live."
+  - at: 2026-11-28T05:29:51.256Z
+    commit: ad382f00120e
+    text: branch dsa/01M8G9M2AB5V7GK8MGKAYWA1SW/task-101

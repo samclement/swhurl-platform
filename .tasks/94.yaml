@@ -1,6 +1,6 @@
 id: 94
 title: Name proposal branches by their resulting commit to avoid base collisions (audit 17)
-state: active
+state: done
 scope:
   - v2/console/publish.go
   - v2/console/change.go
@@ -22,3 +22,18 @@ notes:
   - at: 2026-11-28T04:21:51.639Z
     commit: 9bd03e1bb28b
     text: May scope include v2/cmd/swhurl-v2/change_test.go to update the two expected branch-name suffix lines from base commit to proposal commit? -> Operator approved narrow test-only extension. Added file to scope; no other extension.
+  - at: 2026-11-28T04:24:32.259Z
+    commit: e30798297f4b
+    text: Independent scope reviewer approved ONLY v2/cmd/swhurl-v2/change_test.go expected branch suffix lines110 and189 (live fake commit3333333, dry-run <commit>). Necessary and sufficient; exact assertions and parent/content/no-write checks preserved. Scope-only approval, not merge approval; prescribed checks still required. Reviewer run01M8G67C22X2A51J1M6Z4HRCZ5.
+  - at: 2026-11-28T04:27:11.777Z
+    commit: f6cb36e6d8b1
+    text: "done: Publish names console/<kind>-<target>-<sha7> by the proposal commit, not the base; impossible names still refused before writes; dry run names the branch with <commit>. Regression test: two changes on one base get two branches (fails on old code). Tests, check-v2, check, check-docs pass. Not verified live; no push."
+  - at: 2026-11-28T04:27:11.777Z
+    commit: f6cb36e6d8b1
+    text: "followup: githubtest.PublisherScenario().Branch still says console/v2-scale-web-staging-0123456 (base suffix); harmless fixture name, could become -3333333 for consistency."
+  - at: 2026-11-28T04:31:26.910Z
+    commit: f6cb36e6d8b1
+    text: "Flake outside scope: v2/adapters/ntfy TestFailuresNameNothingTheyWereSent failed once in a guardrail run (slow-topic returned nil, want timed_out); 900 isolated runs (-cpu 1,2,8) and a full make check-v2 rerun passed. Its 100ms deadline starts before the loop's three earlier cases; worth a look in its own task."
+  - at: 2026-11-28T04:32:13.203Z
+    commit: e30798297f4b
+    text: branch dsa/01M8G5F8CA6WMJV9KYHQVFBVZK/task-94

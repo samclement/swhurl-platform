@@ -1,6 +1,6 @@
 id: 98
 title: Bound YAML alias expansion in appsource and manifests (audit 7)
-state: ready
+state: done
 scope:
   - v2/adapters/appsource/source.go
   - v2/adapters/appsource/source_test.go
@@ -17,3 +17,12 @@ notes:
   - at: 2026-11-27T22:59:10.781Z
     commit: e41e7ccfac60
     text: "Operator-approved workflow exception: where check-docs requires committed state, worker may commit only task-scoped changes before tk done; keep Uncommitted: none truthful and run full tk done checks after commit. Conductor controls merging. Do not mutate checked files afterward, weaken checks, push or perform live changes."
+  - at: 2026-11-28T05:05:40.426Z
+    commit: 5185194dfde0
+    text: "done: Both YAML decoders charge each node read through an alias to a per-document budget of 100,000 and refuse past it; cycle refusal and repeated aliases kept. Tests: small nested aliases read, 10^9-node bomb refused fast, budget per document (manifests). Committed 5185194d. Not checked: no repo file nears the budget (all checks pass)."
+  - at: 2026-11-28T05:05:40.426Z
+    commit: 5185194dfde0
+    text: "followup: v2/adapters/appsource/scalar.go implicitTag compiles three regexps per plain scalar (~70us each); a document of 100,000 aliased scalars costs ~7s. Hoist them to package vars."
+  - at: 2026-11-28T05:07:37.259Z
+    commit: 5d76ad3e24b4
+    text: branch dsa/01M8G8AZJS8WYABD2WHMABSK2N/task-98

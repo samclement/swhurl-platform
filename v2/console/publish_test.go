@@ -66,7 +66,7 @@ func TestPublishCarriesOnlyItsOwnPaths(t *testing.T) {
 			t.Errorf("%s = %q, want %q", path, got.Status[path], letter)
 		}
 	}
-	if got.Branch != "console/v2-scale-web-staging-0123456" {
+	if got.Branch != "console/v2-scale-web-staging-3333333" {
 		t.Errorf("branch = %q", got.Branch)
 	}
 	if got.URL != githubtest.PublisherScenario().PullURL {
@@ -79,7 +79,7 @@ func TestPublishCarriesOnlyItsOwnPaths(t *testing.T) {
 		"D v2-records/web/staging/old.json",
 		"Merge plan: you merge it on GitHub",
 		"Committed 3333333 [console] apps: scale web/staging",
-		"Creating branch console/v2-scale-web-staging-0123456",
+		"Creating branch console/v2-scale-web-staging-3333333",
 		"Opened " + githubtest.PublisherScenario().PullURL,
 	}
 	if strings.Join(*lines, "\n") != strings.Join(wantLines, "\n") {
@@ -113,10 +113,10 @@ func TestPublishCommitAndPullRequestBody(t *testing.T) {
 		t.Errorf("pull body:\n%s\nwant:\n%s", publisher.Pulls[0].Body, wantPull)
 	}
 	if publisher.Pulls[0].Title != "[console] apps: scale web/staging" || publisher.Pulls[0].Base != "main" ||
-		publisher.Pulls[0].Head != "console/v2-scale-web-staging-0123456" {
+		publisher.Pulls[0].Head != "console/v2-scale-web-staging-3333333" {
 		t.Errorf("pull = %#v", publisher.Pulls[0])
 	}
-	if publisher.Refs[0].Name != "console/v2-scale-web-staging-0123456" ||
+	if publisher.Refs[0].Name != "console/v2-scale-web-staging-3333333" ||
 		publisher.Refs[0].Commit != githubtest.PublisherScenario().Commit {
 		t.Errorf("ref = %#v", publisher.Refs[0])
 	}
@@ -158,6 +158,29 @@ func TestPublishKeepsModes(t *testing.T) {
 	}
 }
 
+// Two different changes to one instance on an unchanged main get two branches, each named by its own commit, so a
+// closed pull request whose branch was kept does not block the next one (audit 17).
+func TestPublishNamesTheBranchByItsCommit(t *testing.T) {
+	branches := []string{}
+	for _, commit := range []string{"aaaaaaa" + publishRevision[7:], "bbbbbbb" + publishRevision[7:]} {
+		inputs, publisher, _ := published(t)
+		publisher.Scene.Commit = commit
+		got, err := console.Publish(context.Background(), inputs, publisher, func(string) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if publisher.Commits[0].Parent != publishRevision || publisher.Refs[0].Name != got.Branch ||
+			publisher.Pulls[0].Head != got.Branch {
+			t.Errorf("commit %#v, ref %#v, pull head %q, branch %q", publisher.Commits[0], publisher.Refs[0],
+				publisher.Pulls[0].Head, got.Branch)
+		}
+		branches = append(branches, got.Branch)
+	}
+	if want := []string{"console/v2-scale-web-staging-aaaaaaa", "console/v2-scale-web-staging-bbbbbbb"}; strings.Join(branches, ",") != strings.Join(want, ",") {
+		t.Errorf("branches = %v, want %v", branches, want)
+	}
+}
+
 // A change that carries nothing is refused before GitHub is written, and a dry run writes nothing at all.
 func TestPublishWritesNothingWhenItShouldNot(t *testing.T) {
 	inputs, publisher, lines := published(t)
@@ -181,7 +204,7 @@ func TestPublishWritesNothingWhenItShouldNot(t *testing.T) {
 		t.Error("a dry run wrote to GitHub")
 	}
 	last := (*lines)[len(*lines)-1]
-	if last != "Dry run: would commit 4 file(s) to console/v2-scale-web-staging-0123456; no PR opened" {
+	if last != "Dry run: would commit 4 file(s) to console/v2-scale-web-staging-<commit>; no PR opened" {
 		t.Errorf("last line = %q", last)
 	}
 }
@@ -219,7 +242,7 @@ func TestPublishTeamChannel(t *testing.T) {
 	want := []string{"A platform/notify/channels/channel-payments.sops.yaml", "M v2-records/teams.json",
 		"Merge plan: you merge it on GitHub; it needs Secret values to be set on the pull request branch",
 		"Committed 3333333 [console] teams: set the notification channel of payments",
-		"Creating branch console/team-channel-set-payments-0123456",
+		"Creating branch console/team-channel-set-payments-3333333",
 		"Opened " + githubtest.PublisherScenario().PullURL}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("lines:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))

@@ -107,7 +107,7 @@ func TestChangeCLIScale(t *testing.T) {
 		"M v2-records/demo-orders/staging/instance.json",
 		"Merge plan: you merge it on GitHub",
 		"Committed 3333333 [console] apps: scale demo-orders/staging",
-		"Creating branch console/v2-scale-demo-orders-staging-0123456",
+		"Creating branch console/v2-scale-demo-orders-staging-3333333",
 		"Opened " + githubtest.PublisherScenario().PullURL,
 	}
 	if len(lines) < len(want) {
@@ -186,7 +186,7 @@ func TestChangeCLIDryRun(t *testing.T) {
 	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
 	last := lines[len(lines)-1]
 	if !strings.HasPrefix(last, "Dry run: would commit ") ||
-		!strings.HasSuffix(last, " file(s) to console/v2-scale-demo-orders-staging-0123456; no PR opened") {
+		!strings.HasSuffix(last, " file(s) to console/v2-scale-demo-orders-staging-<commit>; no PR opened") {
 		t.Errorf("the dry run ended %q", last)
 	}
 	if len(publisher.Blobs)+len(publisher.Commits)+len(publisher.Pulls)+len(publisher.Refs) != 0 {

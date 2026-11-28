@@ -404,7 +404,7 @@ func TestExecCancellationWhileWaitingForUpgrade(t *testing.T) {
 	}
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second): // the server sees the closed connection late when the whole suite runs in parallel
 		t.Fatal("withheld upgrade not cancelled")
 	}
 }

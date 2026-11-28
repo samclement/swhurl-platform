@@ -102,7 +102,7 @@ After the commit, Flux creates the app's dedicated `app-<name>-staging` unit fro
 
 Once staging is deployed, later pushes to the app repository's `main` publish images. The app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux picks the new tag and starts the Deploy workflow, which commits the tag, its digest and what the image offers to this platform repository's `main` in one commit; the push webhook then rolls out that image to staging ([deploy a new image](#deploy-a-new-image)). Production is not created by this flow.
 
-**From a terminal**, in one command: it reads its tokens from the environment (`CONSOLE_TOKEN` and `CONSOLE_REPO` for the pull request, `APP_REPOS_TOKEN` for the repository, `IMAGE_WEBHOOK_TOKEN` for its webhook; export them from the `console-github` Secret), and `REQUESTED_BY` defaults to your Git identity:
+**From a terminal**, in one command: it reads its tokens from the environment (`CONSOLE_TOKEN` and `CONSOLE_REPO` for the pull request, `APP_REPOS_TOKEN` for the repository, `IMAGE_WEBHOOK_TOKEN` for its webhook; export them from the `console-github` Secret; a dry run checks them too, and a missing or placeholder `CONSOLE_TOKEN` stops the command before it writes anything to GitHub), and `REQUESTED_BY` defaults to your Git identity:
 
 ```bash
 make app-repo NAME=weather-api TYPE=api TEAM=payments STACK=kotlin   # DRY_RUN=true shows the plan

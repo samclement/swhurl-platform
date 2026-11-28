@@ -141,6 +141,29 @@ func TestAppRepoCLIRefusesWithoutTheRepositoryToken(t *testing.T) {
 	}
 }
 
+// The pull request's credential is checked before the public repository is made, so a missing or placeholder one
+// leaves no repository, commit or webhook without its pull request; a dry run refuses as the real run would.
+func TestAppRepoCLIRefusesWithoutThePullRequestTokenBeforeWriting(t *testing.T) {
+	for _, token := range []string{"", "REPLACE_ME", strings.Repeat("x", consoleTokenMaxLength+1)} {
+		for _, dryRun := range []bool{false, true} {
+			_, _, repos, images := appRepoSources(t)
+			env := appRepoTokens()
+			env[consoleTokenEnv] = token
+			args := appRepoArgs()
+			if dryRun {
+				args = appRepoArgs("--dry-run")
+			}
+			status, _, diagnostic, publisher := appRepoRun(t, repos, images, env, args...)
+			if status == 0 || !strings.Contains(diagnostic, consoleTokenEnv) {
+				t.Errorf("token %.12q dry-run %v: exit %d, diagnostic %q", token, dryRun, status, diagnostic)
+			}
+			if len(repos.Created) != 0 || len(repos.Firsts) != 0 || len(repos.NewHooks) != 0 || len(publisher.Pulls) != 0 {
+				t.Errorf("token %.12q dry-run %v: wrote to GitHub without the pull request's token", token, dryRun)
+			}
+		}
+	}
+}
+
 func TestAppRepoCLIDryRunWritesNothing(t *testing.T) {
 	_, _, repos, images := appRepoSources(t)
 	status, stdout, diagnostic, _ := appRepoRun(t, repos, images, appRepoTokens(), appRepoArgs("--dry-run")...)

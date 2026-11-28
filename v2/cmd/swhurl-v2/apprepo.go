@@ -71,6 +71,11 @@ func (c cli) openAppRepo(r request) (string, int) {
 
 // appRepoInputs is what the use case needs: the contract, the tokens, the work folder, and the effects it uses.
 func (c cli) appRepoInputs(r request, contract []byte, repository string) (orchestration.AppRepoInputs, int) {
+	// The pull request's credential is checked before the public repository is made, which nothing here undoes.
+	if token := c.environment(consoleTokenEnv); token == "" || token == "REPLACE_ME" || len(token) > consoleTokenMaxLength {
+		return orchestration.AppRepoInputs{}, fail(c.diagnostic,
+			errors.New("invalid: token: "+consoleTokenEnv+" is not set"))
+	}
 	reposToken := c.environment(appReposTokenEnv)
 	if reposToken == "" || reposToken == "REPLACE_ME" {
 		return orchestration.AppRepoInputs{}, fail(c.diagnostic,

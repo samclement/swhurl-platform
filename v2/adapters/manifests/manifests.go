@@ -56,7 +56,7 @@ func documentOf(node *yaml.Node) (checkrepo.Document, error) {
 	if len(node.Content) == 0 {
 		return checkrepo.Document{}, nil
 	}
-	decoded, err := value(node.Content[0], map[*yaml.Node]bool{})
+	decoded, err := value(node.Content[0], &expansion{active: map[*yaml.Node]bool{}, left: aliasBudget})
 	if err != nil {
 		return checkrepo.Document{}, err
 	}
@@ -70,23 +70,47 @@ func documentOf(node *yaml.Node) (checkrepo.Document, error) {
 	return checkrepo.Document{Kind: kind, Name: name, Value: mapping}, nil
 }
 
+// aliasBudget bounds the nodes one document's aliases expand to, so nested repeated aliases cannot grow exponentially.
+const aliasBudget = 100_000
+
+// expansion is one document's alias state: active holds the aliases being expanded, so a repeated alias reads twice
+// and a cycle fails, and left is how many more nodes they may expand to.
+type expansion struct {
+	active map[*yaml.Node]bool
+	left   int
+}
+
+// spend charges one node to the budget when it is read through an alias.
+func (e *expansion) spend() error {
+	if len(e.active) == 0 {
+		return nil
+	}
+	if e.left--; e.left < 0 {
+		return fmt.Errorf("aliases that expand to more than %d nodes", aliasBudget)
+	}
+	return nil
+}
+
 // value is a node as plain Go values: a mapping as map[string]any, a sequence as []any, a scalar as a string, bool,
-// int, float64 or nil. active guards the aliases being expanded, so a repeated alias reads twice and a cycle fails.
-func value(node *yaml.Node, active map[*yaml.Node]bool) (any, error) {
+// int, float64 or nil.
+func value(node *yaml.Node, e *expansion) (any, error) {
+	if err := e.spend(); err != nil {
+		return nil, err
+	}
 	switch node.Kind {
 	case yaml.AliasNode:
-		if node.Alias == nil || active[node.Alias] {
+		if node.Alias == nil || e.active[node.Alias] {
 			return nil, errors.New("an alias that refers to itself")
 		}
-		active[node.Alias] = true
-		defer delete(active, node.Alias)
-		return value(node.Alias, active)
+		e.active[node.Alias] = true
+		defer delete(e.active, node.Alias)
+		return value(node.Alias, e)
 	case yaml.MappingNode:
-		return mapping(node, active)
+		return mapping(node, e)
 	case yaml.SequenceNode:
 		items := []any{}
 		for _, item := range node.Content {
-			decoded, err := value(item, active)
+			decoded, err := value(item, e)
 			if err != nil {
 				return nil, err
 			}
@@ -100,14 +124,14 @@ func value(node *yaml.Node, active map[*yaml.Node]bool) (any, error) {
 }
 
 // mapping is a mapping node's keys and values; a merge key (<<) supplies the keys the mapping does not state itself.
-func mapping(node *yaml.Node, active map[*yaml.Node]bool) (map[string]any, error) {
+func mapping(node *yaml.Node, e *expansion) (map[string]any, error) {
 	stated, merged := map[string]any{}, map[string]any{}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key, item := node.Content[i], node.Content[i+1]
 		if key.Kind != yaml.ScalarNode {
 			return nil, fmt.Errorf("line %d: a mapping key that is not a scalar", key.Line)
 		}
-		decoded, err := value(item, active)
+		decoded, err := value(item, e)
 		if err != nil {
 			return nil, err
 		}

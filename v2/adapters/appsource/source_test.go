@@ -2,6 +2,7 @@ package appsource_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,6 +236,30 @@ func TestCyclicAliasesAndInvalidMergesFailSafely(t *testing.T) {
 		if err == nil || label != "" || !strings.Contains(err.Error(), "swhurl.yaml") {
 			t.Fatal(label, err)
 		}
+	}
+}
+
+// Nested repeated aliases, each a list of ten aliases of the one before, read in full while small and are refused
+// once they would expand past the budget rather than growing exponentially. Empty lists, not scalars, keep it fast.
+func TestNestedAliasesAreBounded(t *testing.T) {
+	nested := func(levels int) string {
+		text := "asyncapi: 3.0.0\nx-aliases:\n  a0: &a0 [[], [], [], [], [], [], [], [], [], []]\n"
+		for i := 1; i < levels; i++ {
+			ref := fmt.Sprintf("*a%d", i-1)
+			text += fmt.Sprintf("  a%d: &a%d [%s]\n", i, i, strings.TrimSuffix(strings.Repeat(ref+", ", 10), ", "))
+		}
+		return text
+	}
+	root := t.TempDir()
+	write(t, root, "events.yaml", []byte(nested(3)))
+	doc, _, err := (appsource.Local{}).Events(root, "events.yaml")
+	if err != nil || len(doc.Get("x-aliases").(producer.Object).Get("a2").([]any)[9].([]any)[9].([]any)) != 10 {
+		t.Fatal(doc, err)
+	}
+	write(t, root, "events.yaml", []byte(nested(9)))
+	doc, _, err = (appsource.Local{}).Events(root, "events.yaml")
+	if err == nil || doc != nil || !strings.Contains(err.Error(), "events.yaml: not valid YAML: YAML aliases expand to more than") {
+		t.Fatal(doc, err)
 	}
 }
 func TestBooleanEventAddressesRemainInvalidWithAliases(t *testing.T) {

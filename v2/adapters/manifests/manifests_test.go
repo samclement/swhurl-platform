@@ -1,9 +1,11 @@
 package manifests_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/samclement/swhurl-platform/v2/adapters/manifests"
@@ -81,5 +83,33 @@ func TestASelfReferringAliasIsRefused(t *testing.T) {
 	}
 	if _, err := (manifests.YAML{}).Documents([]byte{0xff}); err == nil {
 		t.Fatal("invalid UTF-8 was read")
+	}
+}
+
+// nestedAliases is levels anchors, each a list of ten aliases of the one before: it expands to 10^levels scalars.
+func nestedAliases(levels int) string {
+	text := "a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n"
+	for i := 1; i < levels; i++ {
+		ref := fmt.Sprintf("*a%d", i-1)
+		text += fmt.Sprintf("a%d: &a%d [%s]\n", i, i, strings.TrimSuffix(strings.Repeat(ref+", ", 10), ", "))
+	}
+	return text
+}
+
+// Nested repeated aliases read in full while small and are refused once they would expand past the budget, not
+// expanded exponentially.
+func TestNestedAliasesAreBounded(t *testing.T) {
+	documents, err := (manifests.YAML{}).Documents([]byte(nestedAliases(3)))
+	if err != nil || len(documents[0].Value["a2"].([]any)[9].([]any)[9].([]any)) != 10 {
+		t.Fatalf("documents %v, error %v", documents, err)
+	}
+	documents, err = (manifests.YAML{}).Documents([]byte(nestedAliases(9)))
+	if err == nil || documents != nil || !strings.Contains(err.Error(), "expand to more than") {
+		t.Fatalf("documents %v, error %v; want a refusal", documents, err)
+	}
+	// The budget is per document: each of these expands to about 75,000 nodes, together more than the budget.
+	document := nestedAliases(4) + "b: [*a3, *a3, *a3, *a3, *a3]\n"
+	if _, err := (manifests.YAML{}).Documents([]byte(document + "---\n" + document)); err != nil {
+		t.Fatal(err)
 	}
 }

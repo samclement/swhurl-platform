@@ -76,7 +76,7 @@ func decode(data []byte, name string) (producer.Object, error) {
 	if len(node.Content) != 1 {
 		return fail(fmt.Errorf("must be a mapping"))
 	}
-	v, err := value(node.Content[0], map[*yaml.Node]bool{})
+	v, err := value(node.Content[0], &expansion{active: map[*yaml.Node]bool{}, left: aliasBudget})
 	if err != nil {
 		return fail(err)
 	}
@@ -87,39 +87,62 @@ func decode(data []byte, name string) (producer.Object, error) {
 	return o, nil
 }
 
-// active follows only the current expansion path: repeated aliases are valid, cycles are not.
-func value(n *yaml.Node, active map[*yaml.Node]bool) (any, error) {
-	if n == nil {
-		return nil, fmt.Errorf("missing alias target")
+// aliasBudget bounds the nodes one document's aliases expand to, so nested repeated aliases cannot grow exponentially.
+const aliasBudget = 100_000
+
+// expansion is one document's alias state: active follows only the aliases on the current expansion path, so
+// repeated aliases are valid and cycles are not, and left is how many more nodes they may expand to.
+type expansion struct {
+	active map[*yaml.Node]bool
+	left   int
+}
+
+// spend charges one node to the budget when it is read through an alias.
+func (e *expansion) spend() error {
+	if len(e.active) == 0 {
+		return nil
 	}
-	if active[n] {
-		return nil, fmt.Errorf("cyclic YAML alias")
+	if e.left--; e.left < 0 {
+		return fmt.Errorf("YAML aliases expand to more than %d nodes", aliasBudget)
 	}
-	active[n] = true
-	defer delete(active, n)
+	return nil
+}
+
+func value(n *yaml.Node, e *expansion) (any, error) {
+	if err := e.spend(); err != nil {
+		return nil, err
+	}
 	switch n.Kind {
 	case yaml.AliasNode:
-		return value(n.Alias, active)
+		if n.Alias == nil {
+			return nil, fmt.Errorf("missing alias target")
+		}
+		if e.active[n.Alias] {
+			return nil, fmt.Errorf("cyclic YAML alias")
+		}
+		e.active[n.Alias] = true
+		defer delete(e.active, n.Alias)
+		return value(n.Alias, e)
 	case yaml.MappingNode:
 		if n.Tag != "!!map" {
 			return nil, fmt.Errorf("unsupported YAML tag %s", n.Tag)
 		}
-		return mapping(n, active)
+		return mapping(n, e)
 	case yaml.SequenceNode:
 		if n.Tag != "!!seq" {
 			return nil, fmt.Errorf("unsupported YAML tag %s", n.Tag)
 		}
-		return sequence(n, active)
+		return sequence(n, e)
 	case yaml.ScalarNode:
 		return scalar(n)
 	default:
 		return nil, fmt.Errorf("unsupported YAML node")
 	}
 }
-func sequence(n *yaml.Node, active map[*yaml.Node]bool) ([]any, error) {
+func sequence(n *yaml.Node, e *expansion) ([]any, error) {
 	a := []any{}
 	for _, c := range n.Content {
-		v, err := value(c, active)
+		v, err := value(c, e)
 		if err != nil {
 			return nil, err
 		}
@@ -130,8 +153,8 @@ func sequence(n *yaml.Node, active map[*yaml.Node]bool) ([]any, error) {
 
 // PyYAML flattens all merges before explicit fields. Sequence merges are flattened in reverse order,
 // so the first mapping wins; explicit fields always win. Assignment keeps a key's first insertion slot.
-func mapping(n *yaml.Node, active map[*yaml.Node]bool) (producer.Object, error) {
-	o, err := mergedFields(n, active)
+func mapping(n *yaml.Node, e *expansion) (producer.Object, error) {
+	o, err := mergedFields(n, e)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +163,7 @@ func mapping(n *yaml.Node, active map[*yaml.Node]bool) (producer.Object, error) 
 		if k.Tag == "!!merge" {
 			continue
 		}
-		key, err := value(k, active)
+		key, err := value(k, e)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +171,7 @@ func mapping(n *yaml.Node, active map[*yaml.Node]bool) (producer.Object, error) 
 		case producer.Object, []any:
 			return nil, fmt.Errorf("unhashable YAML mapping key")
 		}
-		v, err := value(n.Content[i+1], active)
+		v, err := value(n.Content[i+1], e)
 		if err != nil {
 			return nil, err
 		}
@@ -156,13 +179,13 @@ func mapping(n *yaml.Node, active map[*yaml.Node]bool) (producer.Object, error) 
 	}
 	return o, nil
 }
-func mergedFields(n *yaml.Node, active map[*yaml.Node]bool) (producer.Object, error) {
+func mergedFields(n *yaml.Node, e *expansion) (producer.Object, error) {
 	o := producer.Object{}
 	for i := 0; i < len(n.Content); i += 2 {
 		if n.Content[i].Tag != "!!merge" {
 			continue
 		}
-		v, err := value(n.Content[i+1], active)
+		v, err := value(n.Content[i+1], e)
 		if err != nil {
 			return nil, err
 		}

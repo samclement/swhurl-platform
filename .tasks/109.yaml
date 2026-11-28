@@ -1,0 +1,14 @@
+id: 109
+title: Verify task branches 106-108 are merged into main, remove only their clean worktrees and local branches, then run local checks
+state: ready
+scope:
+  - .dsa/**
+checks:
+  - make check
+  - make check-v2
+after: []
+reason: null
+notes:
+  - at: 2026-11-28T08:09:51.333Z
+    commit: f7effafeddb1
+    text: "Operator approved cleanup and push. Run in the main checkout on main. Verify ancestry to main and clean status incl untracked for each target before plain git worktree remove and git branch -d (never force). Targets ONLY: dsa/01M8GGKTB0C8SJWFK66HQFAE5J/task-106, dsa/01M8GHKKC6DRXN9Z434WSN3C0V/task-107, dsa/01M8GJRDYYX64TB0HSQDJ42HF3/task-108; worktree paths are .dsa/<wid>/task-<id>. No implementation edits, no other cleanup, no push/fetch/reset/rebase/live actions. Stop on a dirty/unmerged/locked target or failed check; never discard work. tk done runs make check and make check-v2. Conductor pushes after successful completion. OpenAI/DeepSeek only."

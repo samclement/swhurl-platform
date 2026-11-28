@@ -178,7 +178,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | Option | Rules |
 | --- | --- |
 | `--app <name>` | Required: a DNS label — lowercase letters, digits and hyphens, at most 40 characters — and the app must have no records yet |
-| `--image ghcr.io/<owner>/<name>:<tag>@sha256:…` | Required: as `make app-repo` prints it. v2 reads the image's `linux/amd64` manifest and its declaration label through the registry, and states them in the release |
+| `--image ghcr.io/<owner>/<name>:<tag>@sha256:…` | Required: as `make app-repo` prints it. v2 reads the image's `linux/amd64` manifest and its declaration label through the registry, and states them in the release; an image with no `linux/amd64` index entry, or whose config states another platform, is refused |
 | `--team <team>` | Required: the owning team, a name in `v2-records/teams.json` ([teams and isolation](#teams-and-isolation)) |
 | `--exposure` | `private` (the default) or `authenticated-web` ([who can reach it](#who-can-reach-it)); a worker or a job is private |
 | `--records`, `--profile`, `--out` | Where the records go (`v2-records`), the platform profile every render shares (`v2/testdata/profile.json`), and the repository root |

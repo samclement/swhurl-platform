@@ -120,7 +120,7 @@ func (r *Remote) Tags(ctx context.Context) ([]string, error) {
 
 // Describe resolves one reference — a tag, or an image digest — to the platform's manifest and reads the labels
 // its config states. A reference that names an index is resolved to its linux/amd64 manifest; an index without
-// one is refused, not guessed. A digest is its own reference, so a record that states one is read the same way a
+// one is refused, not guessed, and so is a manifest whose config is for another platform. A digest is its own reference, so a record that states one is read the same way a
 // tag is.
 func (r *Remote) Describe(ctx context.Context, reference string) (Image, error) {
 	if reference == "" {
@@ -139,7 +139,8 @@ func (r *Remote) Describe(ctx context.Context, reference string) (Image, error) 
 }
 
 // forPlatform reads the manifest a reference resolves to for the cluster's own platform: an index's linux/amd64
-// entry when the reference names an index, and the manifest itself when it names one.
+// entry when the reference names an index, and the manifest itself when it names one and its config is for
+// linux/amd64.
 func (r *Remote) forPlatform(ctx context.Context, manifest manifest, digest, mediaType string) (Image, error) {
 	if mediaType != indexMediaType && mediaType != listMediaType && len(manifest.Manifests) == 0 {
 		return r.image(ctx, manifest, digest, mediaType)
@@ -177,7 +178,7 @@ func (r *Remote) manifest(ctx context.Context, reference string) (manifest, stri
 }
 
 // image reads one manifest's config labels. The config is a blob the platform may read; its labels are the
-// image's own declaration.
+// image's own declaration, and a config for any platform but linux/amd64 is refused.
 func (r *Remote) image(ctx context.Context, manifest manifest, digest, mediaType string) (Image, error) {
 	if manifest.Config.Digest == "" {
 		return Image{}, unavailable("config", "malformed")
@@ -188,12 +189,18 @@ func (r *Remote) image(ctx context.Context, manifest manifest, digest, mediaType
 		return Image{}, err
 	}
 	var config struct {
-		Config struct {
+		OS           string `json:"os"`
+		Architecture string `json:"architecture"`
+		Config       struct {
 			Labels map[string]string `json:"Labels"`
 		} `json:"config"`
 	}
 	if err := json.Unmarshal(body, &config); err != nil {
 		return Image{}, unavailable("config", "malformed")
+	}
+	// The config states the platform it was built for; a direct manifest names none of its own.
+	if config.OS != "linux" || config.Architecture != "amd64" {
+		return Image{}, &Error{NoPlatformManifest, "config", "linux/amd64"}
 	}
 	labels := make(map[string]string, len(config.Config.Labels))
 	for key, value := range config.Config.Labels {

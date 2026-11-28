@@ -12,7 +12,7 @@ This page is the one place v2's progress, remaining work and deferred features l
 
 | Capability | State | Evidence |
 | --- | --- | --- |
-| Release selection and identity | done | [contract](iteration-2-plan.md#2-phase-1-model-and-contract) |
+| Release selection and identity; the registry adapter reads a single-platform manifest only when its config states `linux/amd64`, as it reads an index only through its `linux/amd64` entry (tested offline) | done | [contract](iteration-2-plan.md#2-phase-1-model-and-contract) |
 | Deterministic compiler | done | [kernel](../v2/kernel) |
 | App policy: Go decisions, legacy checker/API retired | done | [record](current-state.md#legacy-app-policy-retirement-4-november-2026) |
 | The v1 records model, its fixture oracle and the Python nothing ran | done | [record](current-state.md#the-unreachable-python-leaves-and-the-console-is-signed-off-12-november-2026) |

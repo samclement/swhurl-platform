@@ -234,6 +234,38 @@ func TestNoPlatformManifest(t *testing.T) {
 	refusal(t, err, registry.NoPlatformManifest)
 }
 
+// TestDirectManifestForAnotherPlatform: a tag that names one manifest, not an index, is read only when the
+// config it fetched states linux/amd64; an ARM-only image is a refusal about the image, never its labels.
+func TestDirectManifestForAnotherPlatform(t *testing.T) {
+	for _, config := range []string{
+		`{"architecture":"arm64","os":"linux","config":{"Labels":{"a":"b"}}}`,
+		`{"architecture":"amd64","os":"windows","config":{"Labels":{"a":"b"}}}`,
+		`{"config":{"Labels":{"a":"b"}}}`,
+	} {
+		t.Run(config, func(t *testing.T) {
+			s := &server{}
+			s.answer = func(t *testing.T, w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/token":
+					write(w, "application/json", "", recorded(t, "token.json"))
+				case strings.HasSuffix(r.URL.Path, "/manifests/"+directTag):
+					write(w, "application/vnd.oci.image.manifest.v1+json", direct, recorded(t, "manifest.json"))
+				case strings.HasSuffix(r.URL.Path, "/blobs/"+configHash):
+					write(w, "application/octet-stream", "", []byte(config))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}
+			reader, err := registry.New("ghcr.io/"+repository, client(t, s.serve(t)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = reader.Describe(context.Background(), directTag)
+			refusal(t, err, registry.NoPlatformManifest)
+		})
+	}
+}
+
 // TestFailures: only a 200 is evidence; every other answer is a failed read with a fixed reason, never an
 // empty repository.
 func TestFailures(t *testing.T) {

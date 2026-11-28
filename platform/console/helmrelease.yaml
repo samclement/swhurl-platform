@@ -39,6 +39,10 @@ spec:
     controllers:
       main:
         forceRename: console
+        # One console at a time: a rollout (Recreate) starts the new pod only once the old one, its jobs drained,
+        # is gone, so two pods never share the job record; the console is down meanwhile (docs/console.md#jobs-and-restarts).
+        replicas: 1
+        strategy: Recreate
         # The chart creates this ServiceAccount; rbac.yaml binds it.
         serviceAccount:
           name: console
